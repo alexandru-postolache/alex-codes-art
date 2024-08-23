@@ -2,25 +2,25 @@ let settings = {
   arcs: 30,
   radius: { min: 1, max: 360 },
   gap: { min: 15, max: 25 },
-  movementOffset: 0,
   weight: { min: 2, max: 15 },
-  speed: { min: 0, max: 0.003 },
   arcsColor: "#dbf7ff",
+  gradient: "tints",
   background: "#012d3a",
+  speed: { min: 0, max: 0.003 },
   directions: "both",
 };
 
+let gradients = ["tints", "shades"];
 let directions = ["left", "right", "both"];
-
-let angleStart, angleFinish, gap;
 let curves = [];
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
+  pixelDensity(4);
 
   setupGui();
 
-  init();
+  createRadialStrokes();
 }
 
 function setupGui() {
@@ -28,7 +28,10 @@ function setupGui() {
     title: "Parameters",
   });
   pane.registerPlugin(TweakpaneEssentialsPlugin);
-  pane.addInput(settings, "arcs");
+  pane.addInput(settings, "arcs", {
+    min: 0,
+    max: 300
+  });
   pane.addInput(settings, "radius", {
     min: 0,
     max: 360,
@@ -44,32 +47,64 @@ function setupGui() {
     max: 30,
     step: 1,
   });
+  pane.addBlade({
+    view: "separator",
+  });
+  pane.addInput(settings, "arcsColor");
+  pane.addInput(settings, "gradient", {
+    view: "radiogrid",
+    groupName: "gradient",
+    size: [2, 1],
+    cells: (x) => ({
+      title: gradients[x],
+      value: gradients[x],
+    }),
+    label: "gradient",
+  });
+  pane.addInput(settings, "background");
+  pane.addBlade({
+    view: "separator",
+  });
   pane.addInput(settings, "speed", {
     min: 0,
     max: 1,
     step: 0.001,
   });
-  pane.addInput(settings, "arcsColor");
-  pane.addInput(settings, "background");
   pane.addInput(settings, "directions", {
     view: "radiogrid",
-    groupName: "scale",
+    groupName: "directions",
     size: [3, 1],
-    cells: (x, y) => ({
+    cells: (x) => ({
       title: directions[x],
       value: directions[x],
     }),
     label: "direction",
   });
+  pane.addBlade({
+    view: "separator",
+  });
+  const btn = pane.addButton({
+    title: "Download",
+  });
+
+  let count = 0;
+  btn.on("click", () => {
+    saveCanvas("radial-strokes", "png");
+  });
 
   pane.on("change", (ev) => {
-    init();
+    createRadialStrokes();
   });
 }
 
-function init() {
+function createRadialStrokes() {
   colorGen = new ColorGenerator(settings.arcsColor);
-  colors = colorGen.getTints(settings.arcs);
+  if (settings.gradient == "tints") {
+    colors = colorGen.getTints(settings.arcs);  
+  }else {
+    colors = colorGen.getShades(settings.arcs);
+  }
+  
 
   gap = random(settings.gap.min, settings.gap.max);
 
