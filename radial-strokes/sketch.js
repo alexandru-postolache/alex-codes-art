@@ -15,12 +15,16 @@ let directions = ["left", "right", "both"];
 let curves = [];
 
 function setup() {
-  createCanvas(windowWidth, windowHeight);
+  createCanvas(window.innerWidth, window.innerHeight);
   pixelDensity(4);
 
   setupGui();
 
   createRadialStrokes();
+}
+
+function windowResized() {
+  resizeCanvas(window.innerWidth, window.innerHeight);
 }
 
 function setupGui() {
