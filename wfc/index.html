@@ -16,6 +16,64 @@
 
     <div id="canvas-wrapper">
       <div id="canvas-container"></div>
+
+      <div class="controls">
+        <div class="controls-row">
+          <button id="btn-play" title="Play">&#9654; Play</button>
+          <button id="btn-pause" title="Pause" disabled>&#9646;&#9646; Pause</button>
+          <button id="btn-step" title="Step">&#9197; Step</button>
+          <button id="btn-reset" title="Generate New">&#8635; New</button>
+          <button id="btn-save" title="Save Image">&#128190; Save</button>
+          <label class="control-label">Speed
+            <input type="range" id="speed" min="1" max="20" value="5">
+          </label>
+        </div>
+        <div class="controls-row">
+          <span class="control-label">Size:</span>
+          <label class="control-label">W
+            <select id="grid-width">
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
+              <option value="9">9</option>
+              <option value="10">10</option>
+              <option value="12">12</option>
+              <option value="14">14</option>
+              <option value="16" selected>16</option>
+            </select>
+          </label>
+          <label class="control-label">H
+            <select id="grid-height">
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
+              <option value="9">9</option>
+              <option value="10">10</option>
+              <option value="12">12</option>
+              <option value="14">14</option>
+              <option value="16" selected>16</option>
+            </select>
+          </label>
+        </div>
+        <div class="controls-row">
+          <div id="tile-picker-grid"></div>
+          <button id="btn-deselect" class="picker-btn" disabled>Deselect</button>
+        </div>
+        <div class="controls-row controls-toggles">
+          <label class="control-label toggle">
+            <input type="checkbox" id="show-entropy"> Entropy Heatmap
+          </label>
+          <label class="control-label toggle">
+            <input type="checkbox" id="debug-view"> Debug View
+        </label>
+        <label class="control-label toggle">
+          <input type="checkbox" id="show-grid" checked> Grid Lines
+          </label>
+        </div>
+      </div>
+
       <div id="info-panel">
         <p class="info-placeholder">Hover over a cell to see its state</p>
       </div>
@@ -29,8 +87,63 @@
         <button class="tileset-btn" data-tileset="custom">Custom</button>
       </div>
 
+      <div class="example-atlases">
+        <span class="picker-label">Examples:</span>
+        <div class="atlas-thumb" data-atlas="wang2e" title="2-Edge (4x4, 16 tiles)">
+          <img alt="2-Edge Atlas">
+          <span>2-Edge</span>
+        </div>
+        <div class="atlas-thumb" data-atlas="wang2c" title="2-Corner (4x4, 16 tiles)">
+          <img alt="2-Corner Atlas">
+          <span>2-Corner</span>
+        </div>
+        <div class="atlas-thumb" data-atlas="wang3e" title="3-Edge (9x9, 81 tiles)">
+          <img alt="3-Edge Atlas">
+          <span>3-Edge</span>
+        </div>
+        <div class="atlas-thumb" data-atlas="wang3c" title="3-Corner (9x9, 81 tiles)">
+          <img alt="3-Corner Atlas">
+          <span>3-Corner</span>
+        </div>
+      </div>
+
       <!-- Custom tileset editor -->
       <div id="custom-editor" hidden>
+        <div class="custom-import-section">
+          <div class="custom-upload-row">
+            <label class="upload-label">
+              <span class="upload-btn-text wang-btn">Import Wang 2-Edge Atlas</span>
+              <input type="file" id="wang-upload" accept="image/*" hidden>
+            </label>
+            <span class="upload-hint">Upload a 4&times;4 tileset image &mdash; edges auto-configured</span>
+          </div>
+          <div class="custom-upload-row">
+            <label class="upload-label">
+              <span class="upload-btn-text wang-btn">Import Wang 2-Corner Atlas</span>
+              <input type="file" id="wang-corner-upload" accept="image/*" hidden>
+            </label>
+            <span class="upload-hint">Upload a 4&times;4 or 16&times;1 tileset &mdash; corners auto-configured</span>
+          </div>
+          <div class="custom-upload-row">
+            <label class="upload-label">
+              <span class="upload-btn-text wang-btn">Import Wang 3-Edge Atlas</span>
+              <input type="file" id="wang-3e-upload" accept="image/*" hidden>
+            </label>
+            <span class="upload-hint">Upload a 9&times;9 tileset image &mdash; 81 tiles, 3 edge colors</span>
+          </div>
+          <div class="custom-upload-row">
+            <label class="upload-label">
+              <span class="upload-btn-text wang-btn">Import Wang 3-Corner Atlas</span>
+              <input type="file" id="wang-3c-upload" accept="image/*" hidden>
+            </label>
+            <span class="upload-hint">Upload a 9&times;9 tileset image &mdash; 81 tiles, 3 corner colors</span>
+          </div>
+          <div class="wang-preview-row" id="wang-preview" hidden>
+            <img id="wang-preview-img" alt="Wang atlas preview">
+            <span class="wang-preview-label">16 tiles extracted with edge constraints</span>
+          </div>
+        </div>
+        <div class="import-divider"><span>or upload individual tiles</span></div>
         <div class="custom-upload-row">
           <label class="upload-label">
             <span class="upload-btn-text">+ Upload Tiles</span>
@@ -42,35 +155,6 @@
           <p class="editor-empty">Upload tile images to get started</p>
         </div>
         <button id="btn-apply-custom" class="apply-btn">Apply &amp; Reset</button>
-      </div>
-    </div>
-
-    <!-- Tile picker for manual placement -->
-    <div id="tile-picker">
-      <div class="picker-header">
-        <span class="picker-label">Place tiles:</span>
-        <button id="btn-deselect" class="picker-btn" disabled>Deselect</button>
-      </div>
-      <div id="tile-picker-grid"></div>
-    </div>
-
-    <div class="controls">
-      <div class="controls-row">
-        <button id="btn-play" title="Play">&#9654; Play</button>
-        <button id="btn-pause" title="Pause" disabled>&#9646;&#9646; Pause</button>
-        <button id="btn-step" title="Step">&#9197; Step</button>
-        <button id="btn-reset" title="Generate New">&#8635; New</button>
-      </div>
-      <div class="controls-row">
-        <label class="control-label">Speed
-          <input type="range" id="speed" min="1" max="20" value="5">
-        </label>
-        <label class="control-label toggle">
-          <input type="checkbox" id="show-entropy"> Entropy Heatmap
-        </label>
-        <label class="control-label toggle">
-          <input type="checkbox" id="debug-view"> Debug View
-        </label>
       </div>
     </div>
 
@@ -111,6 +195,7 @@
     </article>
   </div>
 
+  <script src="atlases.js"></script>
   <script src="sketch.js"></script>
 </body>
 </html>

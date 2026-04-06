@@ -18,27 +18,144 @@ const PIPES_TILES = [
   { name: 'cross',      edges: [1,1,1,1], weight: 1  },
 ];
 
+// Wang 2-edge tileset: canonical 4x4 layout
+// Tile index = N*1 + E*2 + S*4 + W*8, edges from bits
+const WANG_2E_LAYOUT = [
+  [ 4,  6, 14, 12],
+  [ 5,  7, 15, 13],
+  [ 1,  3, 11,  9],
+  [ 0,  2, 10,  8]
+];
+
+function wangEdges(idx) {
+  return [
+    (idx >> 0) & 1, // top (N)
+    (idx >> 1) & 1, // right (E)
+    (idx >> 2) & 1, // bottom (S)
+    (idx >> 3) & 1  // left (W)
+  ];
+}
+
+// Wang 2-corner tileset: canonical 4x4 atlas layout
+// Tile index = NE*1 + SE*2 + SW*4 + NW*8, corners from bits
+const WANG_2C_LAYOUT = [
+  [ 4,  3, 14,  6],
+  [10,  7, 15, 13],
+  [ 1,  9, 11, 12],
+  [ 0,  2,  5,  8]
+];
+
+function wangCorners(idx) {
+  return [
+    (idx >> 0) & 1, // NE
+    (idx >> 1) & 1, // SE
+    (idx >> 2) & 1, // SW
+    (idx >> 3) & 1  // NW
+  ];
+}
+
+// Wang 3-edge tileset: 9x9 atlas layout (81 tiles, 3 edge colors)
+// Tile index = N*1 + E*3 + S*9 + W*27, edges from base-3 digits
+const WANG_3E_LAYOUT = [
+  [18, 21, 48, 45, 24, 75, 51, 78, 72],
+  [20, 23, 50, 47, 26, 77, 53, 80, 74],
+  [11, 14, 41, 38, 17, 68, 44, 71, 65],
+  [19, 22, 49, 46, 25, 76, 52, 79, 73],
+  [ 2,  5, 32, 29,  8, 59, 35, 62, 56],
+  [ 9, 12, 39, 36, 15, 66, 42, 69, 63],
+  [10, 13, 40, 37, 16, 67, 43, 70, 64],
+  [ 1,  4, 31, 28,  7, 58, 34, 61, 55],
+  [ 0,  3, 30, 27,  6, 57, 33, 60, 54],
+];
+
+function wang3eEdges(idx) {
+  return [
+    idx % 3,                    // N
+    Math.floor(idx / 3) % 3,    // E
+    Math.floor(idx / 9) % 3,    // S
+    Math.floor(idx / 27) % 3    // W
+  ];
+}
+
+// Wang 3-corner tileset: 9x9 atlas layout (81 tiles, 3 corner colors)
+// Tile index = NE*1 + SE*3 + SW*9 + NW*27, corners from base-3 digits
+const WANG_3C_LAYOUT = [
+  [58, 43, 47, 60, 24, 20, 61, 49, 38],
+  [10, 35, 75, 11, 56, 57, 17, 73, 30],
+  [45,  5, 70, 48, 12, 16, 50, 63,  7],
+  [78, 22, 44, 79, 52, 53, 76, 42, 26],
+  [65, 55, 32, 71, 80, 77, 64, 29, 59],
+  [39,  9,  4, 41, 68, 67, 36,  3, 13],
+  [34, 51, 19, 31, 40, 37, 33, 25, 46],
+  [ 8, 74, 54,  1, 28, 27,  2, 62, 72],
+  [23, 66, 15, 18,  0,  6, 21, 14, 69],
+];
+
+function wang3cCorners(idx) {
+  return [
+    idx % 3,                    // NE
+    Math.floor(idx / 3) % 3,    // SE
+    Math.floor(idx / 9) % 3,    // SW
+    Math.floor(idx / 27) % 3    // NW
+  ];
+}
+
 // --- Active Tile Definitions (mutable) ---
 let TILES = [];
 let currentTilesetName = 'pipes';
+let cornerMode = false;
 
-// Direction offsets: [dx, dy] for top, right, bottom, left
-const DIR_OFFSET = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+// Direction offsets: 0-3 cardinal, 4-7 diagonal
+// top, right, bottom, left, top-right, bottom-right, bottom-left, top-left
+const DIR_OFFSET = [[0,-1], [1,0], [0,1], [-1,0], [1,-1], [1,1], [-1,1], [-1,-1]];
 const DIR_NAMES = ['top', 'right', 'bottom', 'left'];
+
+// Corner indices: NE=0, SE=1, SW=2, NW=3
+// For each of the 8 directions, which corner pairs must match: [myCorner, theirCorner]
+const CORNER_RULES = [
+  [[3, 2], [0, 1]],  // 0 top: my NW==their SW, my NE==their SE
+  [[0, 3], [1, 2]],  // 1 right: my NE==their NW, my SE==their SW
+  [[2, 3], [1, 0]],  // 2 bottom: my SW==their NW, my SE==their NE
+  [[3, 0], [2, 1]],  // 3 left: my NW==their NE, my SW==their SE
+  [[0, 2]],           // 4 top-right: my NE==their SW
+  [[1, 3]],           // 5 bottom-right: my SE==their NW
+  [[2, 0]],           // 6 bottom-left: my SW==their NE
+  [[3, 1]],           // 7 top-left: my NW==their SE
+];
 
 // Precompute valid neighbors: validNeighbors[dir][tileIdx] = Set of compatible tile indices
 let validNeighbors = [];
 
 function precomputeAdjacency() {
+  let numDirs = cornerMode ? 8 : 4;
   validNeighbors = [];
-  for (let d = 0; d < 4; d++) {
+
+  for (let d = 0; d < numDirs; d++) {
     validNeighbors[d] = [];
-    let opp = (d + 2) % 4;
-    for (let i = 0; i < TILES.length; i++) {
-      validNeighbors[d][i] = new Set();
-      for (let j = 0; j < TILES.length; j++) {
-        if (String(TILES[i].edges[d]) === String(TILES[j].edges[opp])) {
-          validNeighbors[d][i].add(j);
+
+    if (cornerMode) {
+      let rules = CORNER_RULES[d];
+      for (let i = 0; i < TILES.length; i++) {
+        validNeighbors[d][i] = new Set();
+        for (let j = 0; j < TILES.length; j++) {
+          let valid = true;
+          for (let [myC, theirC] of rules) {
+            if (String(TILES[i].corners[myC]) !== String(TILES[j].corners[theirC])) {
+              valid = false;
+              break;
+            }
+          }
+          if (valid) validNeighbors[d][i].add(j);
+        }
+      }
+    } else {
+      let opp = (d + 2) % 4;
+      for (let i = 0; i < TILES.length; i++) {
+        validNeighbors[d][i] = new Set();
+        for (let j = 0; j < TILES.length; j++) {
+          if (String(TILES[i].edges[d]) === String(TILES[j].edges[opp])) {
+            validNeighbors[d][i].add(j);
+          }
         }
       }
     }
@@ -46,11 +163,22 @@ function precomputeAdjacency() {
 }
 
 // --- Grid Configuration ---
-const GRID_COLS = 16;
-const GRID_ROWS = 16;
-const CELL_SIZE = 36;
-const CANVAS_W = GRID_COLS * CELL_SIZE;
-const CANVAS_H = GRID_ROWS * CELL_SIZE;
+let GRID_COLS = 16;
+let GRID_ROWS = 16;
+const MAX_CANVAS = 576;
+let CELL_SIZE = Math.floor(MAX_CANVAS / GRID_COLS);
+let CANVAS_W = GRID_COLS * CELL_SIZE;
+let CANVAS_H = GRID_ROWS * CELL_SIZE;
+
+function updateGridSize(cols, rows) {
+  GRID_COLS = cols;
+  GRID_ROWS = rows;
+  CELL_SIZE = Math.floor(MAX_CANVAS / Math.max(cols, rows));
+  CANVAS_W = GRID_COLS * CELL_SIZE;
+  CANVAS_H = GRID_ROWS * CELL_SIZE;
+  initGrid();
+  resizeCanvas(CANVAS_W, CANVAS_H);
+}
 
 // --- Colors ---
 const COL_BG       = [13, 13, 26];
@@ -86,6 +214,7 @@ let autoPlayTimer = 0;
 // --- UI State ---
 let showEntropy = false;
 let debugView = false;
+let showGrid = true;
 let hoveredCell = null;
 
 // --- Manual Placement ---
@@ -209,12 +338,13 @@ function findLowestEntropy() {
 function propagate(startX, startY) {
   let stack = [[startX, startY]];
   let affected = new Map();
+  let numDirs = cornerMode ? 8 : 4;
 
   while (stack.length > 0) {
     let [cx, cy] = stack.pop();
     let cell = grid[cy][cx];
 
-    for (let d = 0; d < 4; d++) {
+    for (let d = 0; d < numDirs; d++) {
       let nx = cx + DIR_OFFSET[d][0];
       let ny = cy + DIR_OFFSET[d][1];
       if (nx < 0 || nx >= GRID_COLS || ny < 0 || ny >= GRID_ROWS) continue;
@@ -296,14 +426,18 @@ function loadTileset(name) {
   selectedTileIdx = -1;
 
   if (name === 'pipes') {
+    cornerMode = false;
     TILES = PIPES_TILES.map(t => ({ ...t, img: null }));
   } else if (name === 'custom') {
+    // cornerMode is set by the import function that populated customTileData
     if (customTileData.length === 0) {
+      cornerMode = false;
       TILES = [{ name: 'empty', edges: [0,0,0,0], weight: 1, img: null }];
     } else {
       TILES = customTileData.map(t => ({
         name: t.name,
-        edges: [...t.edges],
+        edges: t.edges ? [...t.edges] : [0,0,0,0],
+        corners: t.corners ? [...t.corners] : undefined,
         weight: t.weight,
         img: t.img
       }));
@@ -368,20 +502,11 @@ function buildEdgeEditor() {
     return;
   }
 
+  let isCorner = customTileData.some(t => t.corners);
+
   customTileData.forEach((tile, idx) => {
     let card = document.createElement('div');
-    card.className = 'edge-card';
-
-    // Edge inputs positioned around the image
-    let topInput = edgeInput(tile.edges[0], val => { tile.edges[0] = val; });
-    let rightInput = edgeInput(tile.edges[1], val => { tile.edges[1] = val; });
-    let bottomInput = edgeInput(tile.edges[2], val => { tile.edges[2] = val; });
-    let leftInput = edgeInput(tile.edges[3], val => { tile.edges[3] = val; });
-
-    topInput.classList.add('edge-top');
-    rightInput.classList.add('edge-right');
-    bottomInput.classList.add('edge-bottom');
-    leftInput.classList.add('edge-left');
+    card.className = isCorner ? 'edge-card corner-card' : 'edge-card';
 
     let imgEl = document.createElement('img');
     imgEl.src = tile.dataUrl;
@@ -390,6 +515,38 @@ function buildEdgeEditor() {
     let imgWrap = document.createElement('div');
     imgWrap.className = 'edge-card-center';
     imgWrap.appendChild(imgEl);
+
+    if (isCorner) {
+      // Corner inputs: NE=0, SE=1, SW=2, NW=3
+      let nwInput = edgeInput(tile.corners[3], val => { tile.corners[3] = val; });
+      let neInput = edgeInput(tile.corners[0], val => { tile.corners[0] = val; });
+      let swInput = edgeInput(tile.corners[2], val => { tile.corners[2] = val; });
+      let seInput = edgeInput(tile.corners[1], val => { tile.corners[1] = val; });
+      nwInput.classList.add('corner-nw');
+      neInput.classList.add('corner-ne');
+      swInput.classList.add('corner-sw');
+      seInput.classList.add('corner-se');
+      card.appendChild(nwInput);
+      card.appendChild(neInput);
+      card.appendChild(imgWrap);
+      card.appendChild(swInput);
+      card.appendChild(seInput);
+    } else {
+      // Edge inputs: top=0, right=1, bottom=2, left=3
+      let topInput = edgeInput(tile.edges[0], val => { tile.edges[0] = val; });
+      let rightInput = edgeInput(tile.edges[1], val => { tile.edges[1] = val; });
+      let bottomInput = edgeInput(tile.edges[2], val => { tile.edges[2] = val; });
+      let leftInput = edgeInput(tile.edges[3], val => { tile.edges[3] = val; });
+      topInput.classList.add('edge-top');
+      rightInput.classList.add('edge-right');
+      bottomInput.classList.add('edge-bottom');
+      leftInput.classList.add('edge-left');
+      card.appendChild(topInput);
+      card.appendChild(leftInput);
+      card.appendChild(imgWrap);
+      card.appendChild(rightInput);
+      card.appendChild(bottomInput);
+    }
 
     let meta = document.createElement('div');
     meta.className = 'edge-card-meta';
@@ -424,13 +581,7 @@ function buildEdgeEditor() {
     meta.appendChild(weightLabel);
     meta.appendChild(removeBtn);
 
-    card.appendChild(topInput);
-    card.appendChild(leftInput);
-    card.appendChild(imgWrap);
-    card.appendChild(rightInput);
-    card.appendChild(bottomInput);
     card.appendChild(meta);
-
     container.appendChild(card);
   });
 }
@@ -462,6 +613,225 @@ function applyCustomTileset() {
   loadTileset('custom');
 }
 
+function handleWangImport(file) {
+  let reader = new FileReader();
+  reader.onload = function(e) {
+    let atlasDataUrl = e.target.result;
+    loadImage(atlasDataUrl, function(atlas) {
+      let tileW = Math.floor(atlas.width / 4);
+      let tileH = Math.floor(atlas.height / 4);
+
+      customTileData = [];
+
+      // We'll collect all 16 tiles indexed by their Wang index
+      // then sort by index for a clean ordering
+      let tilesByIdx = [];
+
+      for (let row = 0; row < 4; row++) {
+        for (let col = 0; col < 4; col++) {
+          let wangIdx = WANG_2E_LAYOUT[row][col];
+          let edges = wangEdges(wangIdx);
+
+          // Extract sub-tile
+          let subImg = atlas.get(col * tileW, row * tileH, tileW, tileH);
+
+          // Render to a temporary graphics to get a clean dataUrl
+          let pg = createGraphics(tileW, tileH);
+          pg.image(subImg, 0, 0, tileW, tileH);
+          let dataUrl = pg.canvas.toDataURL();
+          pg.remove();
+
+          tilesByIdx.push({
+            wangIdx,
+            name: `wang-${wangIdx}`,
+            edges: edges,
+            weight: 1,
+            img: subImg,
+            dataUrl: dataUrl
+          });
+        }
+      }
+
+      // Sort by wang index for consistent ordering
+      tilesByIdx.sort((a, b) => a.wangIdx - b.wangIdx);
+      customTileData = tilesByIdx;
+
+      // Show atlas preview
+      let preview = document.getElementById('wang-preview');
+      preview.hidden = false;
+      document.getElementById('wang-preview-img').src = atlasDataUrl;
+
+      cornerMode = false;
+
+      // Build edge editor and auto-apply
+      buildEdgeEditor();
+      applyCustomTileset();
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function handleWangCornerImport(file) {
+  let reader = new FileReader();
+  reader.onload = function(e) {
+    let atlasDataUrl = e.target.result;
+    loadImage(atlasDataUrl, function(atlas) {
+      // Support both 4x4 grid and 16x1 strip
+      let cols, rows;
+      if (atlas.width > atlas.height * 2) {
+        cols = 16; rows = 1;
+      } else {
+        cols = 4; rows = 4;
+      }
+      let tileW = Math.floor(atlas.width / cols);
+      let tileH = Math.floor(atlas.height / rows);
+
+      customTileData = [];
+      let tilesByIdx = [];
+
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          let wangIdx;
+          if (rows === 1) {
+            wangIdx = col;
+          } else {
+            wangIdx = WANG_2C_LAYOUT[row][col];
+          }
+          let corners = wangCorners(wangIdx);
+
+          let subImg = atlas.get(col * tileW, row * tileH, tileW, tileH);
+          let pg = createGraphics(tileW, tileH);
+          pg.image(subImg, 0, 0, tileW, tileH);
+          let dataUrl = pg.canvas.toDataURL();
+          pg.remove();
+
+          tilesByIdx.push({
+            wangIdx,
+            name: `wang-c${wangIdx}`,
+            corners: corners,
+            edges: null,
+            weight: 1,
+            img: subImg,
+            dataUrl: dataUrl
+          });
+        }
+      }
+
+      tilesByIdx.sort((a, b) => a.wangIdx - b.wangIdx);
+      customTileData = tilesByIdx;
+      cornerMode = true;
+
+      // Show atlas preview
+      let preview = document.getElementById('wang-preview');
+      preview.hidden = false;
+      document.getElementById('wang-preview-img').src = atlasDataUrl;
+
+      buildEdgeEditor();
+      applyCustomTileset();
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function handleWang3eImport(file) {
+  let reader = new FileReader();
+  reader.onload = function(e) {
+    let atlasDataUrl = e.target.result;
+    loadImage(atlasDataUrl, function(atlas) {
+      let tileW = Math.floor(atlas.width / 9);
+      let tileH = Math.floor(atlas.height / 9);
+
+      customTileData = [];
+      let tilesByIdx = [];
+
+      for (let row = 0; row < 9; row++) {
+        for (let col = 0; col < 9; col++) {
+          let wangIdx = WANG_3E_LAYOUT[row][col];
+          let edges = wang3eEdges(wangIdx);
+
+          let subImg = atlas.get(col * tileW, row * tileH, tileW, tileH);
+          let pg = createGraphics(tileW, tileH);
+          pg.image(subImg, 0, 0, tileW, tileH);
+          let dataUrl = pg.canvas.toDataURL();
+          pg.remove();
+
+          tilesByIdx.push({
+            wangIdx,
+            name: `wang3e-${wangIdx}`,
+            edges: edges,
+            weight: 1,
+            img: subImg,
+            dataUrl: dataUrl
+          });
+        }
+      }
+
+      tilesByIdx.sort((a, b) => a.wangIdx - b.wangIdx);
+      customTileData = tilesByIdx;
+
+      let preview = document.getElementById('wang-preview');
+      preview.hidden = false;
+      document.getElementById('wang-preview-img').src = atlasDataUrl;
+      document.querySelector('.wang-preview-label').textContent = '81 tiles extracted with 3-edge constraints';
+
+      cornerMode = false;
+      buildEdgeEditor();
+      applyCustomTileset();
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function handleWang3cImport(file) {
+  let reader = new FileReader();
+  reader.onload = function(e) {
+    let atlasDataUrl = e.target.result;
+    loadImage(atlasDataUrl, function(atlas) {
+      let tileW = Math.floor(atlas.width / 9);
+      let tileH = Math.floor(atlas.height / 9);
+
+      customTileData = [];
+      let tilesByIdx = [];
+
+      for (let row = 0; row < 9; row++) {
+        for (let col = 0; col < 9; col++) {
+          let wangIdx = WANG_3C_LAYOUT[row][col];
+          let corners = wang3cCorners(wangIdx);
+
+          let subImg = atlas.get(col * tileW, row * tileH, tileW, tileH);
+          let pg = createGraphics(tileW, tileH);
+          pg.image(subImg, 0, 0, tileW, tileH);
+          let dataUrl = pg.canvas.toDataURL();
+          pg.remove();
+
+          tilesByIdx.push({
+            wangIdx,
+            name: `wang3c-${wangIdx}`,
+            corners: corners,
+            edges: null,
+            weight: 1,
+            img: subImg,
+            dataUrl: dataUrl
+          });
+        }
+      }
+
+      tilesByIdx.sort((a, b) => a.wangIdx - b.wangIdx);
+      customTileData = tilesByIdx;
+      cornerMode = true;
+
+      let preview = document.getElementById('wang-preview');
+      preview.hidden = false;
+      document.getElementById('wang-preview-img').src = atlasDataUrl;
+      document.querySelector('.wang-preview-label').textContent = '81 tiles extracted with 3-corner constraints';
+
+      buildEdgeEditor();
+      applyCustomTileset();
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
 // ============================================================
 // p5.js Setup & Draw
 // ============================================================
@@ -477,6 +847,14 @@ function setup() {
   initGrid();
   bindControls();
   buildTilePicker();
+
+  // Set example atlas thumbnail sources from embedded data
+  document.querySelectorAll('.atlas-thumb').forEach(thumb => {
+    let type = thumb.dataset.atlas;
+    if (EXAMPLE_ATLASES[type]) {
+      thumb.querySelector('img').src = EXAMPLE_ATLASES[type];
+    }
+  });
 }
 
 function draw() {
@@ -492,10 +870,12 @@ function draw() {
     }
   }
 
-  stroke(COL_GRID);
-  strokeWeight(0.5);
-  for (let x = 0; x <= GRID_COLS; x++) line(x * CELL_SIZE, 0, x * CELL_SIZE, CANVAS_H);
-  for (let y = 0; y <= GRID_ROWS; y++) line(0, y * CELL_SIZE, CANVAS_W, y * CELL_SIZE);
+  if (showGrid) {
+    stroke(COL_GRID);
+    strokeWeight(0.5);
+    for (let x = 0; x <= GRID_COLS; x++) line(x * CELL_SIZE, 0, x * CELL_SIZE, CANVAS_H);
+    for (let y = 0; y <= GRID_ROWS; y++) line(0, y * CELL_SIZE, CANVAS_W, y * CELL_SIZE);
+  }
 
   drawOverlays();
   updateHover();
@@ -720,12 +1100,15 @@ function drawSuperposition(cell, px, py, size) {
   let hasImages = TILES[0] && TILES[0].img;
 
   if (hasImages) {
-    // Draw faded image previews
+    // Draw faded image previews (cap to avoid rendering 81+ images per cell)
+    const MAX_PREVIEW = 5;
+    let count = 0;
     push();
     tint(255, alpha);
     for (let opt of cell.options) {
       if (TILES[opt].img) {
         image(TILES[opt].img, px, py, size, size);
+        if (++count >= MAX_PREVIEW) break;
       }
     }
     noTint();
@@ -882,7 +1265,12 @@ function updateInfoPanel(cell) {
   if (cell.collapsed) {
     let manual = manualCells.has(`${cell.x},${cell.y}`);
     html += ` &nbsp; <span class="info-label">Tile:</span> <span class="info-value">${TILES[cell.tile].name}${manual ? ' (placed)' : ''}</span>`;
-    html += ` &nbsp; <span class="info-label">Edges:</span> <span class="info-value">[${TILES[cell.tile].edges.join(',')}]</span>`;
+    if (cornerMode && TILES[cell.tile].corners) {
+      let c = TILES[cell.tile].corners;
+      html += ` &nbsp; <span class="info-label">Corners:</span> <span class="info-value">NE:${c[0]} SE:${c[1]} SW:${c[2]} NW:${c[3]}</span>`;
+    } else {
+      html += ` &nbsp; <span class="info-label">Edges:</span> <span class="info-value">[${TILES[cell.tile].edges.join(',')}]</span>`;
+    }
   } else {
     let e = cell.entropy();
     html += ` &nbsp; <span class="info-label">Options:</span> <span class="info-value">${cell.options.size}/${TILES.length}</span>`;
@@ -1075,6 +1463,10 @@ function bindControls() {
     initGrid();
   });
 
+  document.getElementById('btn-save').addEventListener('click', () => {
+    saveCanvas('wfc-' + GRID_COLS + 'x' + GRID_ROWS, 'png');
+  });
+
   document.getElementById('speed').addEventListener('input', (e) => {
     animSpeed = parseInt(e.target.value);
   });
@@ -1085,6 +1477,22 @@ function bindControls() {
 
   document.getElementById('debug-view').addEventListener('change', (e) => {
     debugView = e.target.checked;
+  });
+
+  document.getElementById('show-grid').addEventListener('change', (e) => {
+    showGrid = e.target.checked;
+  });
+
+  document.getElementById('grid-width').addEventListener('change', () => {
+    autoPlay = false;
+    updateButtonStates();
+    updateGridSize(parseInt(document.getElementById('grid-width').value), parseInt(document.getElementById('grid-height').value));
+  });
+
+  document.getElementById('grid-height').addEventListener('change', () => {
+    autoPlay = false;
+    updateButtonStates();
+    updateGridSize(parseInt(document.getElementById('grid-width').value), parseInt(document.getElementById('grid-height').value));
   });
 
   // Tileset switcher
@@ -1103,8 +1511,135 @@ function bindControls() {
     }
   });
 
+  // Wang 2-edge atlas import
+  document.getElementById('wang-upload').addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+      handleWangImport(e.target.files[0]);
+      e.target.value = '';
+    }
+  });
+
+  // Wang 2-corner atlas import
+  document.getElementById('wang-corner-upload').addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+      handleWangCornerImport(e.target.files[0]);
+      e.target.value = '';
+    }
+  });
+
+  // Wang 3-edge atlas import
+  document.getElementById('wang-3e-upload').addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+      handleWang3eImport(e.target.files[0]);
+      e.target.value = '';
+    }
+  });
+
+  // Wang 3-corner atlas import
+  document.getElementById('wang-3c-upload').addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+      handleWang3cImport(e.target.files[0]);
+      e.target.value = '';
+    }
+  });
+
+  // Example atlas thumbnails
+  document.querySelectorAll('.atlas-thumb').forEach(thumb => {
+    thumb.addEventListener('click', () => {
+      let type = thumb.dataset.atlas;
+      let imgSrc = thumb.querySelector('img').src;
+
+      // Switch to custom tileset
+      document.querySelectorAll('.tileset-btn').forEach(b => b.classList.remove('active'));
+      document.querySelector('[data-tileset="custom"]').classList.add('active');
+      document.getElementById('custom-editor').hidden = false;
+      currentTilesetName = 'custom';
+
+      // Highlight active atlas
+      document.querySelectorAll('.atlas-thumb').forEach(t => t.classList.remove('active'));
+      thumb.classList.add('active');
+
+      autoPlay = false;
+      updateButtonStates();
+      loadExampleAtlas(imgSrc, type);
+    });
+  });
+
   // Apply custom tileset
   document.getElementById('btn-apply-custom').addEventListener('click', () => {
+    applyCustomTileset();
+  });
+}
+
+function loadExampleAtlas(ignored, type) {
+  let dataUrl = EXAMPLE_ATLASES[type];
+  if (!dataUrl) return;
+  loadImage(dataUrl, function(atlas) {
+    let gridN, layoutTable, edgesFn, cornersFn, namePrefix, isCorner;
+    if (type === 'wang2e') {
+      gridN = 4; layoutTable = WANG_2E_LAYOUT; edgesFn = wangEdges; namePrefix = 'wang'; isCorner = false;
+    } else if (type === 'wang2c') {
+      gridN = 4; layoutTable = WANG_2C_LAYOUT; cornersFn = wangCorners; namePrefix = 'wang-c'; isCorner = true;
+    } else if (type === 'wang3e') {
+      gridN = 9; layoutTable = WANG_3E_LAYOUT; edgesFn = wang3eEdges; namePrefix = 'wang3e'; isCorner = false;
+    } else if (type === 'wang3c') {
+      gridN = 9; layoutTable = WANG_3C_LAYOUT; cornersFn = wang3cCorners; namePrefix = 'wang3c'; isCorner = true;
+    }
+
+    let tileW = Math.floor(atlas.width / gridN);
+    let tileH = Math.floor(atlas.height / gridN);
+    let tilesByIdx = [];
+
+    for (let row = 0; row < gridN; row++) {
+      for (let col = 0; col < gridN; col++) {
+        let wangIdx = layoutTable[row][col];
+        let subImg = atlas.get(col * tileW, row * tileH, tileW, tileH);
+
+        let tile = {
+          wangIdx,
+          name: `${namePrefix}-${wangIdx}`,
+          weight: 1,
+          img: subImg,
+          dataUrl: null
+        };
+
+        if (isCorner) {
+          tile.corners = cornersFn(wangIdx);
+          tile.edges = null;
+        } else {
+          tile.edges = edgesFn(wangIdx);
+        }
+
+        tilesByIdx.push(tile);
+      }
+    }
+
+    // Generate dataUrls in a second pass (avoids tainted canvas issues)
+    for (let t of tilesByIdx) {
+      try {
+        let pg = createGraphics(tileW, tileH);
+        pg.image(t.img, 0, 0, tileW, tileH);
+        t.dataUrl = pg.canvas.toDataURL();
+        pg.remove();
+      } catch (e) {
+        // Fallback: use the atlas data URL itself
+        t.dataUrl = dataUrl;
+      }
+    }
+
+    tilesByIdx.sort((a, b) => a.wangIdx - b.wangIdx);
+    customTileData = tilesByIdx;
+    cornerMode = isCorner;
+
+    let preview = document.getElementById('wang-preview');
+    preview.hidden = false;
+    document.getElementById('wang-preview-img').src = dataUrl;
+    let totalTiles = gridN * gridN;
+    let mode = isCorner ? 'corner' : 'edge';
+    let n = gridN === 4 ? 2 : 3;
+    document.querySelector('.wang-preview-label').textContent = `${totalTiles} tiles extracted with ${n}-${mode} constraints`;
+
+    buildEdgeEditor();
     applyCustomTileset();
   });
 }
