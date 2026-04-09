@@ -324,6 +324,27 @@ h1 {
 .corner-card .corner-se { grid-area: se; }
 .corner-card .edge-card-center { grid-area: cimg; }
 
+/* Blob card variant — 3x3 grid with 8 inputs around center */
+.blob-card {
+  grid-template-areas:
+    "bnw   bn    bne"
+    "bw    bimg  be"
+    "bsw   bs    bse"
+    "meta  meta  meta" !important;
+  grid-template-columns: 32px 56px 32px !important;
+  grid-template-rows: 26px 56px 26px auto !important;
+}
+
+.blob-card .blob-nw { grid-area: bnw; }
+.blob-card .blob-n  { grid-area: bn; }
+.blob-card .blob-ne { grid-area: bne; }
+.blob-card .blob-w  { grid-area: bw; }
+.blob-card .blob-e  { grid-area: be; }
+.blob-card .blob-sw { grid-area: bsw; }
+.blob-card .blob-s  { grid-area: bs; }
+.blob-card .blob-se { grid-area: bse; }
+.blob-card .edge-card-center { grid-area: bimg; }
+
 .edge-card-center {
   grid-area: img;
 }

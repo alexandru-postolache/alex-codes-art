@@ -100,10 +100,56 @@ function wang3cCorners(idx) {
   ];
 }
 
+// Wang Blob tileset: 7x7 atlas layout (47 unique tiles, tile 0 fills 3 corners)
+// Tile index = N*1 + NE*2 + E*4 + SE*8 + S*16 + SW*32 + W*64 + NW*128
+// Constraint: corner bit requires both adjacent edge bits set
+const WANG_BLOB_LAYOUT = [
+  [  0,   4,  92, 124, 116,  80,   0],
+  [ 16,  20,  87, 223, 241,  21,  64],
+  [ 29, 117,  85,  71, 221, 125, 112],
+  [ 31, 253, 113,  28, 127, 247, 209],
+  [ 23, 199, 213,  95, 255, 245,  81],
+  [  5,  84,  93, 119, 215, 193,  17],
+  [  0,   1,   7, 197,  69,  68,  65],
+];
+
+function wangBlobBits(idx) {
+  return [
+    (idx >> 0) & 1, // N
+    (idx >> 1) & 1, // NE
+    (idx >> 2) & 1, // E
+    (idx >> 3) & 1, // SE
+    (idx >> 4) & 1, // S
+    (idx >> 5) & 1, // SW
+    (idx >> 6) & 1, // W
+    (idx >> 7) & 1  // NW
+  ];
+}
+
+function wangBlobWeight(idx) {
+  let bits = 0;
+  for (let i = 0; i < 8; i++) bits += (idx >> i) & 1;
+  if (bits === 0) return 10;
+  if (bits <= 2) return 3;
+  if (bits <= 4) return 2;
+  if (bits <= 6) return 1;
+  return 0.5;
+}
+
+// Blob adjacency rules: for each cardinal direction, pairs of [myIdx, theirIdx] into blob[] that must match
+// blob indices: 0:N 1:NE 2:E 3:SE 4:S 5:SW 6:W 7:NW
+const BLOB_RULES = [
+  [[0,4], [7,5], [1,3]],  // 0 top: N=S, NW=SW, NE=SE
+  [[2,6], [1,7], [3,5]],  // 1 right: E=W, NE=NW, SE=SW
+  [[4,0], [3,1], [5,7]],  // 2 bottom: S=N, SE=NE, SW=NW
+  [[6,2], [7,1], [5,3]],  // 3 left: W=E, NW=NE, SW=SE
+];
+
 // --- Active Tile Definitions (mutable) ---
 let TILES = [];
 let currentTilesetName = 'pipes';
 let cornerMode = false;
+let blobMode = false;
 
 // Direction offsets: 0-3 cardinal, 4-7 diagonal
 // top, right, bottom, left, top-right, bottom-right, bottom-left, top-left
@@ -127,13 +173,28 @@ const CORNER_RULES = [
 let validNeighbors = [];
 
 function precomputeAdjacency() {
-  let numDirs = cornerMode ? 8 : 4;
+  let numDirs = (cornerMode && !blobMode) ? 8 : 4;
   validNeighbors = [];
 
   for (let d = 0; d < numDirs; d++) {
     validNeighbors[d] = [];
 
-    if (cornerMode) {
+    if (blobMode) {
+      let rules = BLOB_RULES[d];
+      for (let i = 0; i < TILES.length; i++) {
+        validNeighbors[d][i] = new Set();
+        for (let j = 0; j < TILES.length; j++) {
+          let valid = true;
+          for (let [myB, theirB] of rules) {
+            if (TILES[i].blob[myB] !== TILES[j].blob[theirB]) {
+              valid = false;
+              break;
+            }
+          }
+          if (valid) validNeighbors[d][i].add(j);
+        }
+      }
+    } else if (cornerMode) {
       let rules = CORNER_RULES[d];
       for (let i = 0; i < TILES.length; i++) {
         validNeighbors[d][i] = new Set();
@@ -338,7 +399,7 @@ function findLowestEntropy() {
 function propagate(startX, startY) {
   let stack = [[startX, startY]];
   let affected = new Map();
-  let numDirs = cornerMode ? 8 : 4;
+  let numDirs = (cornerMode && !blobMode) ? 8 : 4;
 
   while (stack.length > 0) {
     let [cx, cy] = stack.pop();
@@ -427,17 +488,20 @@ function loadTileset(name) {
 
   if (name === 'pipes') {
     cornerMode = false;
+    blobMode = false;
     TILES = PIPES_TILES.map(t => ({ ...t, img: null }));
   } else if (name === 'custom') {
-    // cornerMode is set by the import function that populated customTileData
+    // cornerMode/blobMode is set by the import function that populated customTileData
     if (customTileData.length === 0) {
       cornerMode = false;
+      blobMode = false;
       TILES = [{ name: 'empty', edges: [0,0,0,0], weight: 1, img: null }];
     } else {
       TILES = customTileData.map(t => ({
         name: t.name,
-        edges: t.edges ? [...t.edges] : [0,0,0,0],
+        edges: t.edges ? [...t.edges] : (t.blob ? null : [0,0,0,0]),
         corners: t.corners ? [...t.corners] : undefined,
+        blob: t.blob ? [...t.blob] : undefined,
         weight: t.weight,
         img: t.img
       }));
@@ -503,10 +567,11 @@ function buildEdgeEditor() {
   }
 
   let isCorner = customTileData.some(t => t.corners);
+  let isBlob = customTileData.some(t => t.blob);
 
   customTileData.forEach((tile, idx) => {
     let card = document.createElement('div');
-    card.className = isCorner ? 'edge-card corner-card' : 'edge-card';
+    card.className = isBlob ? 'edge-card blob-card' : (isCorner ? 'edge-card corner-card' : 'edge-card');
 
     let imgEl = document.createElement('img');
     imgEl.src = tile.dataUrl;
@@ -516,7 +581,35 @@ function buildEdgeEditor() {
     imgWrap.className = 'edge-card-center';
     imgWrap.appendChild(imgEl);
 
-    if (isCorner) {
+    if (isBlob) {
+      // Blob: 8 values [N, NE, E, SE, S, SW, W, NW]
+      // Show as corner-card layout with edges between corners
+      let nInput  = edgeInput(tile.blob[0], val => { tile.blob[0] = val; });
+      let neInput = edgeInput(tile.blob[1], val => { tile.blob[1] = val; });
+      let eInput  = edgeInput(tile.blob[2], val => { tile.blob[2] = val; });
+      let seInput = edgeInput(tile.blob[3], val => { tile.blob[3] = val; });
+      let sInput  = edgeInput(tile.blob[4], val => { tile.blob[4] = val; });
+      let swInput = edgeInput(tile.blob[5], val => { tile.blob[5] = val; });
+      let wInput  = edgeInput(tile.blob[6], val => { tile.blob[6] = val; });
+      let nwInput = edgeInput(tile.blob[7], val => { tile.blob[7] = val; });
+      nwInput.classList.add('blob-nw');
+      nInput.classList.add('blob-n');
+      neInput.classList.add('blob-ne');
+      wInput.classList.add('blob-w');
+      eInput.classList.add('blob-e');
+      swInput.classList.add('blob-sw');
+      sInput.classList.add('blob-s');
+      seInput.classList.add('blob-se');
+      card.appendChild(nwInput);
+      card.appendChild(nInput);
+      card.appendChild(neInput);
+      card.appendChild(wInput);
+      card.appendChild(imgWrap);
+      card.appendChild(eInput);
+      card.appendChild(swInput);
+      card.appendChild(sInput);
+      card.appendChild(seInput);
+    } else if (isCorner) {
       // Corner inputs: NE=0, SE=1, SW=2, NW=3
       let nwInput = edgeInput(tile.corners[3], val => { tile.corners[3] = val; });
       let neInput = edgeInput(tile.corners[0], val => { tile.corners[0] = val; });
@@ -824,6 +917,62 @@ function handleWang3cImport(file) {
       preview.hidden = false;
       document.getElementById('wang-preview-img').src = atlasDataUrl;
       document.querySelector('.wang-preview-label').textContent = '81 tiles extracted with 3-corner constraints';
+
+      buildEdgeEditor();
+      applyCustomTileset();
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function handleWangBlobImport(file) {
+  let reader = new FileReader();
+  reader.onload = function(e) {
+    let atlasDataUrl = e.target.result;
+    loadImage(atlasDataUrl, function(atlas) {
+      let tileW = Math.floor(atlas.width / 7);
+      let tileH = Math.floor(atlas.height / 7);
+
+      customTileData = [];
+      let seen = new Set();
+      let tilesByIdx = [];
+
+      for (let row = 0; row < 7; row++) {
+        for (let col = 0; col < 7; col++) {
+          let wangIdx = WANG_BLOB_LAYOUT[row][col];
+          if (seen.has(wangIdx)) continue; // skip duplicate tile 0
+          seen.add(wangIdx);
+
+          let blob = wangBlobBits(wangIdx);
+
+          let subImg = atlas.get(col * tileW, row * tileH, tileW, tileH);
+          let pg = createGraphics(tileW, tileH);
+          pg.image(subImg, 0, 0, tileW, tileH);
+          let dataUrl = pg.canvas.toDataURL();
+          pg.remove();
+
+          tilesByIdx.push({
+            wangIdx,
+            name: `blob-${wangIdx}`,
+            blob: blob,
+            edges: null,
+            corners: null,
+            weight: wangBlobWeight(wangIdx),
+            img: subImg,
+            dataUrl: dataUrl
+          });
+        }
+      }
+
+      tilesByIdx.sort((a, b) => a.wangIdx - b.wangIdx);
+      customTileData = tilesByIdx;
+      cornerMode = false;
+      blobMode = true;
+
+      let preview = document.getElementById('wang-preview');
+      preview.hidden = false;
+      document.getElementById('wang-preview-img').src = atlasDataUrl;
+      document.querySelector('.wang-preview-label').textContent = '47 tiles extracted with blob constraints';
 
       buildEdgeEditor();
       applyCustomTileset();
@@ -1265,10 +1414,13 @@ function updateInfoPanel(cell) {
   if (cell.collapsed) {
     let manual = manualCells.has(`${cell.x},${cell.y}`);
     html += ` &nbsp; <span class="info-label">Tile:</span> <span class="info-value">${TILES[cell.tile].name}${manual ? ' (placed)' : ''}</span>`;
-    if (cornerMode && TILES[cell.tile].corners) {
+    if (blobMode && TILES[cell.tile].blob) {
+      let b = TILES[cell.tile].blob;
+      html += ` &nbsp; <span class="info-label">Blob:</span> <span class="info-value">idx ${TILES[cell.tile].name.split('-')[1]}</span>`;
+    } else if (cornerMode && TILES[cell.tile].corners) {
       let c = TILES[cell.tile].corners;
       html += ` &nbsp; <span class="info-label">Corners:</span> <span class="info-value">NE:${c[0]} SE:${c[1]} SW:${c[2]} NW:${c[3]}</span>`;
-    } else {
+    } else if (TILES[cell.tile].edges) {
       html += ` &nbsp; <span class="info-label">Edges:</span> <span class="info-value">[${TILES[cell.tile].edges.join(',')}]</span>`;
     }
   } else {
@@ -1543,6 +1695,14 @@ function bindControls() {
     }
   });
 
+  // Wang blob atlas import
+  document.getElementById('wang-blob-upload').addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+      handleWangBlobImport(e.target.files[0]);
+      e.target.value = '';
+    }
+  });
+
   // Example atlas thumbnails
   document.querySelectorAll('.atlas-thumb').forEach(thumb => {
     thumb.addEventListener('click', () => {
@@ -1576,6 +1736,8 @@ function loadExampleAtlas(ignored, type) {
   if (!dataUrl) return;
   loadImage(dataUrl, function(atlas) {
     let gridN, layoutTable, edgesFn, cornersFn, namePrefix, isCorner;
+    let isBlob = false;
+    let blobFn;
     if (type === 'wang2e') {
       gridN = 4; layoutTable = WANG_2E_LAYOUT; edgesFn = wangEdges; namePrefix = 'wang'; isCorner = false;
     } else if (type === 'wang2c') {
@@ -1584,15 +1746,21 @@ function loadExampleAtlas(ignored, type) {
       gridN = 9; layoutTable = WANG_3E_LAYOUT; edgesFn = wang3eEdges; namePrefix = 'wang3e'; isCorner = false;
     } else if (type === 'wang3c') {
       gridN = 9; layoutTable = WANG_3C_LAYOUT; cornersFn = wang3cCorners; namePrefix = 'wang3c'; isCorner = true;
+    } else if (type === 'blob') {
+      gridN = 7; layoutTable = WANG_BLOB_LAYOUT; blobFn = wangBlobBits; namePrefix = 'blob'; isBlob = true;
     }
 
     let tileW = Math.floor(atlas.width / gridN);
     let tileH = Math.floor(atlas.height / gridN);
     let tilesByIdx = [];
+    let seen = new Set();
 
     for (let row = 0; row < gridN; row++) {
       for (let col = 0; col < gridN; col++) {
         let wangIdx = layoutTable[row][col];
+        if (isBlob && seen.has(wangIdx)) continue; // blob has duplicate tile 0
+        seen.add(wangIdx);
+
         let subImg = atlas.get(col * tileW, row * tileH, tileW, tileH);
 
         let tile = {
@@ -1603,7 +1771,12 @@ function loadExampleAtlas(ignored, type) {
           dataUrl: null
         };
 
-        if (isCorner) {
+        if (isBlob) {
+          tile.blob = blobFn(wangIdx);
+          tile.edges = null;
+          tile.corners = null;
+          tile.weight = wangBlobWeight(wangIdx);
+        } else if (isCorner) {
           tile.corners = cornersFn(wangIdx);
           tile.edges = null;
         } else {
@@ -1622,7 +1795,6 @@ function loadExampleAtlas(ignored, type) {
         t.dataUrl = pg.canvas.toDataURL();
         pg.remove();
       } catch (e) {
-        // Fallback: use the atlas data URL itself
         t.dataUrl = dataUrl;
       }
     }
@@ -1630,14 +1802,21 @@ function loadExampleAtlas(ignored, type) {
     tilesByIdx.sort((a, b) => a.wangIdx - b.wangIdx);
     customTileData = tilesByIdx;
     cornerMode = isCorner;
+    blobMode = isBlob;
 
     let preview = document.getElementById('wang-preview');
     preview.hidden = false;
     document.getElementById('wang-preview-img').src = dataUrl;
-    let totalTiles = gridN * gridN;
-    let mode = isCorner ? 'corner' : 'edge';
-    let n = gridN === 4 ? 2 : 3;
-    document.querySelector('.wang-preview-label').textContent = `${totalTiles} tiles extracted with ${n}-${mode} constraints`;
+    let totalTiles = tilesByIdx.length;
+    let label;
+    if (isBlob) {
+      label = `${totalTiles} tiles extracted with blob constraints`;
+    } else {
+      let mode = isCorner ? 'corner' : 'edge';
+      let n = gridN === 4 ? 2 : 3;
+      label = `${totalTiles} tiles extracted with ${n}-${mode} constraints`;
+    }
+    document.querySelector('.wang-preview-label').textContent = label;
 
     buildEdgeEditor();
     applyCustomTileset();

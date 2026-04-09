@@ -105,6 +105,10 @@
           <img alt="3-Corner Atlas">
           <span>3-Corner</span>
         </div>
+        <div class="atlas-thumb" data-atlas="blob" title="Blob (7x7, 47 tiles)">
+          <img alt="Blob Atlas">
+          <span>Blob</span>
+        </div>
       </div>
 
       <!-- Custom tileset editor -->
@@ -137,6 +141,13 @@
               <input type="file" id="wang-3c-upload" accept="image/*" hidden>
             </label>
             <span class="upload-hint">Upload a 9&times;9 tileset image &mdash; 81 tiles, 3 corner colors</span>
+          </div>
+          <div class="custom-upload-row">
+            <label class="upload-label">
+              <span class="upload-btn-text wang-btn">Import Wang Blob Atlas</span>
+              <input type="file" id="wang-blob-upload" accept="image/*" hidden>
+            </label>
+            <span class="upload-hint">Upload a 7&times;7 tileset image &mdash; 47 blob tiles</span>
           </div>
           <div class="wang-preview-row" id="wang-preview" hidden>
             <img id="wang-preview-img" alt="Wang atlas preview">
@@ -191,6 +202,7 @@
 
       <section class="closing">
         <blockquote>Wave Function Collapse isn't really about tiles or grids. It's about watching decisions shape a system — one constraint at a time.</blockquote>
+        <p style="text-align:center;margin-top:1.5rem"><a href="wfc3d.html" style="color:#6c5ce7">Try the 3D version &rarr;</a></p>
       </section>
     </article>
   </div>

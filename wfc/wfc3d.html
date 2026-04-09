@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3D Wave Function Collapse</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.11.7/lib/p5.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>3D Wave Function Collapse</h1>
+      <p class="subtitle">Pipes grow through a cube, one decision at a time. Drag to orbit, scroll to zoom.</p>
+    </header>
+
+    <div id="canvas-wrapper">
+      <div id="canvas-container"></div>
+
+      <div class="controls">
+        <div class="controls-row">
+          <button id="btn-play" title="Play">&#9654; Play</button>
+          <button id="btn-pause" title="Pause" disabled>&#9646;&#9646; Pause</button>
+          <button id="btn-step" title="Step">&#9197; Step</button>
+          <button id="btn-reset" title="Generate New">&#8635; New</button>
+          <button id="btn-save" title="Save Image">&#128190; Save</button>
+          <label class="control-label">Speed
+            <input type="range" id="speed" min="1" max="20" value="5">
+          </label>
+        </div>
+        <div class="controls-row">
+          <span class="picker-label">Tileset:</span>
+          <button class="tileset-btn active" data-tileset3d="pipes">Pipes</button>
+          <button class="tileset-btn" data-tileset3d="building">Building</button>
+        </div>
+        <div class="controls-row">
+          <label class="control-label">Grid
+            <select id="grid-size">
+              <option value="3">3&times;3&times;3</option>
+              <option value="4">4&times;4&times;4</option>
+              <option value="5" selected>5&times;5&times;5</option>
+              <option value="6">6&times;6&times;6</option>
+              <option value="7">7&times;7&times;7</option>
+              <option value="8">8&times;8&times;8</option>
+            </select>
+          </label>
+          <label class="control-label">Slice
+            <input type="range" id="slice" min="0" max="5" value="0">
+            <span id="slice-label">All</span>
+          </label>
+        </div>
+        <div class="controls-row controls-toggles">
+          <label class="control-label toggle">
+            <input type="checkbox" id="show-uncollapsed" checked> Show Uncollapsed
+          </label>
+          <label class="control-label toggle">
+            <input type="checkbox" id="show-grid"> Grid Lines
+          </label>
+        </div>
+      </div>
+
+      <div id="info-panel">
+        <p id="info-text" class="info-placeholder">Click Play or Step to start</p>
+      </div>
+    </div>
+
+    <p style="text-align:center;margin-bottom:1.5rem"><a href="index.html" style="color:#6c5ce7">&larr; Back to 2D</a></p>
+
+    <article>
+      <section>
+        <h2>3D Wave Function Collapse</h2>
+        <p>The same WFC algorithm, now in three dimensions. Each cube cell connects to 6 neighbors. Face types must match between adjacent cells. Switch between <em>Pipes</em> (connected tube networks) and <em>Building</em> (procedural architecture with walls, floors, and roofs).</p>
+      </section>
+      <section class="closing">
+        <blockquote>Same rules, one more axis, infinite new worlds.</blockquote>
+      </section>
+    </article>
+  </div>
+
+  <script src="wfc3d.js"></script>
+</body>
+</html>
