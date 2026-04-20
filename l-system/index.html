@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>L-System — Alex Codes Art</title>
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js"></script>
+  <style>
+    :root {
+      --bg: #40476d;
+      --surface: #383e5f;
+      --input-bg: #323855;
+      --border: rgba(255, 255, 255, 0.12);
+      --text: #f4f4f6;
+      --muted: #a8adbf;
+      --accent: #ffba06;
+      --accent-soft: #ffcc4d;
+      --white: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+    }
+    .layout {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    header {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    header h1 {
+      margin: 0 0 4px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    header p {
+      margin: 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    header a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    header a:hover { text-decoration: underline; }
+    .main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(280px, 340px) 1fr;
+      min-height: 0;
+    }
+    @media (max-width: 800px) {
+      .main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    }
+    .panel {
+      padding: 14px 16px;
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+    }
+    @media (max-width: 800px) {
+      .panel { border-right: none; border-bottom: 1px solid var(--border); max-height: 42vh; }
+    }
+    label {
+      display: block;
+      margin-top: 12px;
+      margin-bottom: 4px;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    input[type="text"], input[type="number"], textarea, select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--input-bg);
+      color: var(--text);
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+    }
+    textarea { min-height: 88px; resize: vertical; }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+    .range-val {
+      float: right;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+    button {
+      margin-top: 14px;
+      width: 100%;
+      padding: 10px 14px;
+      border: none;
+      border-radius: 6px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+      color: #40476d;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(1.05); }
+    button.secondary {
+      margin-top: 8px;
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--muted);
+    }
+    button.secondary:hover {
+      border-color: var(--accent);
+      color: var(--white);
+    }
+    .hint {
+      margin-top: 8px;
+      font-size: 0.75rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    #canvas-host {
+      position: relative;
+      min-height: 240px;
+      background: var(--bg);
+    }
+    #canvas-host canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+    .status {
+      position: absolute;
+      bottom: 10px;
+      left: 12px;
+      font-size: 11px;
+      color: var(--muted);
+      pointer-events: none;
+      text-shadow: 0 1px 2px var(--bg);
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <header>
+      <h1>L-System playground</h1>
+      <p><a href="https://alexcodesart.com" target="_blank" rel="noopener">alexcodesart.com</a> — tweak rules and watch the curve draw itself.</p>
+    </header>
+    <div class="main">
+      <aside class="panel">
+        <label for="preset">Preset</label>
+        <select id="preset"></select>
+
+        <label for="axiom">Axiom</label>
+        <input type="text" id="axiom" spellcheck="false" />
+
+        <label for="rules">Rules (one per line: <code style="color:var(--accent)">F=FF+[+F-F-F]</code>)</label>
+        <textarea id="rules" spellcheck="false"></textarea>
+
+        <div class="row">
+          <div>
+            <label for="iter">Iterations <span class="range-val" id="iter-val"></span></label>
+            <input type="range" id="iter" min="0" max="12" value="4" />
+          </div>
+          <div>
+            <label for="angle">Angle (°)</label>
+            <input type="number" id="angle" min="0" max="180" value="25" step="0.5" />
+          </div>
+        </div>
+
+        <label for="speed">Draw speed <span class="range-val" id="speed-val"></span></label>
+        <input type="range" id="speed" min="1" max="200" value="40" />
+
+        <button type="button" id="apply">Apply &amp; redraw</button>
+        <button type="button" id="reset-anim" class="secondary">Reset animation</button>
+
+        <p class="hint">
+          <strong>Drawing:</strong> <code>F</code> and <code>G</code> move forward with pen down;
+          <code>f</code> / <code>g</code> move without drawing. <code>+</code> / <code>-</code> turn;
+          <code>[</code> save position, <code>]</code> restore. Other symbols expand only.
+        </p>
+      </aside>
+      <div id="canvas-host">
+        <span class="status" id="status"></span>
+      </div>
+    </div>
+  </div>
+  <script src="sketch.js"></script>
+</body>
+</html>
