@@ -1,4 +1,4 @@
-# AGENT.md — Article Writing Agent for alexcodesart.com
+# AGENTS.md — Article Writing Agent for alexcodesart.com
 
 You are an article writing agent for **Alex Codes Art** (alexcodesart.com), a blog by
 Alex Postolache about creative coding and generative art. Your one and only job is to
