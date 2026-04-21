@@ -13,19 +13,10 @@ By the end of this article, you will:
 
 Want to stay updated with new articles? Just hit subscribe — it's completely free, and I'd really appreciate the support. Thanks a lot!
 
-## Sign up for Alex Codes Art
-
-Art with code for curious minds
-
-Subscribe
-
-Email sent! Check your inbox to complete your signup.
-
-No spam. Unsubscribe anytime.
+/signup
 
 Let's dive in.
 
----
 
 ## What Is an L-System?
 
@@ -33,7 +24,6 @@ An **L-system** (Lindenmayer system) is a way to describe growth with **parallel
 
 Aristid Lindenmayer originally invented this to model plants. For us, it's pure creative coding: a few characters of "DNA" can become an entire drawing. You're not placing every twig — you're designing the **system** that grows the twigs for you.
 
----
 
 ## What's in the `l-system` Folder?
 
@@ -41,7 +31,6 @@ The companion code lives in the **`l-system`** folder (that's the folder name in
 
 The playground loads [p5.js](https://p5js.org/?ref=alexcodesart.com) from a CDN, gives you a preset dropdown, fields for axiom and rules, sliders for iterations and draw speed, and a status line that shows segment count and string length. The canvas resizes with the window, and the curve recenters itself automatically.
 
----
 
 ## Breaking Down the Turtle Alphabet
 
@@ -56,7 +45,6 @@ After we expand the L-system, we don't draw the raw string as text — we **inte
 
 Any other symbols (for example `X` or `Y` in some presets) exist only for rewriting — they never move the turtle. That's how a rule can say "replace `X` with something huge" without drawing extra lines until an `F` appears.
 
----
 
 ## Presets: Familiar Fractals, One Playground
 
@@ -70,7 +58,6 @@ The sketch ships with several **presets** you can select from the menu:
 
 Each preset fills in the axiom, rules, default angle, and a safe iteration count. From there, the fun is turning the knobs yourself.
 
----
 
 ## Parsing Rules from the Textarea
 
@@ -101,7 +88,6 @@ Here's what happens:
 - `trim()` keeps stray spaces from breaking your keys
 - Each valid line stores one entry in the `rules` object
 
----
 
 ## Expanding the String
 
@@ -143,7 +129,6 @@ Let's unpack that:
 
 **Heads up:** each extra iteration can multiply the string length dramatically. The UI caps the slider at 12 iterations so the browser stays happy — if things slow down, nudge iterations back down.
 
----
 
 ## Turning Symbols into Segments
 
@@ -199,7 +184,6 @@ In plain English:
 
 The sketch runs this twice in `recompute()` — first with a unit step to measure **bounds**, then again with a **scale** and offset so the whole plant fits inside the canvas with a little margin. That's why resizing the window recenters the art.
 
----
 
 ## Drawing with p5.js
 
@@ -246,7 +230,6 @@ Here's the idea:
 
 [createCanvas()](https://p5js.org/reference/?ref=alexcodesart.com#/p5/createCanvas) attaches to the `canvas-host` div in `setup()`, and a resize listener calls [resizeCanvas()](https://p5js.org/reference/?ref=alexcodesart.com#/p5/resizeCanvas) so the playground feels like a real tool, not a fixed postage stamp.
 
----
 
 ## Why This Matters for Creative Coding
 
@@ -254,7 +237,6 @@ L-systems are a perfect reminder that generative art is often **grammar + geomet
 
 You're not fighting the canvas pixel by pixel. You're composing a language.
 
----
 
 ## Experiment and Explore
 
@@ -268,7 +250,6 @@ You can make this playground yours by:
 
 I encourage you to duplicate a preset into the textarea, comment the old version with `#`, and iterate on your fork. You might be surprised how quickly new silhouettes emerge.
 
----
 
 ## Full Source
 
@@ -278,7 +259,6 @@ The runnable playground and all the code live here:
 
 Clone the repo, open `l-system/index.html` locally, and hack away.
 
----
 
 ## Wrapping Up
 
@@ -290,17 +270,7 @@ Happy coding, and see you in the next tutorial!
 
 Don't miss any new posts — subscribe for free! It really helps me out, and I'd love to have you along. Thanks!
 
-## Sign up for Alex Codes Art
-
-Art with code for curious minds
-
-Subscribe
-
-Email sent! Check your inbox to complete your signup.
-
-No spam. Unsubscribe anytime.
-
----
+/signup
 
 ## Next tutorial
 

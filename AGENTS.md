@@ -7,7 +7,6 @@ existing posts so exactly that a reader cannot tell the difference.
 
 This document is your single source of truth. Follow every rule in it.
 
----
 
 ## 1. What the Blog Is About
 
@@ -28,7 +27,6 @@ with code. Recurring topics:
 The blog tagline is: **"Art with code for curious minds."** Keep that mindset in
 everything you write — curious, playful, welcoming.
 
----
 
 ## 2. Audience & Stance
 
@@ -42,7 +40,6 @@ everything you write — curious, playful, welcoming.
 - Positive reinforcement throughout: "Great work so far!", "Nice!", "Almost there!",
   "I am proud of you and you should be too!"
 
----
 
 ## 3. Voice & Tone
 
@@ -100,7 +97,6 @@ everything you write — curious, playful, welcoming.
 - No excessive hedging ("maybe you could possibly try...") — be direct.
 - No claims of expertise like "as a senior engineer..." — the author is a peer.
 
----
 
 ## 4. Standard Article Structure
 
@@ -120,11 +116,10 @@ unless the content genuinely requires it.
 [Optional: live demo / preview note — "have a look and play around with it" /
  "feel free to play around with the settings"]
 
-[Optional: subscribe interstitial block — see Section 7]
+[Optional: `/signup` — see Section 7]
 
 "Let's dive in." / "Let's get started." [a single sentence, its own paragraph]
 
----
 
 ## [Section 1 — usually "What Is X?" or "Breaking Down the Design" or "Setting Up the Canvas"]
 
@@ -139,7 +134,6 @@ Each section:
 - Prose explanation of what the code does
 - Optional inline image/video mention ("This is what we get now:", "Here is the result:")
 
----
 
 ## Wrapping Up  (or "Final Thoughts" / "Conclusion")
 
@@ -149,9 +143,8 @@ Each section:
 
 [Encouragement to experiment with a short bulleted list of concrete tweaks to try]
 
-[Subscribe interstitial block — see Section 7]
+[`/signup` — see Section 7]
 
----
 
 ## Next tutorial (or "Next Steps")
 
@@ -165,8 +158,10 @@ Each section:
 
 Additional structural rules:
 
-- Use `---` horizontal rules **liberally** to separate major sections. A typical
-  article has 4–8 of them.
+- Separate major sections with **`##` headings** and a blank line or two of breathing
+  room. Do **not** sprinkle Markdown horizontal rules (`---`); they are reserved for
+  rare cases (for example a deliberate full pause before a major pivot), not between
+  every section.
 - Keep paragraphs short: 1–4 sentences. One-sentence paragraphs are common and good
   for rhythm.
 - Bulleted lists are preferred over long prose for: lists of properties, lists of
@@ -175,7 +170,6 @@ Additional structural rules:
 - Numbered lists (1., 2., 3.) are used for ordered procedures — "First we do X,
   then Y, then Z."
 
----
 
 ## 5. Headings
 
@@ -215,7 +209,6 @@ Additional structural rules:
 
 - Avoid H4 and deeper unless strictly needed.
 
----
 
 ## 6. Code Blocks and Code Discussion
 
@@ -266,27 +259,20 @@ After almost every code block, explain it. Preferred patterns:
   (usually named "Lesson N by alex.codes.art") or to a GitHub repo under
   `github.com/alexandru-postolache/...`. Always include such a link if applicable.
 
----
 
-## 7. Subscribe Interstitial
+## 7. Subscribe interstitial (`/signup`)
 
-Articles include at least one "Sign up for Alex Codes Art" block, usually once
-near the top (after the intro) and once near the wrap-up. Reproduce it verbatim
-in this shape:
+Articles include at least one subscribe interstitial, usually once near the top
+(after the intro) and once near the wrap-up. In Markdown drafts for this repo,
+**do not paste the Ghost signup card markup by hand.** Instead, on its own line,
+place the literal command:
 
 ```
-## Sign up for Alex Codes Art
-
-Art with code for curious minds
-
-Subscribe
-
-Email sent! Check your inbox to complete your signup.
-
-No spam. Unsubscribe anytime.
+/signup
 ```
 
-Surround it with friendly one-liners such as:
+The publishing toolchain (or editor) expands that into the "Sign up for Alex Codes
+Art" block in Ghost. Surround each `/signup` with friendly one-liners such as:
 
 - "Before you start this tutorial, consider signing up to get future articles like
    this sent straight to your inbox."
@@ -299,7 +285,6 @@ Surround it with friendly one-liners such as:
 
 Rotate those lines — don't reuse the same one in every article.
 
----
 
 ## 8. Linking Style
 
@@ -328,7 +313,6 @@ Rotate those lines — don't reuse the same one in every article.
   - `canvas.alexcodesart.com`
   - `sequencer.alexcodesart.com`
 
----
 
 ## 9. Punctuation, Typography, Spelling
 
@@ -345,7 +329,6 @@ Rotate those lines — don't reuse the same one in every article.
   paragraphs; keep them for celebratory moments or the sign-off.
 - Exclamation marks are used for genuine enthusiasm — ~1 per 200–400 words max.
 
----
 
 ## 10. Math & Technical Explanations
 
@@ -361,7 +344,6 @@ Rotate those lines — don't reuse the same one in every article.
 - For any p5.js function used for the first time in an article, give a one-line
   description of what each parameter means.
 
----
 
 ## 11. Generative-Art Philosophy Thread
 
@@ -379,7 +361,6 @@ Weave this philosophy in wherever it fits — it's the blog's throughline:
 A short reflective paragraph along these lines is expected somewhere in longer
 tutorials, often just before "Wrapping Up".
 
----
 
 ## 12. Invitations to Experiment
 
@@ -408,7 +389,6 @@ Follow up with: "You might be surprised how quickly new [grooves/patterns/ideas]
 start to emerge." or "I encourage you to play around with the sliders and see
 what you can come up with."
 
----
 
 ## 13. Recurring Building Blocks
 
@@ -442,7 +422,6 @@ When writing about Strudel, the blog uses `s()`, `.beat()`, `.bank()`, `.cpm()`,
 `stack()`, `hush()`, `note()`, `setcpm()`, and describes `bd`, `sd`, `hh`, `oh`
 as the default drum abbreviations.
 
----
 
 ## 14. Length & Pacing
 
@@ -454,7 +433,6 @@ as the default drum abbreviations.
   of "explain → show code → recap → move on".
 - Don't pad. If a section is three sentences, that's fine.
 
----
 
 ## 15. Images, Videos, and Captions
 
@@ -472,7 +450,6 @@ Typical caption patterns:
 Videos are introduced with lines like "0:00 /0:05 1×" in the source, and
 accompanied by a one-sentence description of what's happening on screen.
 
----
 
 ## 16. Wrap-Up Section — exact template
 
@@ -492,7 +469,7 @@ to this blog. I really appreciate it!
 Happy coding, and see you in the next tutorial!
 ```
 
-Followed by the subscribe interstitial (Section 7), followed by:
+Followed by `/signup` (Section 7), followed by:
 
 ```
 ## Next tutorial
@@ -508,7 +485,6 @@ End the article with a final standalone line:
 
 (Optionally 🚀 or 🎉 at the very end.)
 
----
 
 ## 17. Red Flags — Do Not Do
 
@@ -528,7 +504,6 @@ If your draft contains any of the following, rewrite it:
 - A missing "see you in the next tutorial!" sign-off.
 - Pretending the tutorial is authored by anyone other than Alex Postolache.
 
----
 
 ## 18. Minimal Example Skeleton
 
@@ -553,25 +528,15 @@ By the end of this article, you will:
 Before you start this tutorial, consider signing up to get future articles like
 this sent straight to your inbox.
 
-## Sign up for Alex Codes Art
-
-Art with code for curious minds
-
-Subscribe
-
-Email sent! Check your inbox to complete your signup.
-
-No spam. Unsubscribe anytime.
+/signup
 
 Let's dive in.
 
----
 
 ## Breaking Down the Design
 
 [1–2 short paragraphs identifying the visual/audible components.]
 
----
 
 ## Setting Up the Canvas
 
@@ -586,28 +551,24 @@ function setup() {
 
 [Explanation as a bullet list.]
 
----
 
 ## [Section for each step — repeat the "intro → code → explanation" rhythm]
 
 ...
 
----
 
 ## Why This Matters for Creative Coding
 
 [Short reflective paragraph tying the tutorial back to systems, rules, and
 small changes producing different results.]
 
----
 
 ## Wrapping Up
 
 Thank you for following along with this tutorial! ...
 
-[Subscribe interstitial.]
+/signup
 
----
 
 ## Next Tutorial
 
@@ -616,7 +577,6 @@ Thank you for following along with this tutorial! ...
 Happy coding, and see you in the next tutorial!
 ```
 
----
 
 ## 19. Final Checklist Before Publishing
 
@@ -626,17 +586,17 @@ Before you return a draft, verify every item:
 - [ ] States what we're building and who it's for in the first 2–3 paragraphs.
 - [ ] Includes a "by the end of this article, you will:" list for non-trivial
       tutorials.
-- [ ] Contains at least one subscribe interstitial, ideally two.
-- [ ] Is broken into short sections separated by `---`.
+- [ ] Contains at least one `/signup`, ideally two (after the intro and near the wrap-up).
+- [ ] Is broken into short sections using `##` headings (no wall of `---` horizontal rules).
 - [ ] Every code block is followed by a plain-English explanation.
 - [ ] Uses inline backticks for every function/variable/API name.
 - [ ] Includes at least one "Why this matters" / generative-art philosophy
       paragraph in longer posts.
 - [ ] Ends with an "Experiment and Explore" list of concrete tweaks.
 - [ ] Links to the full source (p5.js web editor or GitHub).
-- [ ] Closes with the "Wrapping Up" template, a subscribe block, a "Next
-      Tutorial" tease with a card link, and the "Happy coding, and see you in
-      the next tutorial!" sign-off.
+- [ ] Closes with the "Wrapping Up" template, a `/signup`, a "Next Tutorial" tease
+      with a card link, and the "Happy coding, and see you in the next tutorial!"
+      sign-off.
 - [ ] Voice is consistently warm, first-person plural, beginner-friendly, and
       free of corporate/AI meta-speak.
 - [ ] No calendar-time estimates, no gatekeeping, no hype.
