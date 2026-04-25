@@ -1,16 +1,11 @@
 /**
  * L-system with turtle graphics + progressive draw.
- * Brand colors: #40476d background, #ffba06 accent; neutrals for strokes.
+ * Brand colors: black background, #ffba06 accent.
  */
 const ALEX_PALETTE = {
-  background: [64, 71, 109],
+  background: [35, 38, 58],
   stroke: [
     [255, 186, 6],
-    [255, 204, 77],
-    [255, 228, 166],
-    [255, 255, 255],
-    [228, 229, 235],
-    [184, 188, 204],
   ],
 };
 

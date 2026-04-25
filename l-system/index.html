@@ -7,9 +7,10 @@
   <script src="https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js"></script>
   <style>
     :root {
-      --bg: #40476d;
-      --surface: #383e5f;
-      --input-bg: #323855;
+      --bg: #23263a;
+      --bg-gradient: linear-gradient(135deg, #23263a 0%, #32364a 100%);
+      --surface: #161b2b;
+      --input-bg: #1c2236;
       --border: rgba(255, 255, 255, 0.12);
       --text: #f4f4f6;
       --muted: #a8adbf;
@@ -21,7 +22,7 @@
     html, body {
       margin: 0;
       height: 100%;
-      background: var(--bg);
+      background: var(--bg-gradient);
       color: var(--text);
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       font-size: 14px;
@@ -35,7 +36,26 @@
       padding: 10px 16px;
       border-bottom: 1px solid var(--border);
       background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
     }
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .brand-logo {
+      width: auto;
+      height: 34px;
+      max-width: min(60vw, 420px);
+      flex: 0 0 auto;
+      display: block;
+      object-fit: contain;
+    }
+    .brand-copy { min-width: 0; }
     header h1 {
       margin: 0 0 4px;
       font-size: 1.1rem;
@@ -52,6 +72,13 @@
       text-decoration: none;
     }
     header a:hover { text-decoration: underline; }
+    @media (max-width: 800px) {
+      header {
+        flex-wrap: nowrap;
+        align-items: center;
+      }
+      .brand-logo { height: 28px; }
+    }
     .main {
       flex: 1;
       display: grid;
@@ -66,6 +93,7 @@
       overflow-y: auto;
       border-right: 1px solid var(--border);
       background: var(--surface);
+      box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.04);
     }
     @media (max-width: 800px) {
       .panel { border-right: none; border-bottom: 1px solid var(--border); max-height: 42vh; }
@@ -88,6 +116,12 @@
       color: var(--text);
       font-family: ui-monospace, monospace;
       font-size: 12px;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: rgba(255, 186, 6, 0.65);
+      box-shadow: 0 0 0 2px rgba(255, 186, 6, 0.18);
     }
     textarea { min-height: 88px; resize: vertical; }
     .row {
@@ -114,8 +148,10 @@
       color: #40476d;
       font-weight: 600;
       cursor: pointer;
+      transition: transform 100ms ease, filter 120ms ease;
     }
     button:hover { filter: brightness(1.05); }
+    button:active { transform: translateY(1px); }
     button.secondary {
       margin-top: 8px;
       background: transparent;
@@ -156,8 +192,9 @@
 <body>
   <div class="layout">
     <header>
-      <h1>L-System playground</h1>
-      <p><a href="https://alexcodesart.com" target="_blank" rel="noopener">alexcodesart.com</a> — tweak rules and watch the curve draw itself.</p>
+      <div class="brand-wrap">
+        <img class="brand-logo" src="./assets/logo-horizontal.png?v=4" alt="Alex Codes Art" />
+      </div>
     </header>
     <div class="main">
       <aside class="panel">
@@ -198,6 +235,6 @@
       </div>
     </div>
   </div>
-  <script src="sketch.js"></script>
+  <script src="sketch.js?v=2"></script>
 </body>
 </html>
