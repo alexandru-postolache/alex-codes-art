@@ -1,6 +1,6 @@
 # Drawing Fractals with L-Systems in p5.js: A Creative Coding Tutorial
 
-Hello friends, and welcome to another creative coding tutorial! Today, we’re going to build an interactive **L-system explorer** with p5.js.
+Hello friends, and welcome to another creative coding tutorial! Today, we’re going to draw beautiful fractal forms with **L-systems** and p5.js.
 
 L-systems are one of those beautiful creative coding ideas where a tiny bit of text can grow into branches, curves, triangles, snowflakes, and all kinds of organic-looking structures. We’ll start with a small string, rewrite it again and again, and then use turtle graphics to draw the result on the canvas.
 
@@ -9,8 +9,8 @@ By the end of this article, you will:
 - understand what an L-system is
 - learn how to expand an axiom with rewrite rules
 - draw the generated string with turtle graphics
-- add controls for presets, iterations, angles, and animation speed
-- build a small interactive playground for exploring fractals
+- fit the final drawing nicely on the canvas
+- animate the fractal as it appears line by line
 
 Before you start this tutorial, consider signing up to get future articles like this sent straight to your inbox.
 
@@ -69,123 +69,43 @@ You’re not placing every branch by hand — you’re designing a system that g
 
 ## What We’re Building
 
-Our project is an interactive L-system sketch with:
+We’re going to build a p5.js sketch that:
 
-- a p5.js canvas
-- a preset dropdown with classic examples
-- editable axiom and rules fields
-- an iterations slider
-- an angle input
-- a draw speed slider
-- a progressive animation that draws the fractal line by line
+- starts from an axiom
+- expands that axiom with rewrite rules
+- turns the final string into turtle graphics commands
+- stores those commands as line segments
+- scales and centers the result on the canvas
+- animates the drawing one segment at a time
 
-The project includes presets for:
-
-- Fractal plant
-- Koch snowflake edge
-- Sierpinski triangle
-- Dragon curve
-- Hilbert-like curve
-
-Each preset uses the same engine. Only the text rules, angle, and iteration count change.
+The finished sketch uses the classic fractal plant L-system, but the same code can also draw Koch curves, Sierpinski triangles, dragon curves, and many other rule-based structures.
 
 That’s the magic of generative art: small textual changes can create very different visual results.
 
 ---
 
-## Setting Up the Page
+## Defining Our L-System
 
-Before we write the p5.js logic, we need a small HTML page with a control panel and a canvas container.
-
-Here is the important structure:
+Let’s start with the rules for a classic fractal plant.
 
 ```
-<aside class="panel">
-  <label for="preset">Preset</label>
-  <select id="preset"></select>
-
-  <label for="axiom">Axiom</label>
-  <input type="text" id="axiom" spellcheck="false" />
-
-  <label for="rules">Rules</label>
-  <textarea id="rules" spellcheck="false"></textarea>
-
-  <label for="iter">Iterations <span id="iter-val"></span></label>
-  <input type="range" id="iter" min="0" max="12" value="4" />
-
-  <label for="angle">Angle (°)</label>
-  <input type="number" id="angle" min="0" max="180" value="25" step="0.5" />
-
-  <label for="speed">Draw speed <span id="speed-val"></span></label>
-  <input type="range" id="speed" min="1" max="200" value="40" />
-
-  <button type="button" id="apply">Apply & redraw</button>
-  <button type="button" id="reset-anim">Reset animation</button>
-</aside>
-
-<div id="canvas-host">
-  <span class="status" id="status"></span>
-</div>
+const axiom = 'X';
+const rulesText = `X=F+[[X]-X]-F[-FX]+X
+F=FF`;
+const iterations = 6;
+const angle = 25;
+const drawSpeed = 40;
 ```
 
-Let’s break this down:
+Here’s what each value means:
 
-- `preset` lets us choose between ready-made L-system examples.
-- `axiom` stores the starting string.
-- `rules` stores one rewrite rule per line.
-- `iter` controls how many times the string grows.
-- `angle` controls how much the turtle turns for `+` and `-`.
-- `speed` controls how many line segments we draw each frame.
-- `canvas-host` is where our p5.js canvas will live.
-- `status` shows helpful information about the generated string and line count.
-
-The HTML is simple, but it gives us a nice playground. Instead of changing code every time, we can experiment directly in the browser.
-
----
-
-## Creating the Presets
-
-Let’s define a few classic L-systems.
-
-```
-const PRESETS = [
-  {
-    id: 'plant',
-    name: 'Fractal plant (classic)',
-    axiom: 'X',
-    rules: `X=F+[[X]-X]-F[-FX]+X\nF=FF`,
-    angle: 25,
-    iter: 6,
-  },
-  {
-    id: 'koch',
-    name: 'Koch snowflake edge',
-    axiom: 'F',
-    rules: 'F=F+F-F-F+F',
-    angle: 90,
-    iter: 4,
-  },
-  {
-    id: 'sierpinski',
-    name: 'Sierpinski triangle',
-    axiom: 'F-G-G',
-    rules: 'F=F-G+F+G-F\nG=GG',
-    angle: 120,
-    iter: 6,
-  },
-];
-```
-
-Each preset has:
-
-- `id` — a short name we use internally.
-- `name` — the label shown in the dropdown.
 - `axiom` — the starting string.
-- `rules` — the replacement rules.
+- `rulesText` — the replacement rules, one per line.
+- `iterations` — how many times we apply the rules.
 - `angle` — how far the turtle turns.
-- `iter` — how many iterations we should use.
+- `drawSpeed` — how many line segments we reveal per frame.
 
-The plant preset is especially fun because it uses brackets: `[` and `]`. Those symbols let the turtle save and restore its position, which is how we get branching structures.
+The plant rule is especially fun because it uses brackets: `[` and `]`. Those symbols let the turtle save and restore its position, which is how we get branching structures.
 
 Nice!
 
@@ -248,7 +168,7 @@ becomes this:
 }
 ```
 
-Now our sketch can understand the rules the reader types into the panel.
+Now our sketch can understand the text rules we defined at the top of the file.
 
 ---
 
@@ -433,13 +353,9 @@ Then we use that rectangle to scale and center the final result:
 
 ```
 function recompute() {
-  const axiom = document.getElementById('axiom').value;
-  const rulesText = document.getElementById('rules').value;
-  const iterations = parseInt(document.getElementById('iter').value, 10) || 0;
-  const angle = parseFloat(document.getElementById('angle').value) || 0;
-
   const rules = parseRules(rulesText);
   const str = expand(axiom, rules, iterations);
+  lastStringLen = str.length;
 
   let temp = buildSegments(str, angle, 1, 0, 0, -Math.PI / 2);
   const b = boundsOfSegments(temp);
@@ -456,14 +372,15 @@ function recompute() {
   const oy = height / 2 - cy * scale;
 
   segments = buildSegments(str, angle, scale, ox, oy, -Math.PI / 2);
+  needsRecompute = false;
 }
 ```
 
 In this function we:
 
-- read the current controls
 - parse the rules
 - expand the L-system string
+- store the string length in `lastStringLen`
 - build temporary segments with a step length of `1`
 - measure the bounds
 - calculate a scale that fits inside the canvas
@@ -478,30 +395,18 @@ Almost there!
 
 ## Setting Up p5.js
 
-Now let’s connect p5.js to our HTML.
+Now let’s create the p5.js canvas and prepare the line segments.
 
 ```
 let segments = [];
 let segIndex = 0;
 let lastStringLen = 0;
 let needsRecompute = true;
-let p5canvas;
 
 function setup() {
-  const host = document.getElementById('canvas-host');
-  p5canvas = createCanvas(host.clientWidth || 400, host.clientHeight || 400);
-  p5canvas.parent(host);
-
-  const presetSel = document.getElementById('preset');
-  PRESETS.forEach((p) => {
-    const o = document.createElement('option');
-    o.value = p.id;
-    o.textContent = p.name;
-    presetSel.appendChild(o);
-  });
-
-  presetSel.addEventListener('change', () => applyPreset(presetSel.value));
-  applyPreset(PRESETS[0].id);
+  createCanvas(600, 600);
+  pixelDensity(3);
+  recompute();
 }
 ```
 
@@ -509,43 +414,13 @@ Let’s break this down:
 
 - `segments` stores the line segments we draw.
 - `segIndex` tracks how much of the drawing has been animated.
-- `lastStringLen` stores the generated string length for the status text.
-- `needsRecompute` tells us when the rules or settings changed.
+- `lastStringLen` stores the generated string length, which is useful while experimenting.
+- `needsRecompute` tells us when the line segments should be rebuilt.
 - [`createCanvas()`](https://p5js.org/reference/?ref=alexcodesart.com#/p5/createCanvas) creates the p5.js canvas.
-- `p5canvas.parent(host)` places it inside our `canvas-host` element.
-- The preset dropdown is filled from the `PRESETS` array.
+- `pixelDensity()` makes the drawing look crisp on high-resolution screens.
+- `recompute()` builds the first set of line segments before we start drawing.
 
-If you are new to p5.js, [`setup()`](https://p5js.org/reference/?ref=alexcodesart.com#/p5/setup) runs once when the sketch starts. It is the perfect place to create the canvas, initialize the UI, and set default values.
-
----
-
-## Applying a Preset
-
-When the reader chooses a preset, we copy its values into the controls.
-
-```
-function applyPreset(id) {
-  const p = PRESETS.find((x) => x.id === id);
-  if (!p) return;
-
-  document.getElementById('axiom').value = p.axiom;
-  document.getElementById('rules').value = p.rules;
-  document.getElementById('angle').value = String(p.angle);
-  document.getElementById('iter').value = String(Math.min(p.iter, 12));
-  document.getElementById('iter-val').textContent =
-    document.getElementById('iter').value;
-
-  needsRecompute = true;
-  segIndex = 0;
-}
-```
-
-This function does two small but important things at the end:
-
-- `needsRecompute = true` tells the sketch to rebuild the generated line segments.
-- `segIndex = 0` restarts the progressive drawing animation.
-
-That means every preset change gives us a fresh animation from the beginning.
+If you are new to p5.js, [`setup()`](https://p5js.org/reference/?ref=alexcodesart.com#/p5/setup) runs once when the sketch starts. It is the perfect place to create the canvas, set the pixel density, and prepare the first drawing.
 
 ---
 
@@ -561,8 +436,7 @@ function draw() {
 
   background(35, 38, 58);
 
-  const speed = parseInt(document.getElementById('speed').value, 10) || 1;
-  const target = Math.min(segIndex + speed, segments.length);
+  const target = Math.min(segIndex + drawSpeed, segments.length);
 
   strokeWeight(max(1, width / 480));
 
@@ -582,7 +456,7 @@ Here’s what happens:
 
 - If something changed, `recompute()` rebuilds the L-system.
 - [`background()`](https://p5js.org/reference/?ref=alexcodesart.com#/p5/background) clears the canvas with the dark Alex Codes Art background color.
-- `speed` controls how many segments we reveal per frame.
+- `drawSpeed` controls how many segments we reveal per frame.
 - `target` is the current number of visible segments.
 - The `for` loop draws every visible segment with [`line()`](https://p5js.org/reference/?ref=alexcodesart.com#/p5/line).
 - `segIndex` increases until the full drawing is visible.
@@ -590,38 +464,6 @@ Here’s what happens:
 The animation is very simple, but it makes a huge difference. Instead of instantly seeing a finished fractal, we can watch the system draw itself.
 
 Math magic! Great work so far.
-
----
-
-## Keeping the Interface Responsive
-
-One nice detail in this project is that the sketch responds to changes immediately.
-
-```
-['axiom', 'rules', 'angle'].forEach((id) => {
-  document.getElementById(id).addEventListener('input', () => {
-    needsRecompute = true;
-    segIndex = 0;
-  });
-});
-
-document.getElementById('iter').addEventListener('input', () => {
-  document.getElementById('iter-val').textContent =
-    document.getElementById('iter').value;
-  needsRecompute = true;
-  segIndex = 0;
-});
-
-document.getElementById('reset-anim').addEventListener('click', () => {
-  segIndex = 0;
-});
-```
-
-Every time the axiom, rules, angle, or iteration count changes, we rebuild the drawing.
-
-The reset button is even simpler. It doesn’t change the L-system at all. It only sends `segIndex` back to `0`, so we can replay the drawing animation.
-
-This turns the sketch into a little creative coding instrument. Type a rule, change an angle, increase the iterations, and watch the system respond.
 
 ---
 
@@ -645,7 +487,7 @@ You can make this art your own by:
 - Trying a new axiom like `F+F+F+F`
 - Changing the stroke color from yellow to another palette
 - Slowing the draw speed so the structure appears more gradually
-- Creating your own preset in the `PRESETS` array
+- Creating another L-system by changing `axiom`, `rulesText`, `iterations`, and `angle`
 
 You might be surprised how quickly new patterns start to emerge.
 
