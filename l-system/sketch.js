@@ -57,6 +57,20 @@ let segIndex = 0;
 let lastStringLen = 0;
 let needsRecompute = true;
 
+function hexToRgb(hex) {
+  const clean = hex.replace('#', '');
+  const full = clean.length === 3
+    ? clean.split('').map((c) => c + c).join('')
+    : clean;
+  const intVal = Number.parseInt(full, 16);
+  if (Number.isNaN(intVal)) return [255, 186, 6];
+  return [
+    (intVal >> 16) & 255,
+    (intVal >> 8) & 255,
+    intVal & 255,
+  ];
+}
+
 function parseRules(text) {
   const rules = {};
   const lines = text.split('\n');
@@ -191,12 +205,18 @@ function setup() {
     document.getElementById('speed-val').textContent =
       document.getElementById('speed').value;
   });
+  document.getElementById('thickness').addEventListener('input', () => {
+    document.getElementById('thickness-val').textContent =
+      document.getElementById('thickness').value;
+  });
 
   applyPreset(PRESETS[0].id);
   document.getElementById('iter-val').textContent =
     document.getElementById('iter').value;
   document.getElementById('speed-val').textContent =
     document.getElementById('speed').value;
+  document.getElementById('thickness-val').textContent =
+    document.getElementById('thickness').value;
 
   window.addEventListener('resize', () => {
     resizeCanvas(host.clientWidth, host.clientHeight);
@@ -258,14 +278,14 @@ function draw() {
   background(bg[0], bg[1], bg[2]);
 
   const speed = parseInt(document.getElementById('speed').value, 10) || 1;
+  const thickness = parseFloat(document.getElementById('thickness').value) || 1;
+  const strokeColor = hexToRgb(document.getElementById('stroke-color').value);
   const target = Math.min(segIndex + speed, segments.length);
-  const colors = ALEX_PALETTE.stroke;
 
-  strokeWeight(max(1, width / 480));
+  strokeWeight(max(0.5, thickness));
   for (let i = 0; i < target; i++) {
     const s = segments[i];
-    const col = colors[i % colors.length];
-    stroke(col[0], col[1], col[2]);
+    stroke(strokeColor[0], strokeColor[1], strokeColor[2]);
     line(s.x1, s.y1, s.x2, s.y2);
   }
 

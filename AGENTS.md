@@ -165,8 +165,10 @@ Each section:
 
 Additional structural rules:
 
-- Use `---` horizontal rules **liberally** to separate major sections. A typical
-  article has 4–8 of them.
+- Use `---` horizontal rules **sparingly** and only at high-level transitions:
+  1) after the introduction, 2) before the ending/wrapping-up section, and
+  3) before the final outro/next-tutorial part (if present). Do **not** add
+  divider lines between every chapter in the main article content.
 - Keep paragraphs short: 1–4 sentences. One-sentence paragraphs are common and good
   for rhythm.
 - Bulleted lists are preferred over long prose for: lists of properties, lists of
