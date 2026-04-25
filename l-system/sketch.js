@@ -265,7 +265,7 @@ function draw() {
   for (let i = 0; i < target; i++) {
     const s = segments[i];
     const col = colors[i % colors.length];
-    stroke(col[0], col[1], col[2], 230);
+    stroke(col[0], col[1], col[2]);
     line(s.x1, s.y1, s.x2, s.y2);
   }
 
