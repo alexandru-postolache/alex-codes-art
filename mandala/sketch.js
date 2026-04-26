@@ -14,9 +14,10 @@ let params = {
   symmetry: 8,
   smoothing: 0.2,
   thicknessMax: 10,
+  fadeEnabled: false,
   fadeAmount: 10,
 
-  // ✨ NEW
+  blurEnabled: false,
   glowBlur: 8,
   glowStrength: 1.5,
 
@@ -28,7 +29,7 @@ let pane;
 let paneContainer;
 
 function setup() {
-  createCanvas(700, 700);
+  createCanvas(windowWidth, windowHeight);
   angleMode(DEGREES);
 
   // --- Buffers ---
@@ -53,9 +54,10 @@ function setup() {
   pane.addInput(params, 'smoothing', { min: 0.05, max: 0.5, step: 0.01 });
   pane.addInput(params, 'thicknessMax', { min: 1, max: 20, step: 0.5 });
 
+  pane.addInput(params, 'fadeEnabled');
   pane.addInput(params, 'fadeAmount', { min: 0, max: 50, step: 1 });
 
-  // ✨ NEW controls
+  pane.addInput(params, 'blurEnabled');
   pane.addInput(params, 'glowBlur', { min: 0, max: 20, step: 1 });
   pane.addInput(params, 'glowStrength', { min: 0, max: 3, step: 0.1 });
 
@@ -77,20 +79,21 @@ function setup() {
 }
 
 function draw() {
-  // --- Fade (your existing system) ---
-  buffer.noStroke();
-  buffer.fill(
-    params.bgColor.r,
-    params.bgColor.g,
-    params.bgColor.b,
-    params.fadeAmount
-  );
-  buffer.rect(0, 0, width, height);
+  // --- Fade ---
+  if (params.fadeEnabled) {
+    buffer.noStroke();
+    buffer.fill(
+      params.bgColor.r,
+      params.bgColor.g,
+      params.bgColor.b,
+      params.fadeAmount
+    );
+    buffer.rect(0, 0, width, height);
+  }
 
   // --- Draw stroke ---
   if (drawing) {
     let target = createVector(mouseX - width / 2, mouseY - height / 2);
-
     current.lerp(target, params.smoothing);
 
     let speed = p5.Vector.dist(prev, current);
@@ -116,7 +119,17 @@ function draw() {
     buffer.push();
     buffer.translate(width / 2, height / 2);
 
-    for (let i = 0; i < params.symmetry; i++) {
+    // 1) Main stroke (unrotated, smoothed)
+    buffer.line(prev.x, prev.y, current.x, current.y);
+
+    // Mirror of main stroke
+    buffer.push();
+    buffer.scale(1, -1);
+    buffer.line(prev.x, prev.y, current.x, current.y);
+    buffer.pop();
+
+    // 2) Rotated symmetry strokes
+    for (let i = 1; i < params.symmetry; i++) {
       buffer.rotate(angle);
 
       buffer.line(prev.x, prev.y, current.x, current.y);
@@ -132,13 +145,6 @@ function draw() {
     prev = current.copy();
   }
 
-  // --- BLOOM PASS ---
-  glowBuffer.clear();
-  glowBuffer.image(buffer, 0, 0);
-
-  // blur the glow
-  glowBuffer.filter(BLUR, params.glowBlur);
-
   // --- FINAL COMPOSITE ---
   background(
     params.bgColor.r,
@@ -149,12 +155,19 @@ function draw() {
   // base layer
   image(buffer, 0, 0);
 
-  // glow layer
-  push();
-  blendMode(ADD);
-  tint(255, 255 * params.glowStrength);
-  image(glowBuffer, 0, 0);
-  pop();
+  if (params.blurEnabled) {
+    // --- BLOOM PASS ---
+    glowBuffer.clear();
+    glowBuffer.image(buffer, 0, 0);
+    glowBuffer.filter(BLUR, params.glowBlur);
+
+    // glow layer
+    push();
+    blendMode(ADD);
+    tint(255, 255 * params.glowStrength);
+    image(glowBuffer, 0, 0);
+    pop();
+  }
 }
 
 // --- Input ---
@@ -205,4 +218,19 @@ function clearMandala() {
 
 function saveMandala() {
   saveCanvas('MandalaFadeGlow', 'png');
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+
+  let newBuffer = createGraphics(width, height);
+  let newGlowBuffer = createGraphics(width, height);
+
+  newBuffer.strokeCap(ROUND);
+  newBuffer.noFill();
+  newBuffer.background(params.bgColor.r, params.bgColor.g, params.bgColor.b);
+  newBuffer.image(buffer, 0, 0);
+
+  buffer = newBuffer;
+  glowBuffer = newGlowBuffer;
 }
