@@ -36,6 +36,9 @@ let params = {
   tempoImpact: 0.7,
   tempoSubdivisionChance: 0.35,
   tempoPauseChance: 0.15,
+  midiEnabled: false,
+  midiPatternHoldMs: 320,
+  midiDebugHud: true,
   fadeEnabled: true,
   fadeAmount: 100,
   maxTrailSegments: 6000,
@@ -78,32 +81,45 @@ function setup() {
   pane = new Tweakpane.Pane({ title: 'Mandala Controls' });
   paneContainer = pane.element;
 
-  pane.addInput(params, 'symmetry', { min: 2, max: 16, step: 1 })
+  const motionFolder = pane.addFolder({ title: 'Motion', expanded: true });
+  const tempoFolder = pane.addFolder({ title: 'Tempo', expanded: false });
+  const midiFolder = pane.addFolder({ title: 'MIDI', expanded: false });
+  const trailFolder = pane.addFolder({ title: 'Trail & Fade', expanded: false });
+  const glowFolder = pane.addFolder({ title: 'Glow', expanded: false });
+  const colorFolder = pane.addFolder({ title: 'Colors', expanded: false });
+
+  motionFolder.addInput(params, 'symmetry', { min: 2, max: 16, step: 1 })
     .on('change', updateSymmetry);
 
-  pane.addInput(params, 'smoothing', { min: 0.05, max: 0.5, step: 0.01 });
-  pane.addInput(params, 'thicknessMax', { min: 1, max: 20, step: 0.5 });
-  pane.addInput(params, 'tempoEnabled');
-  pane.addInput(params, 'tempo', { min: 40, max: 220, step: 1 });
-  pane.addInput(params, 'tempoImpact', { min: 0, max: 1.5, step: 0.05 });
-  pane.addInput(params, 'tempoSubdivisionChance', { min: 0, max: 1, step: 0.05 });
-  pane.addInput(params, 'tempoPauseChance', { min: 0, max: 1, step: 0.05 });
-  pane.addInput(params, 'curvyEnabled', { label: 'Hold C: Curvy draw' });
-  pane.addInput(params, 'curvyBaseSpeed', { min: 0.5, max: 12, step: 0.1 });
-  pane.addInput(params, 'curvySpeedVariation', { min: 0, max: 10, step: 0.1 });
-  pane.addInput(params, 'curvyPulseRate', { min: 0.2, max: 6, step: 0.1 });
-  pane.addInput(params, 'curvyTurnRate', { min: 0.2, max: 8, step: 0.1 });
+  motionFolder.addInput(params, 'smoothing', { min: 0.05, max: 0.5, step: 0.01 });
+  motionFolder.addInput(params, 'thicknessMax', { min: 1, max: 20, step: 0.5 });
+  motionFolder.addInput(params, 'curvyEnabled', { label: 'Hold C: Curvy draw' });
+  motionFolder.addInput(params, 'curvyBaseSpeed', { min: 0.5, max: 12, step: 0.1 });
+  motionFolder.addInput(params, 'curvySpeedVariation', { min: 0, max: 10, step: 0.1 });
+  motionFolder.addInput(params, 'curvyPulseRate', { min: 0.2, max: 6, step: 0.1 });
+  motionFolder.addInput(params, 'curvyTurnRate', { min: 0.2, max: 8, step: 0.1 });
 
-  pane.addInput(params, 'fadeEnabled');
-  pane.addInput(params, 'fadeAmount', { min: 0, max: 100, step: 1 });
-  pane.addInput(params, 'maxTrailSegments', { min: 500, max: 20000, step: 100 });
-  pane.addInput(params, 'minSegmentLength', { min: 0.1, max: 5, step: 0.1 });
+  tempoFolder.addInput(params, 'tempoEnabled');
+  tempoFolder.addInput(params, 'tempo', { min: 40, max: 220, step: 1 });
+  tempoFolder.addInput(params, 'tempoImpact', { min: 0, max: 1.5, step: 0.05 });
+  tempoFolder.addInput(params, 'tempoSubdivisionChance', { min: 0, max: 1, step: 0.05 });
+  tempoFolder.addInput(params, 'tempoPauseChance', { min: 0, max: 1, step: 0.05 });
 
-  pane.addInput(params, 'blurEnabled');
-  pane.addInput(params, 'glowBlur', { min: 0, max: 20, step: 1 });
-  pane.addInput(params, 'glowStrength', { min: 0, max: 3, step: 0.1 });
+  midiFolder.addInput(params, 'midiEnabled');
+  midiFolder.addInput(params, 'midiPatternHoldMs', { min: 120, max: 1200, step: 10 });
+  midiFolder.addInput(params, 'midiDebugHud');
+  midiFolder.addButton({ title: 'Connect MIDI' }).on('click', () => midiEngine.init());
 
-  pane.addInput(params, 'bgColor', { view: 'color' })
+  trailFolder.addInput(params, 'fadeEnabled');
+  trailFolder.addInput(params, 'fadeAmount', { min: 0, max: 100, step: 1 });
+  trailFolder.addInput(params, 'maxTrailSegments', { min: 500, max: 20000, step: 100 });
+  trailFolder.addInput(params, 'minSegmentLength', { min: 0.1, max: 5, step: 0.1 });
+
+  glowFolder.addInput(params, 'blurEnabled');
+  glowFolder.addInput(params, 'glowBlur', { min: 0, max: 20, step: 1 });
+  glowFolder.addInput(params, 'glowStrength', { min: 0, max: 3, step: 0.1 });
+
+  colorFolder.addInput(params, 'bgColor', { view: 'color' })
     .on('change', () => {
       buffer.background(
         params.bgColor.r,
@@ -112,7 +128,7 @@ function setup() {
       );
     });
 
-  pane.addInput(params, 'strokeColor', { view: 'color' });
+  colorFolder.addInput(params, 'strokeColor', { view: 'color' });
 
   pane.addButton({ title: 'Clear' }).on('click', clearMandala);
   pane.addButton({ title: 'Save' }).on('click', saveMandala);
@@ -121,7 +137,9 @@ function setup() {
 }
 
 function draw() {
+  midiEngine.setParams(params);
   updateBeatState();
+  midiEngine.updateVisuals();
 
   // --- Draw stroke ---
   let curvyDrawing = params.curvyEnabled && keyIsDown(67) && !isPointerOverPane();
@@ -151,33 +169,31 @@ function draw() {
       );
 
       thickness = lerp(thickness, targetThickness, 0.2);
-      if (params.fadeEnabled) {
-        trailSegments.push({
-          x1: prev.x,
-          y1: prev.y,
-          x2: current.x,
-          y2: current.y,
-          weight: thickness,
-          bornAt: frameCount
-        });
-
-        if (trailSegments.length > params.maxTrailSegments) {
-          let overflow = trailSegments.length - params.maxTrailSegments;
-          trailSegments.splice(0, overflow);
-        }
-      } else {
-        drawSymmetricSegment(
-          prev.x,
-          prev.y,
-          current.x,
-          current.y,
-          thickness,
-          255
-        );
-      }
+      addSegment(prev.x, prev.y, current.x, current.y, thickness, null);
 
       prev = current.copy();
     }
+  }
+
+  let midiSegments = midiEngine.getSegments({
+    params,
+    current,
+    prev,
+    mouseX,
+    mouseY,
+    width,
+    height
+  });
+
+  for (let segment of midiSegments) {
+    addSegment(
+      segment.x1,
+      segment.y1,
+      segment.x2,
+      segment.y2,
+      segment.weight,
+      segment.color
+    );
   }
 
   if (params.fadeEnabled) {
@@ -206,6 +222,10 @@ function draw() {
     tint(255, 255 * params.glowStrength);
     image(glowBuffer, 0, 0);
     pop();
+  }
+
+  if (params.midiDebugHud) {
+    midiEngine.drawDebugHud();
   }
 }
 
@@ -302,11 +322,15 @@ function getCurvyTarget(justStarted) {
   return curvyPos.copy();
 }
 
-function drawSymmetricSegment(x1, y1, x2, y2, weight, alphaValue) {
+function drawSymmetricSegment(x1, y1, x2, y2, weight, alphaValue, colorOverride) {
+  let strokeColorNow = midiEngine.getStrokeColor(params.strokeColor);
+  if (colorOverride) {
+    strokeColorNow = colorOverride;
+  }
   buffer.stroke(
-    params.strokeColor.r,
-    params.strokeColor.g,
-    params.strokeColor.b,
+    strokeColorNow.r,
+    strokeColorNow.g,
+    strokeColorNow.b,
     alphaValue
   );
   buffer.strokeWeight(weight);
@@ -334,6 +358,27 @@ function drawSymmetricSegment(x1, y1, x2, y2, weight, alphaValue) {
   buffer.pop();
 }
 
+function addSegment(x1, y1, x2, y2, weight, color) {
+  if (params.fadeEnabled) {
+    trailSegments.push({
+      x1,
+      y1,
+      x2,
+      y2,
+      weight,
+      bornAt: frameCount,
+      color
+    });
+
+    if (trailSegments.length > params.maxTrailSegments) {
+      let overflow = trailSegments.length - params.maxTrailSegments;
+      trailSegments.splice(0, overflow);
+    }
+  } else {
+    drawSymmetricSegment(x1, y1, x2, y2, weight, 255, color);
+  }
+}
+
 function renderFadingTrails() {
   buffer.background(params.bgColor.r, params.bgColor.g, params.bgColor.b);
 
@@ -345,13 +390,14 @@ function renderFadingTrails() {
         segment.x2,
         segment.y2,
         segment.weight,
-        255
+        255,
+        segment.color
       );
     }
     return;
   }
 
-  let lifeFrames = floor(map(params.fadeAmount, 1, 50, 900, 45, true));
+  let lifeFrames = floor(map(params.fadeAmount, 1, 100, 900, 30, true));
 
   for (let i = trailSegments.length - 1; i >= 0; i--) {
     let segment = trailSegments[i];
@@ -368,7 +414,8 @@ function renderFadingTrails() {
       segment.x2,
       segment.y2,
       segment.weight,
-      alphaValue
+      alphaValue,
+      segment.color
     );
   }
 }
