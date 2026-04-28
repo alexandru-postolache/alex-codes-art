@@ -102,6 +102,18 @@ function rgbaString(rgb, alpha01) {
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${a})`;
 }
 
+/** WEBGL mandala buffer accumulates strokes when fade is off; depth must reset each frame or new strokes won't draw. */
+function prepareMandalaBufferForFrame() {
+  if (params.fadeEnabled || !mandalaBuffer) return;
+  if (typeof mandalaBuffer.clearDepth === 'function') {
+    mandalaBuffer.clearDepth();
+  } else if (mandalaBuffer._renderer && mandalaBuffer._renderer.GL) {
+    let gl = mandalaBuffer._renderer.GL;
+    gl.clearDepth(1);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+  }
+}
+
 function setup() {
   createCanvas(windowWidth, windowHeight, WEBGL);
   angleMode(DEGREES);
@@ -272,6 +284,8 @@ function draw() {
   midiEngine.setParams(params);
   updateBeatState();
   midiEngine.updateVisuals();
+
+  prepareMandalaBufferForFrame();
 
   let overPane = isPointerOverPane();
   let curvyC = params.curvyEnabled && keyIsDown(67) && !overPane;
