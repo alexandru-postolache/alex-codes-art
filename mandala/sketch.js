@@ -80,62 +80,24 @@ let params = {
     k7: { r: 255, g: 100, b: 180 },
     k8: { r: 230, g: 230, b: 250 },
     k9: { r: 255, g: 245, b: 180 }
-  },
-
-  brushEnabled: true,
-  brushName: 'HB',
-  brushScale: 3,
-  brushWeightMul: 1
+  }
 };
 
 let pane;
 let paneContainer;
 
-function applyBrushScale() {
-  if (typeof brush !== 'undefined' && brush.scaleBrushes) {
-    brush.scaleBrushes(params.brushScale);
-  }
-}
-
-function rgbaString(rgb, alpha01) {
-  let a = constrain(alpha01, 0, 1);
-  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${a})`;
-}
-
-/** WEBGL mandala buffer accumulates strokes when fade is off; depth must reset each frame or new strokes won't draw. */
-function prepareMandalaBufferForFrame() {
-  if (params.fadeEnabled || !mandalaBuffer) return;
-  if (typeof mandalaBuffer.clearDepth === 'function') {
-    mandalaBuffer.clearDepth();
-  } else if (mandalaBuffer._renderer && mandalaBuffer._renderer.GL) {
-    let gl = mandalaBuffer._renderer.GL;
-    gl.clearDepth(1);
-    gl.clear(gl.DEPTH_BUFFER_BIT);
-  }
-}
-
 function setup() {
-  createCanvas(windowWidth, windowHeight, WEBGL);
+  createCanvas(windowWidth, windowHeight);
   angleMode(DEGREES);
 
-  if (typeof brush !== 'undefined' && brush.load) {
-    brush.load();
-  }
-
   // --- Buffers ---
-  // WEBGL: origin at canvas center — matches stroke coords (mouse − center)
-  mandalaBuffer = createGraphics(width, height, WEBGL);
+  mandalaBuffer = createGraphics(width, height);
   glowBuffer = createGraphics(width, height);
 
   mandalaBuffer.strokeCap(ROUND);
   mandalaBuffer.noFill();
 
   mandalaBuffer.background(params.bgColor.r, params.bgColor.g, params.bgColor.b);
-
-  if (typeof brush !== 'undefined') {
-    brush.scaleBrushes(params.brushScale);
-    if (brush.noField) brush.noField();
-  }
 
   mouseCurrent = createVector(0, 0);
   mousePrev = createVector(0, 0);
@@ -155,7 +117,6 @@ function setup() {
     title: 'Multi-line keys (1–9)',
     expanded: false
   });
-  const brushFolder = pane.addFolder({ title: 'p5.brush', expanded: false });
 
   motionFolder.addInput(params, 'symmetry', { min: 2, max: 16, step: 1 })
     .on('change', updateSymmetry);
@@ -207,30 +168,6 @@ function setup() {
       view: 'color'
     });
   }
-
-  brushFolder.addInput(params, 'brushEnabled', { label: 'Use brush strokes' });
-  if (typeof brush !== 'undefined' && brush.box) {
-    let brushNames = brush.box();
-    if (brushNames.length > 0 && !brushNames.includes(params.brushName)) {
-      params.brushName = brushNames[0];
-    }
-    if (brushNames.length > 0) {
-      let brushOpts = {};
-      for (let n of brushNames) brushOpts[n] = n;
-      brushFolder.addInput(params, 'brushName', {
-        label: 'Brush',
-        options: brushOpts
-      });
-    }
-  }
-  brushFolder.addInput(params, 'brushScale', { min: 0.5, max: 10, step: 0.1 })
-    .on('change', applyBrushScale);
-  brushFolder.addInput(params, 'brushWeightMul', {
-    label: 'Weight multiplier',
-    min: 0.2,
-    max: 3,
-    step: 0.05
-  });
 
   pane.addButton({ title: 'Clear' }).on('click', clearMandala);
   pane.addButton({ title: 'Save' }).on('click', saveMandala);
@@ -284,8 +221,6 @@ function draw() {
   midiEngine.setParams(params);
   updateBeatState();
   midiEngine.updateVisuals();
-
-  prepareMandalaBufferForFrame();
 
   let overPane = isPointerOverPane();
   let curvyC = params.curvyEnabled && keyIsDown(67) && !overPane;
@@ -353,30 +288,29 @@ function draw() {
     renderFadingTrails();
   }
 
-  // --- FINAL COMPOSITE (WEBGL: origin at center — draw layers in pixel space) ---
+  // --- FINAL COMPOSITE ---
   background(
     params.bgColor.r,
     params.bgColor.g,
     params.bgColor.b
   );
 
-  push();
-  translate(-width / 2, -height / 2);
-  imageMode(CORNER);
-  image(mandalaBuffer, 0, 0, width, height);
+  // base layer
+  image(mandalaBuffer, 0, 0);
 
   if (params.blurEnabled) {
+    // --- BLOOM PASS ---
     glowBuffer.clear();
     glowBuffer.image(mandalaBuffer, 0, 0);
     glowBuffer.filter(BLUR, params.glowBlur);
 
+    // glow layer
     push();
     blendMode(ADD);
     tint(255, 255 * params.glowStrength);
-    image(glowBuffer, 0, 0, width, height);
+    image(glowBuffer, 0, 0);
     pop();
   }
-  pop();
 
   if (params.midiDebugHud) {
     midiEngine.drawDebugHud();
@@ -399,30 +333,17 @@ function mouseReleased() {
   drawing = false;
 }
 
-function viewportPointerXY() {
-  let el = document.querySelector('canvas');
-  if (!el || !width || !height) {
-    return { x: mouseX, y: mouseY };
-  }
-  let cr = el.getBoundingClientRect();
-  return {
-    x: cr.left + (mouseX / width) * cr.width,
-    y: cr.top + (mouseY / height) * cr.height
-  };
-}
-
 function isPointerOverPane() {
   if (!paneContainer || typeof paneContainer.getBoundingClientRect !== 'function') {
     return false;
   }
   let rect = paneContainer.getBoundingClientRect();
-  let p = viewportPointerXY();
 
   return (
-    p.x >= rect.left &&
-    p.x <= rect.right &&
-    p.y >= rect.top &&
-    p.y <= rect.bottom
+    mouseX >= rect.left &&
+    mouseX <= rect.right &&
+    mouseY >= rect.top &&
+    mouseY <= rect.bottom
   );
 }
 
@@ -513,46 +434,6 @@ function drawSymmetricSegment(x1, y1, x2, y2, weight, alphaValue, colorOverride)
   if (colorOverride) {
     strokeColorNow = colorOverride;
   }
-
-  let useBrush =
-    params.brushEnabled &&
-    typeof brush !== 'undefined' &&
-    brush.load &&
-    brush.set &&
-    brush.line;
-
-  if (useBrush) {
-    brush.load(mandalaBuffer);
-    if (brush.noField) brush.noField();
-    let hex = rgbaString(strokeColorNow, alphaValue / 255);
-    let wMul = (weight / params.thicknessMax) * params.brushWeightMul;
-    wMul = max(0.05, wMul);
-    brush.set(params.brushName, hex, wMul);
-
-    mandalaBuffer.push();
-
-    brush.line(x1, y1, x2, y2);
-
-    mandalaBuffer.push();
-    mandalaBuffer.scale(1, -1);
-    brush.line(x1, y1, x2, y2);
-    mandalaBuffer.pop();
-
-    for (let i = 1; i < params.symmetry; i++) {
-      mandalaBuffer.rotate(angle);
-      brush.line(x1, y1, x2, y2);
-
-      mandalaBuffer.push();
-      mandalaBuffer.scale(1, -1);
-      brush.line(x1, y1, x2, y2);
-      mandalaBuffer.pop();
-    }
-
-    mandalaBuffer.pop();
-    brush.load();
-    return;
-  }
-
   mandalaBuffer.stroke(
     strokeColorNow.r,
     strokeColorNow.g,
@@ -562,6 +443,7 @@ function drawSymmetricSegment(x1, y1, x2, y2, weight, alphaValue, colorOverride)
   mandalaBuffer.strokeWeight(weight);
 
   mandalaBuffer.push();
+  mandalaBuffer.translate(width / 2, height / 2);
 
   mandalaBuffer.line(x1, y1, x2, y2);
 
@@ -783,9 +665,9 @@ function getTempoCurvyTarget(state) {
 }
 
 function windowResized() {
-  resizeCanvas(windowWidth, windowHeight, WEBGL);
+  resizeCanvas(windowWidth, windowHeight);
 
-  let newBuffer = createGraphics(width, height, WEBGL);
+  let newBuffer = createGraphics(width, height);
   let newGlowBuffer = createGraphics(width, height);
 
   newBuffer.strokeCap(ROUND);
@@ -795,11 +677,4 @@ function windowResized() {
 
   mandalaBuffer = newBuffer;
   glowBuffer = newGlowBuffer;
-
-  if (typeof brush !== 'undefined' && brush.load) {
-    brush.load();
-  }
-  if (typeof brush !== 'undefined' && brush.scaleBrushes) {
-    brush.scaleBrushes(params.brushScale);
-  }
 }
