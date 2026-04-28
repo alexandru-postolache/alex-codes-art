@@ -38,7 +38,6 @@ let subEventStepMs = 0;
 
 // --- Buffers (avoid name "buffer" — conflicts with Web Audio / p5.sound) ---
 let mandalaBuffer;
-let glowBuffer;
 
 // --- Params ---
 let params = {
@@ -62,10 +61,6 @@ let params = {
   curvySpeedVariation: 2,
   curvyPulseRate: 2,
   curvyTurnRate: 2,
-
-  blurEnabled: false,
-  glowBlur: 8,
-  glowStrength: 1.5,
 
   bgColor: { r: 30, g: 30, b: 70 },
   strokeColor: { r: 255, g: 215, b: 0 },
@@ -92,7 +87,6 @@ function setup() {
 
   // --- Buffers ---
   mandalaBuffer = createGraphics(width, height);
-  glowBuffer = createGraphics(width, height);
 
   mandalaBuffer.strokeCap(ROUND);
   mandalaBuffer.noFill();
@@ -111,7 +105,6 @@ function setup() {
   const tempoFolder = pane.addFolder({ title: 'Tempo', expanded: false });
   const midiFolder = pane.addFolder({ title: 'MIDI', expanded: false });
   const trailFolder = pane.addFolder({ title: 'Trail & Fade', expanded: false });
-  const glowFolder = pane.addFolder({ title: 'Glow', expanded: false });
   const colorFolder = pane.addFolder({ title: 'Colors', expanded: false });
   const multiLineFolder = pane.addFolder({
     title: 'Multi-line keys (1–9)',
@@ -146,10 +139,6 @@ function setup() {
   trailFolder.addInput(params, 'fadeAmount', { min: 0, max: 100, step: 1 });
   trailFolder.addInput(params, 'maxTrailSegments', { min: 500, max: 20000, step: 100 });
   trailFolder.addInput(params, 'minSegmentLength', { min: 0.1, max: 5, step: 0.1 });
-
-  glowFolder.addInput(params, 'blurEnabled');
-  glowFolder.addInput(params, 'glowBlur', { min: 0, max: 20, step: 1 });
-  glowFolder.addInput(params, 'glowStrength', { min: 0, max: 3, step: 0.1 });
 
   colorFolder.addInput(params, 'bgColor', { view: 'color' })
     .on('change', () => {
@@ -297,20 +286,6 @@ function draw() {
 
   // base layer
   image(mandalaBuffer, 0, 0);
-
-  if (params.blurEnabled) {
-    // --- BLOOM PASS ---
-    glowBuffer.clear();
-    glowBuffer.image(mandalaBuffer, 0, 0);
-    glowBuffer.filter(BLUR, params.glowBlur);
-
-    // glow layer
-    push();
-    blendMode(ADD);
-    tint(255, 255 * params.glowStrength);
-    image(glowBuffer, 0, 0);
-    pop();
-  }
 
   if (params.midiDebugHud) {
     midiEngine.drawDebugHud();
@@ -668,7 +643,6 @@ function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
 
   let newBuffer = createGraphics(width, height);
-  let newGlowBuffer = createGraphics(width, height);
 
   newBuffer.strokeCap(ROUND);
   newBuffer.noFill();
@@ -676,5 +650,4 @@ function windowResized() {
   newBuffer.image(mandalaBuffer, 0, 0);
 
   mandalaBuffer = newBuffer;
-  glowBuffer = newGlowBuffer;
 }
