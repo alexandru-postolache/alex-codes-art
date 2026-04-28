@@ -13,43 +13,20 @@ function createCurvyLineState() {
     prev: createVector(0, 0),
     curvyPos: createVector(0, 0),
     curvyAngle: 0,
-    curvyTime: 0,
-    beatHeading: 0,
-    beatStartSpeed: 0,
-    beatEndSpeed: 0,
-    segmentStartMs: 0,
-    segmentDurationMs: 1,
-    pauseUntilMs: 0
+    curvyTime: 0
   };
 }
 
 let curvyStateC;
 let keyLineStates = {};
-let tempoLineStates = [];
 let trailSegments = [];
-let beatIndex = 0;
-let lastBeatMs = 0;
-let nextBeatMs = 0;
-let beatPhase = 0;
-let beatIntervalMsCurrent = 0;
-let subEventsRemaining = 0;
-let nextSubEventMs = 0;
-let subEventStepMs = 0;
 
-// --- Buffers (avoid name "buffer" — conflicts with Web Audio / p5.sound) ---
 let mandalaBuffer;
-let glowBuffer;
 
-// --- Params ---
 let params = {
   symmetry: 8,
   smoothing: 0.2,
   thicknessMax: 10,
-  tempoEnabled: true,
-  tempo: 120,
-  tempoImpact: 0.7,
-  tempoSubdivisionChance: 0.35,
-  tempoPauseChance: 0.15,
   fadeEnabled: true,
   fadeAmount: 100,
   maxTrailSegments: 6000,
@@ -59,10 +36,6 @@ let params = {
   curvySpeedVariation: 2,
   curvyPulseRate: 2,
   curvyTurnRate: 2,
-
-  blurEnabled: false,
-  glowBlur: 8,
-  glowStrength: 1.5,
 
   bgColor: { r: 30, g: 30, b: 70 },
   strokeColor: { r: 255, g: 215, b: 0 },
@@ -87,27 +60,20 @@ function setup() {
   createCanvas(windowWidth, windowHeight);
   angleMode(DEGREES);
 
-  // --- Buffers ---
   mandalaBuffer = createGraphics(width, height);
-  glowBuffer = createGraphics(width, height);
-
   mandalaBuffer.strokeCap(ROUND);
   mandalaBuffer.noFill();
-
   mandalaBuffer.background(params.bgColor.r, params.bgColor.g, params.bgColor.b);
 
   mouseCurrent = createVector(0, 0);
   mousePrev = createVector(0, 0);
   curvyStateC = createCurvyLineState();
 
-  // --- Tweakpane ---
-  pane = new Tweakpane.Pane({ title: 'Mandala — Fade, tempo & keys' });
+  pane = new Tweakpane.Pane({ title: 'Mandala — Fade & keys' });
   paneContainer = pane.element;
 
   const motionFolder = pane.addFolder({ title: 'Motion', expanded: true });
-  const tempoFolder = pane.addFolder({ title: 'Tempo', expanded: false });
   const trailFolder = pane.addFolder({ title: 'Trail & Fade', expanded: false });
-  const glowFolder = pane.addFolder({ title: 'Glow', expanded: false });
   const colorFolder = pane.addFolder({ title: 'Colors', expanded: false });
   const multiLineFolder = pane.addFolder({
     title: 'Multi-line keys (1–9)',
@@ -127,20 +93,10 @@ function setup() {
   motionFolder.addInput(params, 'curvyPulseRate', { min: 0.2, max: 6, step: 0.1 });
   motionFolder.addInput(params, 'curvyTurnRate', { min: 0.2, max: 8, step: 0.1 });
 
-  tempoFolder.addInput(params, 'tempoEnabled');
-  tempoFolder.addInput(params, 'tempo', { min: 40, max: 220, step: 1 });
-  tempoFolder.addInput(params, 'tempoImpact', { min: 0, max: 1.5, step: 0.05 });
-  tempoFolder.addInput(params, 'tempoSubdivisionChance', { min: 0, max: 1, step: 0.05 });
-  tempoFolder.addInput(params, 'tempoPauseChance', { min: 0, max: 1, step: 0.05 });
-
   trailFolder.addInput(params, 'fadeEnabled');
   trailFolder.addInput(params, 'fadeAmount', { min: 0, max: 100, step: 1 });
   trailFolder.addInput(params, 'maxTrailSegments', { min: 500, max: 20000, step: 100 });
   trailFolder.addInput(params, 'minSegmentLength', { min: 0.1, max: 5, step: 0.1 });
-
-  glowFolder.addInput(params, 'blurEnabled');
-  glowFolder.addInput(params, 'glowBlur', { min: 0, max: 20, step: 1 });
-  glowFolder.addInput(params, 'glowStrength', { min: 0, max: 3, step: 0.1 });
 
   colorFolder.addInput(params, 'bgColor', { view: 'color' })
     .on('change', () => {
@@ -209,8 +165,6 @@ function appendStrokeForLine(lineState, active, justStarted, getTarget, colorOve
 }
 
 function draw() {
-  updateBeatState();
-
   let overPane = isPointerOverPane();
   let curvyC = params.curvyEnabled && keyIsDown(67) && !overPane;
   let curvyJustStartedC = curvyC && !curvyCWasActive;
@@ -226,8 +180,6 @@ function draw() {
   for (let d = 1; d <= 9; d++) {
     if (!heldDigits.has(d) && keyLineStates[d]) delete keyLineStates[d];
   }
-
-  trimTempoLineStatesForFrame(curvyC, heldDigits);
 
   appendStrokeForLine(
     curvyStateC,
@@ -256,32 +208,10 @@ function draw() {
     renderFadingTrails();
   }
 
-  // --- FINAL COMPOSITE ---
-  background(
-    params.bgColor.r,
-    params.bgColor.g,
-    params.bgColor.b
-  );
-
-  // base layer
+  background(params.bgColor.r, params.bgColor.g, params.bgColor.b);
   image(mandalaBuffer, 0, 0);
-
-  if (params.blurEnabled) {
-    // --- BLOOM PASS ---
-    glowBuffer.clear();
-    glowBuffer.image(mandalaBuffer, 0, 0);
-    glowBuffer.filter(BLUR, params.glowBlur);
-
-    // glow layer
-    push();
-    blendMode(ADD);
-    tint(255, 255 * params.glowStrength);
-    image(glowBuffer, 0, 0);
-    pop();
-  }
 }
 
-// --- Input ---
 function mousePressed() {
   if (isPointerOverPane()) return;
 
@@ -311,14 +241,12 @@ function isPointerOverPane() {
   );
 }
 
-// --- Controls ---
 function keyPressed() {
   if (key === 'h') {
     pane.hidden = !pane.hidden;
   }
 }
 
-// --- Helpers ---
 function updateSymmetry() {
   symmetry = params.symmetry;
   angle = 360 / symmetry;
@@ -334,15 +262,7 @@ function clearMandala() {
 }
 
 function saveMandala() {
-  saveCanvas('MandalaFadeTempoKeys', 'png');
-}
-
-function trimTempoLineStatesForFrame(curvyCActive, heldDigits) {
-  tempoLineStates = [];
-  if (params.tempoEnabled && curvyCActive) tempoLineStates.push(curvyStateC);
-  if (params.tempoEnabled) {
-    for (let d of heldDigits) tempoLineStates.push(ensureKeyLineState(d));
-  }
+  saveCanvas('MandalaFadeKeys', 'png');
 }
 
 function getCurvyTarget(state, justStarted) {
@@ -351,15 +271,7 @@ function getCurvyTarget(state, justStarted) {
     state.prev = state.curvyPos.copy();
     state.current = state.curvyPos.copy();
     state.curvyAngle = random(360);
-    state.beatHeading = state.curvyAngle;
     state.curvyTime = random(1000);
-    if (params.tempoEnabled) {
-      pickNextBeatSegment(state, true);
-    }
-  }
-
-  if (params.tempoEnabled) {
-    return getTempoCurvyTarget(state);
   }
 
   state.curvyTime += 0.02;
@@ -495,154 +407,14 @@ function renderFadingTrails() {
   }
 }
 
-function updateBeatState() {
-  if (!params.tempoEnabled) {
-    beatPhase = 0;
-    nextBeatMs = 0;
-    lastBeatMs = 0;
-    beatIntervalMsCurrent = 0;
-    subEventsRemaining = 0;
-    nextSubEventMs = 0;
-    subEventStepMs = 0;
-    return;
-  }
-
-  let now = millis();
-  let beatIntervalMs = 60000 / max(1, params.tempo);
-  beatIntervalMsCurrent = beatIntervalMs;
-
-  if (nextBeatMs === 0) {
-    lastBeatMs = now;
-    nextBeatMs = now + beatIntervalMs;
-    triggerBeatModulation(beatIntervalMs);
-    scheduleSubdivisionsForCurrentBeat();
-  }
-
-  if (now >= nextBeatMs) {
-    while (now >= nextBeatMs) {
-      lastBeatMs = nextBeatMs;
-      nextBeatMs += beatIntervalMs;
-      beatIndex++;
-      triggerBeatModulation(beatIntervalMs);
-      scheduleSubdivisionsForCurrentBeat();
-    }
-  }
-
-  while (subEventsRemaining > 0 && now >= nextSubEventMs) {
-    triggerBeatModulation(beatIntervalMs);
-    subEventsRemaining--;
-    nextSubEventMs += subEventStepMs;
-  }
-
-  beatPhase = constrain((now - lastBeatMs) / beatIntervalMs, 0, 1);
-}
-
-function triggerBeatModulation(segmentMs) {
-  let now = millis();
-  let beatDur = max(1, beatIntervalMsCurrent);
-
-  for (let state of tempoLineStates) {
-    if (random() <= params.tempoPauseChance) {
-      state.pauseUntilMs = now + beatDur;
-      state.beatStartSpeed = 0;
-      state.beatEndSpeed = 0;
-      state.segmentStartMs = now;
-      state.segmentDurationMs = beatDur;
-      continue;
-    }
-
-    state.segmentStartMs = millis();
-    state.segmentDurationMs = max(1, segmentMs || beatIntervalMsCurrent || 1);
-    pickNextBeatSegment(state, false);
-  }
-}
-
-function pickNextBeatSegment(state, isFirstSegment) {
-  let impact = params.tempoImpact;
-
-  if (isFirstSegment) {
-    state.beatHeading = state.curvyAngle;
-  } else {
-    let dirSign = beatIndex % 2 === 0 ? 1 : -1;
-    let turnAmount = random(45, 165) * (0.35 + impact);
-    state.beatHeading += dirSign * turnAmount;
-  }
-
-  let speedBoost = 1 + random(0.6, 1.8) * impact;
-  state.beatStartSpeed =
-    (params.curvyBaseSpeed + params.curvySpeedVariation) * speedBoost;
-
-  let nearStopChance = constrain(0.2 + 0.45 * impact, 0.2, 0.9);
-  if (random() < nearStopChance) {
-    state.beatEndSpeed = random(0, 0.25 * params.curvyBaseSpeed);
-  } else {
-    state.beatEndSpeed = random(0.2, 0.6) * params.curvyBaseSpeed;
-  }
-}
-
-function scheduleSubdivisionsForCurrentBeat() {
-  subEventsRemaining = 0;
-  nextSubEventMs = 0;
-
-  if (random() > params.tempoSubdivisionChance) {
-    return;
-  }
-
-  let targetEvents = random() < 0.5 ? 2 : 4;
-  subEventsRemaining = targetEvents - 1;
-  if (subEventsRemaining <= 0) {
-    return;
-  }
-
-  subEventStepMs = beatIntervalMsCurrent / targetEvents;
-  nextSubEventMs = lastBeatMs + subEventStepMs;
-}
-
-function getTempoCurvyTarget(state) {
-  if (millis() < state.pauseUntilMs) {
-    return state.curvyPos.copy();
-  }
-
-  if (state.beatStartSpeed === 0 && state.beatEndSpeed === 0) {
-    pickNextBeatSegment(state, true);
-  }
-
-  let segmentPhase = constrain(
-    (millis() - state.segmentStartMs) / state.segmentDurationMs,
-    0,
-    1
-  );
-  let eased = 1 - pow(segmentPhase, 1.8);
-  let step = lerp(state.beatEndSpeed, state.beatStartSpeed, eased);
-  state.curvyPos.x += cos(state.beatHeading) * step;
-  state.curvyPos.y += sin(state.beatHeading) * step;
-
-  let halfW = width / 2;
-  let halfH = height / 2;
-  if (state.curvyPos.x < -halfW || state.curvyPos.x > halfW) {
-    state.beatHeading = 180 - state.beatHeading;
-    state.curvyPos.x = constrain(state.curvyPos.x, -halfW, halfW);
-  }
-
-  if (state.curvyPos.y < -halfH || state.curvyPos.y > halfH) {
-    state.beatHeading = -state.beatHeading;
-    state.curvyPos.y = constrain(state.curvyPos.y, -halfH, halfH);
-  }
-
-  return state.curvyPos.copy();
-}
-
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
 
   let newBuffer = createGraphics(width, height);
-  let newGlowBuffer = createGraphics(width, height);
-
   newBuffer.strokeCap(ROUND);
   newBuffer.noFill();
   newBuffer.background(params.bgColor.r, params.bgColor.g, params.bgColor.b);
   newBuffer.image(mandalaBuffer, 0, 0);
 
   mandalaBuffer = newBuffer;
-  glowBuffer = newGlowBuffer;
 }
