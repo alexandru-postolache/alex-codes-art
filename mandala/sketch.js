@@ -103,8 +103,12 @@ function rgbaString(rgb, alpha01) {
 }
 
 function setup() {
-  createCanvas(windowWidth, windowHeight);
+  createCanvas(windowWidth, windowHeight, WEBGL);
   angleMode(DEGREES);
+
+  if (typeof brush !== 'undefined' && brush.load) {
+    brush.load();
+  }
 
   // --- Buffers ---
   // WEBGL: origin at canvas center — matches stroke coords (mouse − center)
@@ -223,12 +227,12 @@ function setup() {
 }
 
 function collectHeldDigitKeys() {
-  let set = new Set();
-  if (!params.curvyEnabled || isPointerOverPane()) return set;
+  let digitSet = new Set();
+  if (!params.curvyEnabled || isPointerOverPane()) return digitSet;
   for (let d = 1; d <= 9; d++) {
-    if (keyIsDown(48 + d)) set.add(d);
+    if (keyIsDown(48 + d)) digitSet.add(d);
   }
-  return set;
+  return digitSet;
 }
 
 function ensureKeyLineState(d) {
@@ -335,29 +339,30 @@ function draw() {
     renderFadingTrails();
   }
 
-  // --- FINAL COMPOSITE ---
+  // --- FINAL COMPOSITE (WEBGL: origin at center — draw layers in pixel space) ---
   background(
     params.bgColor.r,
     params.bgColor.g,
     params.bgColor.b
   );
 
-  // base layer
-  image(mandalaBuffer, 0, 0);
+  push();
+  translate(-width / 2, -height / 2);
+  imageMode(CORNER);
+  image(mandalaBuffer, 0, 0, width, height);
 
   if (params.blurEnabled) {
-    // --- BLOOM PASS ---
     glowBuffer.clear();
     glowBuffer.image(mandalaBuffer, 0, 0);
     glowBuffer.filter(BLUR, params.glowBlur);
 
-    // glow layer
     push();
     blendMode(ADD);
     tint(255, 255 * params.glowStrength);
-    image(glowBuffer, 0, 0);
+    image(glowBuffer, 0, 0, width, height);
     pop();
   }
+  pop();
 
   if (params.midiDebugHud) {
     midiEngine.drawDebugHud();
@@ -380,14 +385,30 @@ function mouseReleased() {
   drawing = false;
 }
 
+function viewportPointerXY() {
+  let el = document.querySelector('canvas');
+  if (!el || !width || !height) {
+    return { x: mouseX, y: mouseY };
+  }
+  let cr = el.getBoundingClientRect();
+  return {
+    x: cr.left + (mouseX / width) * cr.width,
+    y: cr.top + (mouseY / height) * cr.height
+  };
+}
+
 function isPointerOverPane() {
+  if (!paneContainer || typeof paneContainer.getBoundingClientRect !== 'function') {
+    return false;
+  }
   let rect = paneContainer.getBoundingClientRect();
+  let p = viewportPointerXY();
 
   return (
-    mouseX >= rect.left &&
-    mouseX <= rect.right &&
-    mouseY >= rect.top &&
-    mouseY <= rect.bottom
+    p.x >= rect.left &&
+    p.x <= rect.right &&
+    p.y >= rect.top &&
+    p.y <= rect.bottom
   );
 }
 
@@ -748,7 +769,7 @@ function getTempoCurvyTarget(state) {
 }
 
 function windowResized() {
-  resizeCanvas(windowWidth, windowHeight);
+  resizeCanvas(windowWidth, windowHeight, WEBGL);
 
   let newBuffer = createGraphics(width, height, WEBGL);
   let newGlowBuffer = createGraphics(width, height);
@@ -761,6 +782,9 @@ function windowResized() {
   mandalaBuffer = newBuffer;
   glowBuffer = newGlowBuffer;
 
+  if (typeof brush !== 'undefined' && brush.load) {
+    brush.load();
+  }
   if (typeof brush !== 'undefined' && brush.scaleBrushes) {
     brush.scaleBrushes(params.brushScale);
   }
