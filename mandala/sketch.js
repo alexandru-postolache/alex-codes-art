@@ -23,7 +23,7 @@ function createCurvyLineState() {
   };
 }
 
-let curvyStateC = createCurvyLineState();
+let curvyStateC;
 let keyLineStates = {};
 let tempoLineStates = [];
 let trailSegments = [];
@@ -36,8 +36,8 @@ let subEventsRemaining = 0;
 let nextSubEventMs = 0;
 let subEventStepMs = 0;
 
-// --- Buffers ---
-let buffer;
+// --- Buffers (avoid name "buffer" — conflicts with Web Audio / p5.sound) ---
+let mandalaBuffer;
 let glowBuffer;
 
 // --- Params ---
@@ -91,16 +91,17 @@ function setup() {
   angleMode(DEGREES);
 
   // --- Buffers ---
-  buffer = createGraphics(width, height);
+  mandalaBuffer = createGraphics(width, height);
   glowBuffer = createGraphics(width, height);
 
-  buffer.strokeCap(ROUND);
-  buffer.noFill();
+  mandalaBuffer.strokeCap(ROUND);
+  mandalaBuffer.noFill();
 
-  buffer.background(params.bgColor.r, params.bgColor.g, params.bgColor.b);
+  mandalaBuffer.background(params.bgColor.r, params.bgColor.g, params.bgColor.b);
 
   mouseCurrent = createVector(0, 0);
   mousePrev = createVector(0, 0);
+  curvyStateC = createCurvyLineState();
 
   // --- Tweakpane ---
   pane = new Tweakpane.Pane({ title: 'Mandala Controls' });
@@ -152,7 +153,7 @@ function setup() {
 
   colorFolder.addInput(params, 'bgColor', { view: 'color' })
     .on('change', () => {
-      buffer.background(
+      mandalaBuffer.background(
         params.bgColor.r,
         params.bgColor.g,
         params.bgColor.b
@@ -295,12 +296,12 @@ function draw() {
   );
 
   // base layer
-  image(buffer, 0, 0);
+  image(mandalaBuffer, 0, 0);
 
   if (params.blurEnabled) {
     // --- BLOOM PASS ---
     glowBuffer.clear();
-    glowBuffer.image(buffer, 0, 0);
+    glowBuffer.image(mandalaBuffer, 0, 0);
     glowBuffer.filter(BLUR, params.glowBlur);
 
     // glow layer
@@ -358,7 +359,7 @@ function updateSymmetry() {
 
 function clearMandala() {
   trailSegments = [];
-  buffer.background(
+  mandalaBuffer.background(
     params.bgColor.r,
     params.bgColor.g,
     params.bgColor.b
@@ -430,35 +431,35 @@ function drawSymmetricSegment(x1, y1, x2, y2, weight, alphaValue, colorOverride)
   if (colorOverride) {
     strokeColorNow = colorOverride;
   }
-  buffer.stroke(
+  mandalaBuffer.stroke(
     strokeColorNow.r,
     strokeColorNow.g,
     strokeColorNow.b,
     alphaValue
   );
-  buffer.strokeWeight(weight);
+  mandalaBuffer.strokeWeight(weight);
 
-  buffer.push();
-  buffer.translate(width / 2, height / 2);
+  mandalaBuffer.push();
+  mandalaBuffer.translate(width / 2, height / 2);
 
-  buffer.line(x1, y1, x2, y2);
+  mandalaBuffer.line(x1, y1, x2, y2);
 
-  buffer.push();
-  buffer.scale(1, -1);
-  buffer.line(x1, y1, x2, y2);
-  buffer.pop();
+  mandalaBuffer.push();
+  mandalaBuffer.scale(1, -1);
+  mandalaBuffer.line(x1, y1, x2, y2);
+  mandalaBuffer.pop();
 
   for (let i = 1; i < params.symmetry; i++) {
-    buffer.rotate(angle);
-    buffer.line(x1, y1, x2, y2);
+    mandalaBuffer.rotate(angle);
+    mandalaBuffer.line(x1, y1, x2, y2);
 
-    buffer.push();
-    buffer.scale(1, -1);
-    buffer.line(x1, y1, x2, y2);
-    buffer.pop();
+    mandalaBuffer.push();
+    mandalaBuffer.scale(1, -1);
+    mandalaBuffer.line(x1, y1, x2, y2);
+    mandalaBuffer.pop();
   }
 
-  buffer.pop();
+  mandalaBuffer.pop();
 }
 
 function addSegment(x1, y1, x2, y2, weight, color) {
@@ -483,7 +484,7 @@ function addSegment(x1, y1, x2, y2, weight, color) {
 }
 
 function renderFadingTrails() {
-  buffer.background(params.bgColor.r, params.bgColor.g, params.bgColor.b);
+  mandalaBuffer.background(params.bgColor.r, params.bgColor.g, params.bgColor.b);
 
   if (params.fadeAmount <= 0) {
     for (let segment of trailSegments) {
@@ -669,8 +670,8 @@ function windowResized() {
   newBuffer.strokeCap(ROUND);
   newBuffer.noFill();
   newBuffer.background(params.bgColor.r, params.bgColor.g, params.bgColor.b);
-  newBuffer.image(buffer, 0, 0);
+  newBuffer.image(mandalaBuffer, 0, 0);
 
-  buffer = newBuffer;
+  mandalaBuffer = newBuffer;
   glowBuffer = newGlowBuffer;
 }
