@@ -236,7 +236,6 @@ const midiEngine = {
     let enabledText = this.params && this.params.midiEnabled ? "on" : "off";
 
     push();
-    translate(-width / 2, -height / 2);
     noStroke();
     fill(0, 150);
     rect(12, 12, 290, 94, 8);
