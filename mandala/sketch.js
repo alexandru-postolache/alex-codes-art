@@ -2,25 +2,39 @@ let symmetry = 8;
 let angle;
 
 let drawing = false;
-let current, prev;
+let mouseCurrent, mousePrev;
 let thickness = 2;
-let curvyPos, curvyAngle = 0, curvyTime = 0;
-let curvyWasActive = false;
+let curvyCWasActive = false;
+let lastHeldDigitKeys = new Set();
+
+function createCurvyLineState() {
+  return {
+    current: createVector(0, 0),
+    prev: createVector(0, 0),
+    curvyPos: createVector(0, 0),
+    curvyAngle: 0,
+    curvyTime: 0,
+    beatHeading: 0,
+    beatStartSpeed: 0,
+    beatEndSpeed: 0,
+    segmentStartMs: 0,
+    segmentDurationMs: 1,
+    pauseUntilMs: 0
+  };
+}
+
+let curvyStateC = createCurvyLineState();
+let keyLineStates = {};
+let tempoLineStates = [];
 let trailSegments = [];
 let beatIndex = 0;
 let lastBeatMs = 0;
 let nextBeatMs = 0;
 let beatPhase = 0;
-let beatHeading = 0;
-let beatStartSpeed = 0;
-let beatEndSpeed = 0;
 let beatIntervalMsCurrent = 0;
 let subEventsRemaining = 0;
 let nextSubEventMs = 0;
 let subEventStepMs = 0;
-let segmentStartMs = 0;
-let segmentDurationMs = 1;
-let pauseUntilMs = 0;
 
 // --- Buffers ---
 let buffer;
@@ -54,7 +68,19 @@ let params = {
   glowStrength: 1.5,
 
   bgColor: { r: 30, g: 30, b: 70 },
-  strokeColor: { r: 255, g: 215, b: 0 }
+  strokeColor: { r: 255, g: 215, b: 0 },
+
+  multiLineColors: {
+    k1: { r: 255, g: 120, b: 90 },
+    k2: { r: 255, g: 200, b: 80 },
+    k3: { r: 180, g: 255, b: 120 },
+    k4: { r: 80, g: 220, b: 200 },
+    k5: { r: 100, g: 160, b: 255 },
+    k6: { r: 200, g: 130, b: 255 },
+    k7: { r: 255, g: 100, b: 180 },
+    k8: { r: 230, g: 230, b: 250 },
+    k9: { r: 255, g: 245, b: 180 }
+  }
 };
 
 let pane;
@@ -73,9 +99,8 @@ function setup() {
 
   buffer.background(params.bgColor.r, params.bgColor.g, params.bgColor.b);
 
-  current = createVector(0, 0);
-  prev = createVector(0, 0);
-  curvyPos = createVector(0, 0);
+  mouseCurrent = createVector(0, 0);
+  mousePrev = createVector(0, 0);
 
   // --- Tweakpane ---
   pane = new Tweakpane.Pane({ title: 'Mandala Controls' });
@@ -87,13 +112,19 @@ function setup() {
   const trailFolder = pane.addFolder({ title: 'Trail & Fade', expanded: false });
   const glowFolder = pane.addFolder({ title: 'Glow', expanded: false });
   const colorFolder = pane.addFolder({ title: 'Colors', expanded: false });
+  const multiLineFolder = pane.addFolder({
+    title: 'Multi-line keys (1–9)',
+    expanded: false
+  });
 
   motionFolder.addInput(params, 'symmetry', { min: 2, max: 16, step: 1 })
     .on('change', updateSymmetry);
 
   motionFolder.addInput(params, 'smoothing', { min: 0.05, max: 0.5, step: 0.01 });
   motionFolder.addInput(params, 'thicknessMax', { min: 1, max: 20, step: 0.5 });
-  motionFolder.addInput(params, 'curvyEnabled', { label: 'Hold C: Curvy draw' });
+  motionFolder.addInput(params, 'curvyEnabled', {
+    label: 'Curvy (C + keys 1–9)'
+  });
   motionFolder.addInput(params, 'curvyBaseSpeed', { min: 0.5, max: 12, step: 0.1 });
   motionFolder.addInput(params, 'curvySpeedVariation', { min: 0, max: 10, step: 0.1 });
   motionFolder.addInput(params, 'curvyPulseRate', { min: 0.2, max: 6, step: 0.1 });
@@ -130,10 +161,59 @@ function setup() {
 
   colorFolder.addInput(params, 'strokeColor', { view: 'color' });
 
+  for (let d = 1; d <= 9; d++) {
+    multiLineFolder.addInput(params.multiLineColors, `k${d}`, {
+      label: `Key ${d}`,
+      view: 'color'
+    });
+  }
+
   pane.addButton({ title: 'Clear' }).on('click', clearMandala);
   pane.addButton({ title: 'Save' }).on('click', saveMandala);
 
   updateSymmetry();
+}
+
+function collectHeldDigitKeys() {
+  let set = new Set();
+  if (!params.curvyEnabled || isPointerOverPane()) return set;
+  for (let d = 1; d <= 9; d++) {
+    if (keyIsDown(48 + d)) set.add(d);
+  }
+  return set;
+}
+
+function ensureKeyLineState(d) {
+  if (!keyLineStates[d]) keyLineStates[d] = createCurvyLineState();
+  return keyLineStates[d];
+}
+
+function appendStrokeForLine(lineState, active, justStarted, getTarget, colorOverride) {
+  if (!active) return;
+  let target = getTarget(justStarted);
+  lineState.current.lerp(target, params.smoothing);
+  let segmentLength = p5.Vector.dist(lineState.prev, lineState.current);
+  if (segmentLength >= params.minSegmentLength) {
+    let speed = segmentLength;
+    let targetThickness = map(
+      speed,
+      0,
+      10,
+      params.thicknessMax,
+      1,
+      true
+    );
+    thickness = lerp(thickness, targetThickness, 0.2);
+    addSegment(
+      lineState.prev.x,
+      lineState.prev.y,
+      lineState.current.x,
+      lineState.current.y,
+      thickness,
+      colorOverride
+    );
+    lineState.prev = lineState.current.copy();
+  }
 }
 
 function draw() {
@@ -141,44 +221,51 @@ function draw() {
   updateBeatState();
   midiEngine.updateVisuals();
 
-  // --- Draw stroke ---
-  let curvyDrawing = params.curvyEnabled && keyIsDown(67) && !isPointerOverPane();
-  let curvyJustStarted = curvyDrawing && !curvyWasActive;
-  curvyWasActive = curvyDrawing;
+  let overPane = isPointerOverPane();
+  let curvyC = params.curvyEnabled && keyIsDown(67) && !overPane;
+  let curvyJustStartedC = curvyC && !curvyCWasActive;
+  curvyCWasActive = curvyC;
 
-  if (drawing || curvyDrawing) {
-    let target;
-    if (curvyDrawing) {
-      target = getCurvyTarget(curvyJustStarted);
-    } else {
-      target = createVector(mouseX - width / 2, mouseY - height / 2);
-    }
+  let heldDigits = collectHeldDigitKeys();
+  let digitJustStarted = new Set();
+  for (let d of heldDigits) {
+    if (!lastHeldDigitKeys.has(d)) digitJustStarted.add(d);
+  }
+  lastHeldDigitKeys = heldDigits;
 
-    current.lerp(target, params.smoothing);
-    let segmentLength = p5.Vector.dist(prev, current);
-    if (segmentLength >= params.minSegmentLength) {
-      let speed = segmentLength;
+  for (let d = 1; d <= 9; d++) {
+    if (!heldDigits.has(d) && keyLineStates[d]) delete keyLineStates[d];
+  }
 
-      let targetThickness = map(
-        speed,
-        0,
-        10,
-        params.thicknessMax,
-        1,
-        true
-      );
+  trimTempoLineStatesForFrame(curvyC, heldDigits);
 
-      thickness = lerp(thickness, targetThickness, 0.2);
-      addSegment(prev.x, prev.y, current.x, current.y, thickness, null);
+  appendStrokeForLine(
+    curvyStateC,
+    drawing || curvyC,
+    curvyJustStartedC,
+    (js) =>
+      curvyC
+        ? getCurvyTarget(curvyStateC, js)
+        : createVector(mouseX - width / 2, mouseY - height / 2),
+    null
+  );
 
-      prev = current.copy();
-    }
+  for (let d of heldDigits) {
+    let st = ensureKeyLineState(d);
+    let col = params.multiLineColors[`k${d}`];
+    appendStrokeForLine(
+      st,
+      true,
+      digitJustStarted.has(d),
+      (js) => getCurvyTarget(st, js),
+      col
+    );
   }
 
   let midiSegments = midiEngine.getSegments({
     params,
-    current,
-    prev,
+    current: mouseCurrent,
+    prev: mousePrev,
     mouseX,
     mouseY,
     width,
@@ -235,8 +322,10 @@ function mousePressed() {
 
   drawing = true;
 
-  current.set(mouseX - width / 2, mouseY - height / 2);
-  prev = current.copy();
+  mouseCurrent.set(mouseX - width / 2, mouseY - height / 2);
+  mousePrev = mouseCurrent.copy();
+  curvyStateC.current.set(mouseCurrent);
+  curvyStateC.prev.set(mousePrev);
 }
 
 function mouseReleased() {
@@ -280,46 +369,60 @@ function saveMandala() {
   saveCanvas('MandalaFadeGlow', 'png');
 }
 
-function getCurvyTarget(justStarted) {
+function trimTempoLineStatesForFrame(curvyCActive, heldDigits) {
+  tempoLineStates = [];
+  if (params.tempoEnabled && curvyCActive) tempoLineStates.push(curvyStateC);
+  if (params.tempoEnabled) {
+    for (let d of heldDigits) tempoLineStates.push(ensureKeyLineState(d));
+  }
+}
+
+function getCurvyTarget(state, justStarted) {
   if (justStarted) {
-    curvyPos.set(mouseX - width / 2, mouseY - height / 2);
-    prev = curvyPos.copy();
-    current = curvyPos.copy();
-    curvyAngle = random(360);
-    beatHeading = curvyAngle;
-    curvyTime = random(1000);
+    state.curvyPos.set(mouseX - width / 2, mouseY - height / 2);
+    state.prev = state.curvyPos.copy();
+    state.current = state.curvyPos.copy();
+    state.curvyAngle = random(360);
+    state.beatHeading = state.curvyAngle;
+    state.curvyTime = random(1000);
     if (params.tempoEnabled) {
-      pickNextBeatSegment(true);
+      pickNextBeatSegment(state, true);
     }
   }
 
   if (params.tempoEnabled) {
-    return getTempoCurvyTarget();
+    return getTempoCurvyTarget(state);
   }
 
-  curvyTime += 0.02;
-  let turnDelta = map(noise(curvyTime), 0, 1, -params.curvyTurnRate, params.curvyTurnRate);
-  curvyAngle += turnDelta;
+  state.curvyTime += 0.02;
+  let turnDelta = map(
+    noise(state.curvyTime),
+    0,
+    1,
+    -params.curvyTurnRate,
+    params.curvyTurnRate
+  );
+  state.curvyAngle += turnDelta;
 
-  let pulse = (sin(curvyTime * 360 * params.curvyPulseRate) + 1) * 0.5;
+  let pulse = (sin(state.curvyTime * 360 * params.curvyPulseRate) + 1) * 0.5;
   let step = params.curvyBaseSpeed + params.curvySpeedVariation * pulse;
 
-  curvyPos.x += cos(curvyAngle) * step;
-  curvyPos.y += sin(curvyAngle) * step;
+  state.curvyPos.x += cos(state.curvyAngle) * step;
+  state.curvyPos.y += sin(state.curvyAngle) * step;
 
   let halfW = width / 2;
   let halfH = height / 2;
-  if (curvyPos.x < -halfW || curvyPos.x > halfW) {
-    curvyAngle = 180 - curvyAngle;
-    curvyPos.x = constrain(curvyPos.x, -halfW, halfW);
+  if (state.curvyPos.x < -halfW || state.curvyPos.x > halfW) {
+    state.curvyAngle = 180 - state.curvyAngle;
+    state.curvyPos.x = constrain(state.curvyPos.x, -halfW, halfW);
   }
 
-  if (curvyPos.y < -halfH || curvyPos.y > halfH) {
-    curvyAngle = -curvyAngle;
-    curvyPos.y = constrain(curvyPos.y, -halfH, halfH);
+  if (state.curvyPos.y < -halfH || state.curvyPos.y > halfH) {
+    state.curvyAngle = -state.curvyAngle;
+    state.curvyPos.y = constrain(state.curvyPos.y, -halfH, halfH);
   }
 
-  return curvyPos.copy();
+  return state.curvyPos.copy();
 }
 
 function drawSymmetricSegment(x1, y1, x2, y2, weight, alphaValue, colorOverride) {
@@ -429,9 +532,6 @@ function updateBeatState() {
     subEventsRemaining = 0;
     nextSubEventMs = 0;
     subEventStepMs = 0;
-    segmentStartMs = 0;
-    segmentDurationMs = 1;
-    pauseUntilMs = 0;
     return;
   }
 
@@ -467,39 +567,44 @@ function updateBeatState() {
 
 function triggerBeatModulation(segmentMs) {
   let now = millis();
-  if (random() <= params.tempoPauseChance) {
-    pauseUntilMs = now + max(1, beatIntervalMsCurrent);
-    beatStartSpeed = 0;
-    beatEndSpeed = 0;
-    segmentStartMs = now;
-    segmentDurationMs = max(1, beatIntervalMsCurrent);
-    return;
-  }
+  let beatDur = max(1, beatIntervalMsCurrent);
 
-  segmentStartMs = millis();
-  segmentDurationMs = max(1, segmentMs || beatIntervalMsCurrent || 1);
-  pickNextBeatSegment(false);
+  for (let state of tempoLineStates) {
+    if (random() <= params.tempoPauseChance) {
+      state.pauseUntilMs = now + beatDur;
+      state.beatStartSpeed = 0;
+      state.beatEndSpeed = 0;
+      state.segmentStartMs = now;
+      state.segmentDurationMs = beatDur;
+      continue;
+    }
+
+    state.segmentStartMs = millis();
+    state.segmentDurationMs = max(1, segmentMs || beatIntervalMsCurrent || 1);
+    pickNextBeatSegment(state, false);
+  }
 }
 
-function pickNextBeatSegment(isFirstSegment) {
+function pickNextBeatSegment(state, isFirstSegment) {
   let impact = params.tempoImpact;
 
   if (isFirstSegment) {
-    beatHeading = curvyAngle;
+    state.beatHeading = state.curvyAngle;
   } else {
     let dirSign = beatIndex % 2 === 0 ? 1 : -1;
     let turnAmount = random(45, 165) * (0.35 + impact);
-    beatHeading += dirSign * turnAmount;
+    state.beatHeading += dirSign * turnAmount;
   }
 
   let speedBoost = 1 + random(0.6, 1.8) * impact;
-  beatStartSpeed = (params.curvyBaseSpeed + params.curvySpeedVariation) * speedBoost;
+  state.beatStartSpeed =
+    (params.curvyBaseSpeed + params.curvySpeedVariation) * speedBoost;
 
   let nearStopChance = constrain(0.2 + 0.45 * impact, 0.2, 0.9);
   if (random() < nearStopChance) {
-    beatEndSpeed = random(0, 0.25 * params.curvyBaseSpeed);
+    state.beatEndSpeed = random(0, 0.25 * params.curvyBaseSpeed);
   } else {
-    beatEndSpeed = random(0.2, 0.6) * params.curvyBaseSpeed;
+    state.beatEndSpeed = random(0.2, 0.6) * params.curvyBaseSpeed;
   }
 }
 
@@ -521,34 +626,38 @@ function scheduleSubdivisionsForCurrentBeat() {
   nextSubEventMs = lastBeatMs + subEventStepMs;
 }
 
-function getTempoCurvyTarget() {
-  if (millis() < pauseUntilMs) {
-    return curvyPos.copy();
+function getTempoCurvyTarget(state) {
+  if (millis() < state.pauseUntilMs) {
+    return state.curvyPos.copy();
   }
 
-  if (beatStartSpeed === 0 && beatEndSpeed === 0) {
-    pickNextBeatSegment(true);
+  if (state.beatStartSpeed === 0 && state.beatEndSpeed === 0) {
+    pickNextBeatSegment(state, true);
   }
 
-  let segmentPhase = constrain((millis() - segmentStartMs) / segmentDurationMs, 0, 1);
+  let segmentPhase = constrain(
+    (millis() - state.segmentStartMs) / state.segmentDurationMs,
+    0,
+    1
+  );
   let eased = 1 - pow(segmentPhase, 1.8);
-  let step = lerp(beatEndSpeed, beatStartSpeed, eased);
-  curvyPos.x += cos(beatHeading) * step;
-  curvyPos.y += sin(beatHeading) * step;
+  let step = lerp(state.beatEndSpeed, state.beatStartSpeed, eased);
+  state.curvyPos.x += cos(state.beatHeading) * step;
+  state.curvyPos.y += sin(state.beatHeading) * step;
 
   let halfW = width / 2;
   let halfH = height / 2;
-  if (curvyPos.x < -halfW || curvyPos.x > halfW) {
-    beatHeading = 180 - beatHeading;
-    curvyPos.x = constrain(curvyPos.x, -halfW, halfW);
+  if (state.curvyPos.x < -halfW || state.curvyPos.x > halfW) {
+    state.beatHeading = 180 - state.beatHeading;
+    state.curvyPos.x = constrain(state.curvyPos.x, -halfW, halfW);
   }
 
-  if (curvyPos.y < -halfH || curvyPos.y > halfH) {
-    beatHeading = -beatHeading;
-    curvyPos.y = constrain(curvyPos.y, -halfH, halfH);
+  if (state.curvyPos.y < -halfH || state.curvyPos.y > halfH) {
+    state.beatHeading = -state.beatHeading;
+    state.curvyPos.y = constrain(state.curvyPos.y, -halfH, halfH);
   }
 
-  return curvyPos.copy();
+  return state.curvyPos.copy();
 }
 
 function windowResized() {
