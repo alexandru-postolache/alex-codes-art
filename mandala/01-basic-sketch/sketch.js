@@ -135,6 +135,34 @@ function saveMandala() {
   saveCanvas('MandalaBasic', 'png');
 }
 
+function transformSymmetricPoint(x, y, rotDeg, mirrorY) {
+  let c = cos(rotDeg);
+  let s = sin(rotDeg);
+  let px = x * c - y * s;
+  let py = x * s + y * c;
+  if (mirrorY) {
+    py = -py;
+  }
+  return { x: px, y: py };
+}
+
+function symmetricSegmentKey(x1, y1, x2, y2) {
+  let roundCoord = (v) => Math.round(v * 1000) / 1000;
+  let ax = roundCoord(x1);
+  let ay = roundCoord(y1);
+  let bx = roundCoord(x2);
+  let by = roundCoord(y2);
+  if (ax > bx || (ax === bx && ay > by)) {
+    let tx = ax;
+    let ty = ay;
+    ax = bx;
+    ay = by;
+    bx = tx;
+    by = ty;
+  }
+  return `${ax}|${ay}|${bx}|${by}`;
+}
+
 function drawSymmetricSegment(x1, y1, x2, y2, weight) {
   mandalaBuffer.stroke(
     params.strokeColor.r,
@@ -143,24 +171,24 @@ function drawSymmetricSegment(x1, y1, x2, y2, weight) {
   );
   mandalaBuffer.strokeWeight(weight);
 
+  let sectorAngle = 360 / params.symmetry;
+  let drawn = new Set();
+
   mandalaBuffer.push();
   mandalaBuffer.translate(width / 2, height / 2);
 
-  mandalaBuffer.line(x1, y1, x2, y2);
-
-  mandalaBuffer.push();
-  mandalaBuffer.scale(1, -1);
-  mandalaBuffer.line(x1, y1, x2, y2);
-  mandalaBuffer.pop();
-
-  for (let i = 1; i < params.symmetry; i++) {
-    mandalaBuffer.rotate(angle);
-    mandalaBuffer.line(x1, y1, x2, y2);
-
-    mandalaBuffer.push();
-    mandalaBuffer.scale(1, -1);
-    mandalaBuffer.line(x1, y1, x2, y2);
-    mandalaBuffer.pop();
+  for (let i = 0; i < params.symmetry; i++) {
+    let rotDeg = i * sectorAngle;
+    for (let mirrorY of [false, true]) {
+      let p1 = transformSymmetricPoint(x1, y1, rotDeg, mirrorY);
+      let p2 = transformSymmetricPoint(x2, y2, rotDeg, mirrorY);
+      let key = symmetricSegmentKey(p1.x, p1.y, p2.x, p2.y);
+      if (drawn.has(key)) {
+        continue;
+      }
+      drawn.add(key);
+      mandalaBuffer.line(p1.x, p1.y, p2.x, p2.y);
+    }
   }
 
   mandalaBuffer.pop();
