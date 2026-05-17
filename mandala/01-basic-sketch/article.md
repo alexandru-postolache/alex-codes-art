@@ -6,7 +6,7 @@ This tutorial is perfect for beginners in creative coding who are curious about 
 
 By the end of this article, you will:
 
-- understand how **radial symmetry** works with `translate()`, `rotate()`, and `scale()`
+- understand how **radial symmetry** works by rotating and mirroring each stroke around the center
 - smooth mouse input with **`lerp()`** so lines feel less jittery
 - map **drawing speed** to **stroke weight** with **`map()`** and **`lerp()`**
 - add **[createGraphics()](https://p5js.org/reference/?ref=alexcodesart.com#/p5/createGraphics)** so we draw into an off-screen buffer and composite it each frame
@@ -33,8 +33,9 @@ Let's dive in.
 Here's what we're building together:
 
 - **One stroke from your hand** — we track the mouse in "canvas space" where `(0, 0)` is the **center** of the window.
-- **Mirror vertically** — we draw the same segment right-side up and upside down using `scale(1, -1)`.
-- **Copy around the circle** — we rotate by `360 / symmetry` degrees and repeat until we've filled the mandala.
+- **Mirror vertically** — each wedge gets a reflected copy (flip the Y coordinate after rotation).
+- **Copy around the circle** — we step by `360 / symmetry` degrees until the full mandala is filled.
+- **Skip duplicates** — when a mirror copy lands on the same line as another copy (common on symmetry axes), we draw it only once so petals stay even.
 - **Smooth + thick** — we don't connect every raw pixel; we ease toward the mouse and vary thickness by how fast you're moving.
 
 We're describing **rules** (symmetry, smoothing, thickness mapping), not placing each mirrored pixel by hand — that's the heart of creative coding.
@@ -78,12 +79,56 @@ In this snippet we:
 
 The mandala lives in **center coordinates**: `mouseX - width/2` and `mouseY - height/2` point from the middle of the screen. That way `(0, 0)` is where the mandala's hub sits.
 
-We draw **one** logical segment from `(x1, y1)` to `(x2, y2)`, then:
+We draw **one** logical segment from `(x1, y1)` to `(x2, y2)`, then for each wedge we:
 
-1. Move to the center with **`translate(width/2, height/2)`**.
-2. Draw the line once.
-3. Flip vertically with **`scale(1, -1)`** and draw again — mirror across the horizontal axis through the center.
-4. **`rotate(angle)`** where `angle = 360 / symmetry`, and repeat for each wedge.
+1. **Rotate** both endpoints by `i * (360 / symmetry)` degrees using `cos()` and `sin()`.
+2. **Mirror** by negating Y when needed — same idea as `scale(1, -1)` after a rotation.
+3. **Draw** the line in buffer space, still centered with **`translate(width/2, height/2)`**.
+4. **Skip** any copy that matches one we've already drawn — that keeps strokes on symmetry axes from looking doubled up.
+
+First, a small helper rotates (and optionally mirrors) a point:
+
+```
+function transformSymmetricPoint(x, y, rotDeg, mirrorY) {
+  let c = cos(rotDeg);
+  let s = sin(rotDeg);
+  let px = x * c - y * s;
+  let py = x * s + y * c;
+  if (mirrorY) {
+    py = -py;
+  }
+  return { x: px, y: py };
+}
+```
+
+- **`cos()` / `sin()`** — turn polar-style rotation into new X and Y. Same math as `rotate()`, just written out.
+- **`mirrorY`** — when `true`, we flip across the horizontal axis through the center.
+
+We use a normalized **segment key** so identical copies are only drawn once:
+
+```
+function symmetricSegmentKey(x1, y1, x2, y2) {
+  let roundCoord = (v) => Math.round(v * 1000) / 1000;
+  let ax = roundCoord(x1);
+  let ay = roundCoord(y1);
+  let bx = roundCoord(x2);
+  let by = roundCoord(y2);
+  if (ax > bx || (ax === bx && ay > by)) {
+    let tx = ax;
+    let ty = ay;
+    ax = bx;
+    ay = by;
+    bx = tx;
+    by = ty;
+  }
+  return `${ax}|${ay}|${bx}|${by}`;
+}
+```
+
+- **Rounding** — avoids tiny floating-point differences tricking us into thinking two lines are different.
+- **Swapping endpoints** — `(A→B)` and `(B→A)` are the same segment, so we store them in a consistent order.
+
+Here's the full draw step:
 
 ```
 function drawSymmetricSegment(x1, y1, x2, y2, weight) {
@@ -94,24 +139,24 @@ function drawSymmetricSegment(x1, y1, x2, y2, weight) {
   );
   mandalaBuffer.strokeWeight(weight);
 
+  let sectorAngle = 360 / params.symmetry;
+  let drawn = new Set();
+
   mandalaBuffer.push();
   mandalaBuffer.translate(width / 2, height / 2);
 
-  mandalaBuffer.line(x1, y1, x2, y2);
-
-  mandalaBuffer.push();
-  mandalaBuffer.scale(1, -1);
-  mandalaBuffer.line(x1, y1, x2, y2);
-  mandalaBuffer.pop();
-
-  for (let i = 1; i < params.symmetry; i++) {
-    mandalaBuffer.rotate(angle);
-    mandalaBuffer.line(x1, y1, x2, y2);
-
-    mandalaBuffer.push();
-    mandalaBuffer.scale(1, -1);
-    mandalaBuffer.line(x1, y1, x2, y2);
-    mandalaBuffer.pop();
+  for (let i = 0; i < params.symmetry; i++) {
+    let rotDeg = i * sectorAngle;
+    for (let mirrorY of [false, true]) {
+      let p1 = transformSymmetricPoint(x1, y1, rotDeg, mirrorY);
+      let p2 = transformSymmetricPoint(x2, y2, rotDeg, mirrorY);
+      let key = symmetricSegmentKey(p1.x, p1.y, p2.x, p2.y);
+      if (drawn.has(key)) {
+        continue;
+      }
+      drawn.add(key);
+      mandalaBuffer.line(p1.x, p1.y, p2.x, p2.y);
+    }
   }
 
   mandalaBuffer.pop();
@@ -120,12 +165,12 @@ function drawSymmetricSegment(x1, y1, x2, y2, weight) {
 
 What's going on:
 
-- **`push()` / `pop()`** — save and restore the mandala buffer's transform stack so rotations don't leak between steps.
-- **`translate(width/2, height/2)`** — draws from the visual center of the canvas.
-- **`scale(1, -1)`** — mirrors the Y axis for the reflection copy.
-- **The `for` loop** — rotates by `angle` (`360 / symmetry`) for each additional wedge.
+- **`sectorAngle`** — `360 / symmetry`; each loop step is one slice of the kaleidoscope.
+- **`mirrorY` loop** — `false` is the rotated stroke, `true` is its mirror. Together they give the classic mandala look.
+- **`drawn` Set** — remembers which transformed segments we already painted so overlaps stay single-weight.
+- **`push()` / `pop()`** — save and restore the buffer transform; we only need `translate()` to move the origin to the center.
 
-When **`symmetry`** changes, we update **`angle`** once:
+When **`symmetry`** changes in Tweakpane, we keep a cached value in sync (handy if you extend the sketch later):
 
 ```
 function updateSymmetry() {
