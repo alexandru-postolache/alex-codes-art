@@ -1,0 +1,108 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #0a1628;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+canvas {
+  display: block;
+}
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 18, 36, 0.72);
+  backdrop-filter: blur(6px);
+  z-index: 10;
+  transition: opacity 0.5s ease, visibility 0.5s ease;
+}
+
+#overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.card {
+  max-width: 420px;
+  padding: 2rem 2.25rem;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #f4f8ff;
+  text-align: center;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+}
+
+.card h1 {
+  margin: 0 0 0.75rem;
+  font-size: 1.75rem;
+  font-weight: 600;
+}
+
+.card p {
+  margin: 0 0 1rem;
+  line-height: 1.5;
+  color: rgba(244, 248, 255, 0.82);
+}
+
+.hint {
+  font-size: 0.85rem;
+  margin-bottom: 0 !important;
+  color: rgba(244, 248, 255, 0.55) !important;
+}
+
+#start-btn {
+  appearance: none;
+  border: none;
+  border-radius: 999px;
+  padding: 0.85rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #0a1628;
+  background: linear-gradient(135deg, #b8f3ff, #ffd6f5);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+#start-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(184, 243, 255, 0.35);
+}
+
+#meter {
+  position: fixed;
+  left: 1rem;
+  bottom: 1rem;
+  width: 180px;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.8rem;
+  z-index: 5;
+  pointer-events: none;
+}
+
+#meter .bar {
+  margin-top: 0.4rem;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+#meter .fill {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #7ee8ff, #ffb8ec);
+  transition: width 0.05s linear;
+}
