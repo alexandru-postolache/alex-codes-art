@@ -30,7 +30,7 @@ const params = {
 
 function preload() {
   sceneShader = loadShader("shader.vert", "scene.frag");
-  parkBackground = loadImage("assets/park-bg.jpg");
+  parkBackground = loadImage("assets/park-bg.png");
 }
 
 function setup() {

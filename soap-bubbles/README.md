@@ -24,7 +24,7 @@ Then open the URL in your browser, click **Enable microphone**, and blow gently 
 
 ## Assets
 
-- `assets/park-bg.jpg` — Forest park photo from [Unsplash](https://unsplash.com/photos/tGTVxeOr_Rs) (free to use).
+- `assets/park-bg.png` — Purpose-built eye-level park backdrop for the first-person composition.
 
 ## Files
 

@@ -26,11 +26,11 @@ vec2 coverUV(vec2 uv) {
   float screenAspect = u_resolution.x / u_resolution.y;
   vec2 mapped = uv;
   if (screenAspect > u_imageAspect) {
-    mapped.y = (uv.y - 0.5) * (screenAspect / u_imageAspect) + 0.5;
+    mapped.y = (uv.y - 0.5) * (u_imageAspect / screenAspect) + 0.5;
   } else {
-    mapped.x = (uv.x - 0.5) * (u_imageAspect / screenAspect) + 0.5;
+    mapped.x = (uv.x - 0.5) * (screenAspect / u_imageAspect) + 0.5;
   }
-  return vec2(mapped.x, 1.0 - mapped.y);
+  return clamp(vec2(mapped.x, 1.0 - mapped.y), 0.001, 0.999);
 }
 
 vec3 blurredPark(vec2 uv) {
