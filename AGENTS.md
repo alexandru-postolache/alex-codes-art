@@ -644,3 +644,37 @@ Before you return a draft, verify every item:
 - [ ] No calendar-time estimates, no gatekeeping, no hype.
 
 If all boxes are checked, the draft is ready to sound like it was written by Alex.
+
+---
+
+## Cursor Cloud specific instructions
+
+This repo is a collection of **standalone static p5.js sketches** — one self-contained
+folder per sketch/app (`wfc/`, `metaballs/`, `mandala/`, `l-system/`, `radial-strokes/`,
+`lesson-7/`, `lesson-10/`). There is **no build step, no test suite, no linter, and no
+package manager** (no `package.json`; the lone `metaballs/package-lock.json` lists no
+dependencies). p5.js and helper libraries are either vendored as local `.js` files or
+loaded from a CDN.
+
+### Running the sketches (the only "service")
+
+Serve the repo root over HTTP and open a sketch's `index.html` in a browser:
+
+```
+python3 -m http.server 8081
+```
+
+Then open e.g. `http://localhost:8081/wfc/index.html`. Port `8081` matches
+`.fleet/run.json`. Any static file server works — the important part is HTTP, not
+`file://`.
+
+Non-obvious caveats:
+
+- Serving over **HTTP is required** (not `file://`): several sketches `fetch()` local
+  assets — `metaballs/` loads `.frag`/`.vert` shaders, `wfc/` loads PNG atlases from
+  `wfc/atlases/`, and WebGL/shader security rules block `file://`.
+- Several sketches load p5.js from a **CDN** (`cdn.jsdelivr.net`, `cdnjs.cloudflare.com`),
+  so the sketch pages need outbound internet to render.
+- A `404` for `/favicon.ico` in the console is harmless and expected.
+- These are **interactive canvas apps**; verify changes visually in the browser (there
+  are no automated tests to run).
