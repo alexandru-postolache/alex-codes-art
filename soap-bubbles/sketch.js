@@ -1,7 +1,14 @@
 const MAX_BUBBLES = 64;
 
-let bubbleShader;
+let bgShader;
+let blurShader;
+let sceneShader;
 let parkBackground;
+
+let sharpBuffer;
+let blurPassBuffer;
+let blurredBuffer;
+
 let mic;
 let amp;
 let audioReady = false;
@@ -12,17 +19,19 @@ let smoothedBlow = 0;
 let spawnAccumulator = 0;
 
 const params = {
-  blowThreshold: 0.045,
-  blowSensitivity: 14,
-  spawnRate: 14,
-  minRadius: 38,
-  maxRadius: 110,
-  riseSpeed: 2.4,
-  drift: 0.55,
+  blowThreshold: 0.035,
+  blowSensitivity: 16,
+  spawnRate: 12,
+  minRadius: 28,
+  maxRadius: 88,
+  riseSpeed: 2.8,
+  drift: 0.45,
 };
 
 function preload() {
-  bubbleShader = loadShader("shader.vert", "bubble.frag");
+  bgShader = loadShader("shader.vert", "background.frag");
+  blurShader = loadShader("shader.vert", "blur.frag");
+  sceneShader = loadShader("shader.vert", "scene.frag");
   parkBackground = loadImage("assets/park-bg.jpg");
 }
 
@@ -31,10 +40,22 @@ function setup() {
   pixelDensity(Math.min(2, window.devicePixelRatio || 1));
   noStroke();
 
+  initBuffers();
   createMeter();
 
   const startBtn = document.getElementById("start-btn");
   startBtn.addEventListener("click", startAudio);
+}
+
+function initBuffers() {
+  sharpBuffer = createGraphics(width, height, WEBGL);
+  blurPassBuffer = createGraphics(width, height, WEBGL);
+  blurredBuffer = createGraphics(width, height, WEBGL);
+
+  for (const buffer of [sharpBuffer, blurPassBuffer, blurredBuffer]) {
+    buffer.noStroke();
+    buffer.pixelDensity(pixelDensity());
+  }
 }
 
 function startAudio() {
@@ -48,7 +69,7 @@ function startAudio() {
       () => {
         amp = new p5.Amplitude();
         amp.setInput(mic);
-        amp.smooth(0.85);
+        amp.smooth(0.88);
         audioReady = true;
         document.getElementById("overlay").classList.add("hidden");
       },
@@ -67,18 +88,58 @@ function draw() {
   }
 
   updateBubbles();
-
-  shader(bubbleShader);
-  bubbleShader.setUniform("u_resolution", [width, height]);
-  bubbleShader.setUniform("u_time", millis() / 1000);
-  bubbleShader.setUniform("u_bubbleCount", bubbles.length);
-  bubbleShader.setUniform("u_bubbles", packBubbleUniforms());
-  bubbleShader.setUniform("u_wand", wandPosition());
-  bubbleShader.setUniform("u_blow", smoothedBlow);
-  bubbleShader.setUniform("u_background", parkBackground);
-
-  plane(width, height);
+  renderBackgroundPasses();
+  renderScene();
   updateMeter();
+}
+
+function renderBackgroundPasses() {
+  const imageAspect = parkBackground.width / parkBackground.height;
+
+  sharpBuffer.shader(bgShader);
+  bgShader.setUniform("u_resolution", [width, height]);
+  bgShader.setUniform("u_image", parkBackground);
+  bgShader.setUniform("u_imageAspect", imageAspect);
+  sharpBuffer.plane(width, height);
+
+  blurPassBuffer.shader(blurShader);
+  blurShader.setUniform("u_resolution", [width, height]);
+  blurShader.setUniform("u_image", sharpBuffer);
+  blurShader.setUniform("u_direction", [1.0 / width, 0.0]);
+  blurShader.setUniform("u_blurSize", 4.0);
+  blurPassBuffer.plane(width, height);
+
+  blurredBuffer.shader(blurShader);
+  blurShader.setUniform("u_resolution", [width, height]);
+  blurShader.setUniform("u_image", blurPassBuffer);
+  blurShader.setUniform("u_direction", [0.0, 1.0 / height]);
+  blurShader.setUniform("u_blurSize", 4.0);
+  blurredBuffer.plane(width, height);
+
+  blurPassBuffer.shader(blurShader);
+  blurShader.setUniform("u_image", blurredBuffer);
+  blurShader.setUniform("u_direction", [1.0 / width, 0.0]);
+  blurShader.setUniform("u_blurSize", 5.5);
+  blurPassBuffer.plane(width, height);
+
+  blurredBuffer.shader(blurShader);
+  blurShader.setUniform("u_image", blurPassBuffer);
+  blurShader.setUniform("u_direction", [0.0, 1.0 / height]);
+  blurShader.setUniform("u_blurSize", 5.5);
+  blurredBuffer.plane(width, height);
+}
+
+function renderScene() {
+  shader(sceneShader);
+  sceneShader.setUniform("u_resolution", [width, height]);
+  sceneShader.setUniform("u_time", millis() / 1000);
+  sceneShader.setUniform("u_bubbleCount", bubbles.length);
+  sceneShader.setUniform("u_bubbles", packBubbleUniforms());
+  sceneShader.setUniform("u_wand", wandPosition());
+  sceneShader.setUniform("u_blow", smoothedBlow);
+  sceneShader.setUniform("u_sharp", sharpBuffer);
+  sceneShader.setUniform("u_blurred", blurredBuffer);
+  plane(width, height);
 }
 
 function updateBlow() {
@@ -95,21 +156,21 @@ function spawnBubbles() {
 
   const wand = wandPosition();
   const scale = min(width, height);
+  const ringRadius = scale * 0.135;
   const strength = map(blowLevel, 0, 0.5, 0, 1, true);
   spawnAccumulator += params.spawnRate * strength * (deltaTime / 1000);
 
   while (spawnAccumulator >= 1 && bubbles.length < MAX_BUBBLES) {
     spawnAccumulator -= 1;
 
-    const radius = random(params.minRadius, params.maxRadius) * (0.65 + strength * 0.55);
-    const spread = map(strength, 0, 1, scale * 0.04, scale * 0.14);
-    const angle = random(PI * 0.15, PI * 0.85);
-    const spawnDist = random(scale * 0.08, scale * 0.17);
+    const radius = random(params.minRadius, params.maxRadius) * (0.7 + strength * 0.45);
+    const angle = random(PI * 0.25, PI * 0.75);
+    const spawnDist = random(ringRadius * 0.35, ringRadius * 0.85);
 
     bubbles.push(
       new Bubble(
-        wand[0] + cos(angle) * spawnDist + random(-spread * 0.2, spread * 0.2),
-        wand[1] + sin(angle) * spawnDist * 0.35 + random(0, scale * 0.04),
+        wand[0] + cos(angle) * spawnDist,
+        wand[1] + sin(angle) * spawnDist + random(0, ringRadius * 0.15),
         radius,
         strength
       )
@@ -144,11 +205,12 @@ function packBubbleUniforms() {
 }
 
 function wandPosition() {
-  return [width * 0.5, height * 0.38];
+  return [width * 0.5, height * 0.26];
 }
 
 function windowResized() {
   resizeCanvas(window.innerWidth, window.innerHeight);
+  initBuffers();
 }
 
 function createMeter() {
@@ -179,9 +241,9 @@ class Bubble {
     this.radius = radius;
     this.life = 1;
     this.wobble = random(TWO_PI);
-    this.wobbleSpeed = random(0.02, 0.05);
+    this.wobbleSpeed = random(0.015, 0.04);
 
-    const launch = map(strength, 0, 1, 1.5, 5.5);
+    const launch = map(strength, 0, 1, 2.0, 6.5);
     this.vx = random(-params.drift, params.drift) * strength;
     this.vy = launch * params.riseSpeed;
   }
@@ -189,27 +251,27 @@ class Bubble {
   update() {
     const wand = wandPosition();
     this.wobble += this.wobbleSpeed;
-    this.x += this.vx + sin(this.wobble) * 0.55;
+    this.x += this.vx + sin(this.wobble) * 0.45;
     this.y += this.vy;
 
-    this.vy -= 0.008;
-    this.vx *= 0.996;
-    this.vy *= 0.999;
+    this.vy -= 0.006;
+    this.vx *= 0.997;
+    this.vy *= 0.9995;
 
-    const depth = map(this.y, wand[1], height * 0.98, 0, 1, true);
-    this.radius = this.baseRadius * (1.0 - depth * 0.5);
-    this.radius += sin(this.wobble * 1.7) * 0.08;
+    const depth = map(this.y, wand[1], height * 0.96, 0, 1, true);
+    this.radius = this.baseRadius * (1.0 - depth * 0.45);
+    this.radius += sin(this.wobble * 1.5) * 0.06;
 
-    if (this.y > height + this.radius * 2) {
+    if (this.y > height + this.radius) {
       this.life = 0;
     }
 
-    if (this.y > height * 0.82) {
-      this.life -= 0.004;
+    if (this.y > height * 0.78) {
+      this.life -= 0.0035;
     }
   }
 
   isDead() {
-    return this.life <= 0 || this.radius < 2;
+    return this.life <= 0 || this.radius < 3;
   }
 }
