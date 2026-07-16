@@ -102,8 +102,8 @@ function spawnBubbles() {
 
     bubbles.push(
       new Bubble(
-        wand.x + random(-spread, spread),
-        wand.y + random(4, 14),
+        wand[0] + random(-spread, spread),
+        wand[1] + random(4, 14),
         radius,
         strength
       )
@@ -139,7 +139,7 @@ function packBubbleUniforms() {
 }
 
 function wandPosition() {
-  return { x: width * 0.5, y: height * 0.12 };
+  return [width * 0.5, height * 0.12];
 }
 
 function windowResized() {
