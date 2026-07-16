@@ -102,15 +102,7 @@ vec4 bubbleLayer(vec2 p, vec2 uv, vec4 bubble) {
 }
 
 vec4 blowerLayer(vec2 screenUV) {
-  vec2 assetUV;
-  assetUV.x = (screenUV.x - 0.5) / 1.25 + 0.5;
-  assetUV.y = (screenUV.y - 0.5) / 0.8;
-
-  float inside = step(0.0, assetUV.x) * step(assetUV.x, 1.0)
-    * step(0.0, assetUV.y) * step(assetUV.y, 1.0);
-  vec4 asset = texture2D(u_blower, clamp(assetUV, 0.001, 0.999));
-  asset.a *= inside;
-
+  vec4 asset = texture2D(u_blower, screenUV);
   float contactShadow = smoothstep(0.0, 0.5, asset.a) * 0.16;
   asset.rgb = mix(asset.rgb, asset.rgb * vec3(0.92, 0.96, 0.98), contactShadow);
   return asset;

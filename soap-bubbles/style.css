@@ -96,11 +96,10 @@ canvas {
 
 #meter {
   position: fixed;
-  left: 50%;
+  left: 1.25rem;
   bottom: 1.25rem;
   width: min(260px, calc(100vw - 2rem));
   padding: 0.85rem 1rem 0.75rem;
-  transform: translateX(-50%);
   border-radius: 16px;
   background: rgba(4, 15, 17, 0.58);
   border: 1px solid rgba(210, 247, 244, 0.16);
@@ -110,6 +109,13 @@ canvas {
   font-size: 0.72rem;
   z-index: 5;
   pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  #meter {
+    left: 50%;
+    transform: translateX(-50%);
+  }
 }
 
 .meter-label {
