@@ -62,6 +62,10 @@ vec3 thinFilmReflection(vec3 normal, float thicknessNm) {
   return film + rimWhite;
 }
 
+float fresnelBoost(float ndotV) {
+  return pow(1.0 - ndotV, 3.0);
+}
+
 vec4 renderBubble(vec2 p, vec4 bubble, vec2 uv) {
   vec2 center = bubble.xy;
   float radius = bubble.z;
@@ -116,10 +120,6 @@ vec4 renderBubble(vec2 p, vec4 bubble, vec2 uv) {
   float alpha = body * 0.12 + rim * 0.38 + spec * 0.55 + fresnelBoost(ndotV) * 0.1;
   alpha = clamp(alpha * life, 0.0, 0.94);
   return vec4(col, alpha);
-}
-
-float fresnelBoost(float ndotV) {
-  return pow(1.0 - ndotV, 3.0);
 }
 
 vec3 renderWand(vec2 p) {
