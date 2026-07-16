@@ -16,7 +16,7 @@ Then open the URL in your browser, click **Enable microphone**, and blow gently 
 ## How it works
 
 - **Microphone input** — `p5.AudioIn` feeds an `p5.Amplitude` analyzer. When the level crosses a threshold, bubbles spawn at the wand.
-- **First-person view** — A large teal blower, finite handle, soap membrane, and hand sit sharply in the foreground.
+- **First-person view** — A photorealistic hand-held teal bubble wand sits sharply in the foreground.
 - **Depth of field** — The park is cover-fitted and softly sampled in one WebGL context, keeping the background blurred without seams or cross-context artifacts.
 - **Thin-film interference** — Optical path difference at 650/532/450 nm and Schlick fresnel create angle-dependent soap-film colors.
 - **Bubble physics** — Bubbles drift, wobble, recede, and eventually burst. Tap any bubble to pop it early.
@@ -25,6 +25,7 @@ Then open the URL in your browser, click **Enable microphone**, and blow gently 
 ## Assets
 
 - `assets/park-bg.png` — Purpose-built eye-level park backdrop for the first-person composition.
+- `assets/bubble-wand.png` — Transparent photorealistic foreground wand and hand.
 
 ## Files
 

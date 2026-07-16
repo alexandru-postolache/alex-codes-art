@@ -14,6 +14,7 @@ uniform vec4 u_pops[MAX_POPS];
 uniform vec2 u_wand;
 uniform float u_blow;
 uniform sampler2D u_background;
+uniform sampler2D u_blower;
 uniform float u_imageAspect;
 
 varying vec2 vTexCoord;
@@ -100,56 +101,19 @@ vec4 bubbleLayer(vec2 p, vec2 uv, vec4 bubble) {
   return vec4(color, clamp(alpha, 0.0, 0.92));
 }
 
-float sdSegment(vec2 p, vec2 a, vec2 b) {
-  vec2 pa = p - a;
-  vec2 ba = b - a;
-  float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
-  return length(pa - ba * h);
-}
+vec4 blowerLayer(vec2 screenUV) {
+  vec2 assetUV;
+  assetUV.x = (screenUV.x - 0.5) / 1.25 + 0.5;
+  assetUV.y = (screenUV.y - 0.5) / 0.8;
 
-vec4 blowerLayer(vec2 p) {
-  float s = min(u_resolution.x, u_resolution.y);
-  vec2 c = u_wand;
-  float ringRadius = s * 0.17;
-  vec3 color = vec3(0.0);
-  float alpha = 0.0;
+  float inside = step(0.0, assetUV.x) * step(assetUV.x, 1.0)
+    * step(0.0, assetUV.y) * step(assetUV.y, 1.0);
+  vec4 asset = texture2D(u_blower, clamp(assetUV, 0.001, 0.999));
+  asset.a *= inside;
 
-  vec2 handleTop = c + vec2(s * 0.018, -ringRadius * 0.8);
-  vec2 handleBottom = c + vec2(s * 0.09, -s * 0.47);
-  float handleD = sdSegment(p, handleTop, handleBottom);
-  float handleMask = smoothstep(s * 0.031, s * 0.022, handleD);
-  float handleEdge = smoothstep(s * 0.032, s * 0.027, handleD);
-  vec3 handleColor = mix(vec3(0.07, 0.12, 0.16), vec3(0.12, 0.24, 0.29), handleEdge);
-  float handleShine = smoothstep(s * 0.014, 0.0, abs(handleD - s * 0.009));
-  handleColor += vec3(0.25, 0.48, 0.53) * handleShine * 0.28;
-  color = mix(color, handleColor, handleMask);
-  alpha = max(alpha, handleMask);
-
-  float ringD = abs(length(p - c) - ringRadius);
-  float ringShadow = smoothstep(s * 0.025, s * 0.004, ringD);
-  float ringCore = smoothstep(s * 0.018, s * 0.006, ringD);
-  vec3 plastic = mix(vec3(0.03, 0.14, 0.18), vec3(0.08, 0.42, 0.46), ringCore);
-  plastic += vec3(0.35, 0.82, 0.8) * pow(max(0.0, 1.0 - ringD / (s * 0.018)), 5.0) * 0.45;
-  color = mix(color, plastic, ringShadow);
-  alpha = max(alpha, ringShadow);
-
-  float inside = 1.0 - smoothstep(ringRadius - s * 0.022, ringRadius - s * 0.008, length(p - c));
-  vec2 filmQ = (p - c) / ringRadius;
-  vec3 filmNormal = normalize(vec3(filmQ, sqrt(max(0.04, 1.0 - dot(filmQ, filmQ)))));
-  vec3 film = thinFilm(filmNormal, 370.0 + filmQ.y * 180.0 + sin(filmQ.x * 7.0 + u_time) * 35.0);
-  float membrane = inside * (0.055 + smoothstep(0.5, 1.0, length(filmQ)) * 0.08);
-  color = mix(color, vec3(0.72, 0.9, 0.94) + film, membrane);
-  alpha = max(alpha, membrane);
-
-  vec2 palm = handleBottom + vec2(-s * 0.01, s * 0.015);
-  vec2 palmQ = (p - palm) / vec2(s * 0.085, s * 0.12);
-  float hand = smoothstep(1.05, 0.9, length(palmQ));
-  vec3 skin = vec3(0.68, 0.42, 0.28);
-  skin *= 0.88 + 0.12 * smoothstep(-1.0, 0.6, palmQ.x);
-  color = mix(color, skin, hand);
-  alpha = max(alpha, hand);
-
-  return vec4(color, alpha);
+  float contactShadow = smoothstep(0.0, 0.5, asset.a) * 0.16;
+  asset.rgb = mix(asset.rgb, asset.rgb * vec3(0.92, 0.96, 0.98), contactShadow);
+  return asset;
 }
 
 vec4 popLayer(vec2 p, vec4 pop) {
@@ -206,7 +170,7 @@ void main() {
     color = mix(color, layer.rgb, layer.a);
   }
 
-  vec4 blower = blowerLayer(p);
+  vec4 blower = blowerLayer(vTexCoord);
   color = mix(color, blower.rgb, blower.a);
 
   float breath = smoothstep(0.01, 0.26, u_blow);

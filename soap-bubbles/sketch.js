@@ -3,6 +3,7 @@ const MAX_POPS = 16;
 
 let sceneShader;
 let parkBackground;
+let blowerImage;
 
 let mic;
 let amp;
@@ -31,6 +32,7 @@ const params = {
 function preload() {
   sceneShader = loadShader("shader.vert", "scene.frag");
   parkBackground = loadImage("assets/park-bg.png");
+  blowerImage = loadImage("assets/bubble-wand.png");
 }
 
 function setup() {
@@ -114,6 +116,7 @@ function renderScene() {
   sceneShader.setUniform("u_wand", wandPosition());
   sceneShader.setUniform("u_blow", smoothedBlow);
   sceneShader.setUniform("u_background", parkBackground);
+  sceneShader.setUniform("u_blower", blowerImage);
   sceneShader.setUniform(
     "u_imageAspect",
     parkBackground.width / parkBackground.height
@@ -207,7 +210,7 @@ function packPopUniforms() {
 }
 
 function wandPosition() {
-  return [width * 0.5, height * 0.32];
+  return [width * 0.5, height * 0.355];
 }
 
 function windowResized() {
