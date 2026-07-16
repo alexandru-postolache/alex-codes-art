@@ -98,8 +98,8 @@ function draw() {
   }
 
   updateBubbles();
-  updatePops();
   renderScene();
+  updatePops();
   updateMeter();
 }
 
