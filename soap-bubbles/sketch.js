@@ -143,7 +143,7 @@ function spawnBubbles() {
 
   const wand = wandPosition();
   const scale = min(width, height);
-  const ringRadius = scale * 0.115;
+  const ringRadius = scale * 0.094;
   const strength = map(blowLevel, 0, 0.5, 0, 1, true);
   spawnAccumulator += params.spawnRate * strength * (deltaTime / 1000);
 
@@ -210,7 +210,7 @@ function packPopUniforms() {
 }
 
 function wandPosition() {
-  return [width * 0.5, height * 0.41];
+  return [width * 0.5, height * 0.33];
 }
 
 function windowResized() {

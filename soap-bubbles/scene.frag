@@ -102,7 +102,9 @@ vec4 bubbleLayer(vec2 p, vec2 uv, vec4 bubble) {
 }
 
 vec4 blowerLayer(vec2 screenUV) {
-  vec2 assetUV = screenUV - vec2(0.0, 0.14);
+  const float scale = 0.82;
+  vec2 anchor = vec2(0.5, 1.0);
+  vec2 assetUV = (screenUV - anchor) / scale + anchor - vec2(0.0, 0.14);
   float inside = step(0.0, assetUV.y) * step(assetUV.y, 1.0);
   vec4 asset = texture2D(u_blower, clamp(assetUV, 0.001, 0.999));
   asset.a *= inside;
