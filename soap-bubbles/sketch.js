@@ -8,6 +8,9 @@ let parkBackground;
 let sharpBuffer;
 let blurPassBuffer;
 let blurredBuffer;
+let bgShaderBuffer;
+let blurShaderPassBuffer;
+let blurShaderBlurredBuffer;
 
 let mic;
 let amp;
@@ -56,6 +59,12 @@ function initBuffers() {
     buffer.noStroke();
     buffer.pixelDensity(pixelDensity());
   }
+
+  if (bgShader && blurShader) {
+    bgShaderBuffer = bgShader.copyToContext(sharpBuffer);
+    blurShaderPassBuffer = blurShader.copyToContext(blurPassBuffer);
+    blurShaderBlurredBuffer = blurShader.copyToContext(blurredBuffer);
+  }
 }
 
 function startAudio() {
@@ -96,36 +105,36 @@ function draw() {
 function renderBackgroundPasses() {
   const imageAspect = parkBackground.width / parkBackground.height;
 
-  sharpBuffer.shader(bgShader);
-  bgShader.setUniform("u_resolution", [width, height]);
-  bgShader.setUniform("u_image", parkBackground);
-  bgShader.setUniform("u_imageAspect", imageAspect);
+  sharpBuffer.shader(bgShaderBuffer);
+  bgShaderBuffer.setUniform("u_resolution", [width, height]);
+  bgShaderBuffer.setUniform("u_image", parkBackground);
+  bgShaderBuffer.setUniform("u_imageAspect", imageAspect);
   sharpBuffer.plane(width, height);
 
-  blurPassBuffer.shader(blurShader);
-  blurShader.setUniform("u_resolution", [width, height]);
-  blurShader.setUniform("u_image", sharpBuffer);
-  blurShader.setUniform("u_direction", [1.0 / width, 0.0]);
-  blurShader.setUniform("u_blurSize", 4.0);
+  blurPassBuffer.shader(blurShaderPassBuffer);
+  blurShaderPassBuffer.setUniform("u_resolution", [width, height]);
+  blurShaderPassBuffer.setUniform("u_image", sharpBuffer);
+  blurShaderPassBuffer.setUniform("u_direction", [1.0 / width, 0.0]);
+  blurShaderPassBuffer.setUniform("u_blurSize", 4.0);
   blurPassBuffer.plane(width, height);
 
-  blurredBuffer.shader(blurShader);
-  blurShader.setUniform("u_resolution", [width, height]);
-  blurShader.setUniform("u_image", blurPassBuffer);
-  blurShader.setUniform("u_direction", [0.0, 1.0 / height]);
-  blurShader.setUniform("u_blurSize", 4.0);
+  blurredBuffer.shader(blurShaderBlurredBuffer);
+  blurShaderBlurredBuffer.setUniform("u_resolution", [width, height]);
+  blurShaderBlurredBuffer.setUniform("u_image", blurPassBuffer);
+  blurShaderBlurredBuffer.setUniform("u_direction", [0.0, 1.0 / height]);
+  blurShaderBlurredBuffer.setUniform("u_blurSize", 4.0);
   blurredBuffer.plane(width, height);
 
-  blurPassBuffer.shader(blurShader);
-  blurShader.setUniform("u_image", blurredBuffer);
-  blurShader.setUniform("u_direction", [1.0 / width, 0.0]);
-  blurShader.setUniform("u_blurSize", 5.5);
+  blurPassBuffer.shader(blurShaderPassBuffer);
+  blurShaderPassBuffer.setUniform("u_image", blurredBuffer);
+  blurShaderPassBuffer.setUniform("u_direction", [1.0 / width, 0.0]);
+  blurShaderPassBuffer.setUniform("u_blurSize", 5.5);
   blurPassBuffer.plane(width, height);
 
-  blurredBuffer.shader(blurShader);
-  blurShader.setUniform("u_image", blurPassBuffer);
-  blurShader.setUniform("u_direction", [0.0, 1.0 / height]);
-  blurShader.setUniform("u_blurSize", 5.5);
+  blurredBuffer.shader(blurShaderBlurredBuffer);
+  blurShaderBlurredBuffer.setUniform("u_image", blurPassBuffer);
+  blurShaderBlurredBuffer.setUniform("u_direction", [0.0, 1.0 / height]);
+  blurShaderBlurredBuffer.setUniform("u_blurSize", 5.5);
   blurredBuffer.plane(width, height);
 }
 
