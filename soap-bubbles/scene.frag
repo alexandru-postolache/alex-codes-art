@@ -159,7 +159,10 @@ vec4 popLayer(vec2 p, vec4 pop) {
   float dist = length(p - pop.xy);
   float ring = 1.0 - smoothstep(1.0, 9.0, abs(dist - radius));
   ring *= 1.0 - progress;
-  vec3 color = thinFilm(vec3(0.0, 0.7, 0.72), 360.0 + progress * 220.0);
+  vec3 rainbow = 0.58 + 0.42 * cos(
+    6.28318 * (progress + vec3(0.0, 0.33, 0.67))
+  );
+  vec3 color = mix(vec3(0.82, 0.96, 1.0), rainbow, 0.48);
   float shards = 0.0;
   vec2 q = p - pop.xy;
   float a = atan(q.y, q.x);
@@ -172,10 +175,13 @@ vec4 popLayer(vec2 p, vec4 pop) {
   float flash = (1.0 - smoothstep(0.0, 0.24, progress))
     * (1.0 - smoothstep(0.0, pop.z * 0.9, dist));
   float halo = (1.0 - smoothstep(4.0, 16.0, abs(dist - radius * 1.08)))
-    * (1.0 - progress) * 0.32;
+    * (1.0 - progress) * 0.46;
+  float droplets = (1.0 - smoothstep(0.0, 0.16, angular))
+    * (1.0 - smoothstep(1.0, 6.0, abs(dist - ray * 1.24)))
+    * (1.0 - smoothstep(0.55, 1.0, progress));
   return vec4(
-    color + vec3(0.95),
-    clamp(ring * 0.95 + halo + shards + flash * 0.3, 0.0, 1.0)
+    color + vec3(0.34),
+    clamp(ring + halo + shards + droplets + flash * 0.52, 0.0, 1.0)
   );
 }
 

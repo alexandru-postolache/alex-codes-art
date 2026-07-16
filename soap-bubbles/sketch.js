@@ -253,7 +253,7 @@ function popAtPointer(event) {
   for (let i = 0; i < bubbles.length; i++) {
     const b = bubbles[i];
     const distance = dist(pointerX, pointerY, b.x, b.y);
-    if (distance < b.radius * 1.15 && distance < nearestDistance) {
+    if (distance < b.radius * 1.75 && distance < nearestDistance) {
       nearest = i;
       nearestDistance = distance;
     }
