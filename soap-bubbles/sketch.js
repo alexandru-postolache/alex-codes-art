@@ -7,6 +7,8 @@ let parkBackground;
 let mic;
 let amp;
 let audioReady = false;
+let demoMode = false;
+let demoBlowing = false;
 
 let bubbles = [];
 let pops = [];
@@ -40,7 +42,10 @@ function setup() {
 
   const startBtn = document.getElementById("start-btn");
   startBtn.addEventListener("click", startAudio);
+  document.getElementById("demo-btn").addEventListener("click", startDemo);
   window.addEventListener("pointerdown", popAtPointer);
+  window.addEventListener("keydown", handleKey);
+  window.addEventListener("keyup", handleKey);
 }
 
 function startAudio() {
@@ -66,8 +71,28 @@ function startAudio() {
   });
 }
 
+function startDemo() {
+  demoMode = true;
+  audioReady = true;
+  document.getElementById("overlay").classList.add("hidden");
+}
+
+function handleKey(event) {
+  if (event.code !== "Space" || !demoMode) {
+    return;
+  }
+
+  event.preventDefault();
+  demoBlowing = event.type === "keydown";
+}
+
 function draw() {
-  if (audioReady && amp) {
+  if (demoMode) {
+    const target = demoBlowing ? 0.3 : 0;
+    smoothedBlow = lerp(smoothedBlow, target, demoBlowing ? 0.12 : 0.08);
+    blowLevel = smoothedBlow;
+    spawnBubbles();
+  } else if (audioReady && amp) {
     updateBlow();
     spawnBubbles();
   }
@@ -195,7 +220,7 @@ function createMeter() {
   meter.innerHTML = `
     <div class="meter-label"><span>Breath</span><span class="meter-state">ready</span></div>
     <div class="bar"><div class="fill"></div></div>
-    <div class="meter-tip">Blow steadily · tap a bubble to pop it</div>
+    <div class="meter-tip">Blow steadily · hold Space in preview · tap to pop</div>
   `;
   document.body.appendChild(meter);
 }

@@ -76,6 +76,24 @@ canvas {
   box-shadow: 0 8px 24px rgba(184, 243, 255, 0.35);
 }
 
+#demo-btn {
+  display: block;
+  margin: 0.8rem auto 0.9rem;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  color: rgba(230, 250, 248, 0.7);
+  background: transparent;
+  font: inherit;
+  font-size: 0.82rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+#demo-btn:hover {
+  color: #fff;
+}
+
 #meter {
   position: fixed;
   left: 50%;
