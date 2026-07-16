@@ -78,24 +78,38 @@ canvas {
 
 #meter {
   position: fixed;
-  left: 1rem;
-  bottom: 1rem;
-  width: 180px;
-  padding: 0.75rem 0.9rem;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 0.8rem;
+  left: 50%;
+  bottom: 1.25rem;
+  width: min(260px, calc(100vw - 2rem));
+  padding: 0.85rem 1rem 0.75rem;
+  transform: translateX(-50%);
+  border-radius: 16px;
+  background: rgba(4, 15, 17, 0.58);
+  border: 1px solid rgba(210, 247, 244, 0.16);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(12px);
+  color: rgba(244, 255, 254, 0.9);
+  font-size: 0.72rem;
   z-index: 5;
   pointer-events: none;
 }
 
+.meter-label {
+  display: flex;
+  justify-content: space-between;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.meter-state {
+  color: rgba(170, 235, 228, 0.72);
+}
+
 #meter .bar {
-  margin-top: 0.4rem;
-  height: 6px;
+  margin-top: 0.55rem;
+  height: 5px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.1);
   overflow: hidden;
 }
 
@@ -103,6 +117,13 @@ canvas {
   height: 100%;
   width: 0%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #7ee8ff, #ffb8ec);
+  background: linear-gradient(90deg, #79ddd2, #e8fff9);
   transition: width 0.05s linear;
+}
+
+.meter-tip {
+  margin-top: 0.55rem;
+  color: rgba(235, 252, 250, 0.48);
+  text-align: center;
+  letter-spacing: 0.02em;
 }

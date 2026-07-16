@@ -16,11 +16,11 @@ Then open the URL in your browser, click **Enable microphone**, and blow gently 
 ## How it works
 
 - **Microphone input** — `p5.AudioIn` feeds an `p5.Amplitude` analyzer. When the level crosses a threshold, bubbles spawn at the wand.
-- **First-person view** — A large bubble wand and hands are drawn in the foreground shader, like you're holding the blower close to the camera.
-- **Depth of field** — Two-pass separable blur on the background, mixed with the sharp image based on distance from the wand (shallow focus, like a camera aimed at the blower)
-- **Thin-film interference** — Per-channel optical path difference (650/532/450 nm) with Schlick fresnel, based on published soap-bubble rendering models
-- **Bubble physics** — Each bubble floats upward, shrinks with distance, wobbles, and fades near the top.
-- **Shader rendering** — Iridescent thin-film colors, fresnel rims, specular highlights, and refracted background sampling inside each bubble.
+- **First-person view** — A large teal blower, finite handle, soap membrane, and hand sit sharply in the foreground.
+- **Depth of field** — The park is cover-fitted and softly sampled in one WebGL context, keeping the background blurred without seams or cross-context artifacts.
+- **Thin-film interference** — Optical path difference at 650/532/450 nm and Schlick fresnel create angle-dependent soap-film colors.
+- **Bubble physics** — Bubbles drift, wobble, recede, and eventually burst. Tap any bubble to pop it early.
+- **Satisfying pops** — Each burst expands into an iridescent ring and droplets with a short synthesized pop sound.
 
 ## Assets
 
@@ -32,9 +32,7 @@ Then open the URL in your browser, click **Enable microphone**, and blow gently 
 |------|---------|
 | `index.html` | Page shell and mic-permission overlay |
 | `sketch.js` | Mic input, bubble spawning, physics, uniforms |
-| `scene.frag` | Depth-of-field composite, wand, and bubble rendering |
-| `background.frag` | Cover-fit park background pass |
-| `blur.frag` | Separable Gaussian blur pass for bokeh |
+| `scene.frag` | Blurred park, realistic blower, bubbles, and pop rendering |
 | `shader.vert` | Standard p5.js passthrough vertex shader |
 | `style.css` | Overlay and blow-strength meter |
 

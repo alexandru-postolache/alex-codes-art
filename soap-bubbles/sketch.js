@@ -1,70 +1,46 @@
 const MAX_BUBBLES = 64;
+const MAX_POPS = 16;
 
-let bgShader;
-let blurShader;
 let sceneShader;
 let parkBackground;
-
-let sharpBuffer;
-let blurPassBuffer;
-let blurredBuffer;
-let bgShaderBuffer;
-let blurShaderPassBuffer;
-let blurShaderBlurredBuffer;
 
 let mic;
 let amp;
 let audioReady = false;
 
 let bubbles = [];
+let pops = [];
 let blowLevel = 0;
 let smoothedBlow = 0;
 let spawnAccumulator = 0;
+let noiseFloor = 0.012;
+let lastPopAt = 0;
 
 const params = {
-  blowThreshold: 0.035,
-  blowSensitivity: 16,
-  spawnRate: 12,
-  minRadius: 28,
-  maxRadius: 88,
-  riseSpeed: 2.8,
-  drift: 0.45,
+  blowThreshold: 0.018,
+  blowSensitivity: 12,
+  spawnRate: 8,
+  minRadius: 34,
+  maxRadius: 86,
+  riseSpeed: 1.65,
+  drift: 0.32,
 };
 
 function preload() {
-  bgShader = loadShader("shader.vert", "background.frag");
-  blurShader = loadShader("shader.vert", "blur.frag");
   sceneShader = loadShader("shader.vert", "scene.frag");
   parkBackground = loadImage("assets/park-bg.jpg");
 }
 
 function setup() {
+  pixelDensity(1);
   createCanvas(window.innerWidth, window.innerHeight, WEBGL);
-  pixelDensity(Math.min(2, window.devicePixelRatio || 1));
   noStroke();
 
-  initBuffers();
   createMeter();
 
   const startBtn = document.getElementById("start-btn");
   startBtn.addEventListener("click", startAudio);
-}
-
-function initBuffers() {
-  sharpBuffer = createGraphics(width, height, WEBGL);
-  blurPassBuffer = createGraphics(width, height, WEBGL);
-  blurredBuffer = createGraphics(width, height, WEBGL);
-
-  for (const buffer of [sharpBuffer, blurPassBuffer, blurredBuffer]) {
-    buffer.noStroke();
-    buffer.pixelDensity(pixelDensity());
-  }
-
-  if (bgShader && blurShader) {
-    bgShaderBuffer = bgShader.copyToContext(sharpBuffer);
-    blurShaderPassBuffer = blurShader.copyToContext(blurPassBuffer);
-    blurShaderBlurredBuffer = blurShader.copyToContext(blurredBuffer);
-  }
+  window.addEventListener("pointerdown", popAtPointer);
 }
 
 function startAudio() {
@@ -78,7 +54,7 @@ function startAudio() {
       () => {
         amp = new p5.Amplitude();
         amp.setInput(mic);
-        amp.smooth(0.88);
+        amp.smooth(0.86);
         audioReady = true;
         document.getElementById("overlay").classList.add("hidden");
       },
@@ -97,45 +73,9 @@ function draw() {
   }
 
   updateBubbles();
-  renderBackgroundPasses();
+  updatePops();
   renderScene();
   updateMeter();
-}
-
-function renderBackgroundPasses() {
-  const imageAspect = parkBackground.width / parkBackground.height;
-
-  sharpBuffer.shader(bgShaderBuffer);
-  bgShaderBuffer.setUniform("u_resolution", [width, height]);
-  bgShaderBuffer.setUniform("u_image", parkBackground);
-  bgShaderBuffer.setUniform("u_imageAspect", imageAspect);
-  sharpBuffer.plane(width, height);
-
-  blurPassBuffer.shader(blurShaderPassBuffer);
-  blurShaderPassBuffer.setUniform("u_resolution", [width, height]);
-  blurShaderPassBuffer.setUniform("u_image", sharpBuffer);
-  blurShaderPassBuffer.setUniform("u_direction", [1.0 / width, 0.0]);
-  blurShaderPassBuffer.setUniform("u_blurSize", 4.0);
-  blurPassBuffer.plane(width, height);
-
-  blurredBuffer.shader(blurShaderBlurredBuffer);
-  blurShaderBlurredBuffer.setUniform("u_resolution", [width, height]);
-  blurShaderBlurredBuffer.setUniform("u_image", blurPassBuffer);
-  blurShaderBlurredBuffer.setUniform("u_direction", [0.0, 1.0 / height]);
-  blurShaderBlurredBuffer.setUniform("u_blurSize", 4.0);
-  blurredBuffer.plane(width, height);
-
-  blurPassBuffer.shader(blurShaderPassBuffer);
-  blurShaderPassBuffer.setUniform("u_image", blurredBuffer);
-  blurShaderPassBuffer.setUniform("u_direction", [1.0 / width, 0.0]);
-  blurShaderPassBuffer.setUniform("u_blurSize", 5.5);
-  blurPassBuffer.plane(width, height);
-
-  blurredBuffer.shader(blurShaderBlurredBuffer);
-  blurShaderBlurredBuffer.setUniform("u_image", blurPassBuffer);
-  blurShaderBlurredBuffer.setUniform("u_direction", [0.0, 1.0 / height]);
-  blurShaderBlurredBuffer.setUniform("u_blurSize", 5.5);
-  blurredBuffer.plane(width, height);
 }
 
 function renderScene() {
@@ -144,17 +84,27 @@ function renderScene() {
   sceneShader.setUniform("u_time", millis() / 1000);
   sceneShader.setUniform("u_bubbleCount", bubbles.length);
   sceneShader.setUniform("u_bubbles", packBubbleUniforms());
+  sceneShader.setUniform("u_popCount", pops.length);
+  sceneShader.setUniform("u_pops", packPopUniforms());
   sceneShader.setUniform("u_wand", wandPosition());
   sceneShader.setUniform("u_blow", smoothedBlow);
-  sceneShader.setUniform("u_sharp", sharpBuffer);
-  sceneShader.setUniform("u_blurred", blurredBuffer);
+  sceneShader.setUniform("u_background", parkBackground);
+  sceneShader.setUniform(
+    "u_imageAspect",
+    parkBackground.width / parkBackground.height
+  );
   plane(width, height);
 }
 
 function updateBlow() {
-  const raw = amp.getLevel() * params.blowSensitivity;
-  smoothedBlow = lerp(smoothedBlow, raw, 0.35);
-  blowLevel = max(0, smoothedBlow - params.blowThreshold);
+  const raw = amp.getLevel();
+  if (raw < noiseFloor * 1.8) {
+    noiseFloor = lerp(noiseFloor, raw, 0.012);
+  }
+
+  const normalized = max(0, raw - noiseFloor - params.blowThreshold);
+  smoothedBlow = lerp(smoothedBlow, normalized * params.blowSensitivity, 0.28);
+  blowLevel = constrain(smoothedBlow, 0, 1);
 }
 
 function spawnBubbles() {
@@ -172,9 +122,10 @@ function spawnBubbles() {
   while (spawnAccumulator >= 1 && bubbles.length < MAX_BUBBLES) {
     spawnAccumulator -= 1;
 
-    const radius = random(params.minRadius, params.maxRadius) * (0.7 + strength * 0.45);
-    const angle = random(PI * 0.25, PI * 0.75);
-    const spawnDist = random(ringRadius * 0.35, ringRadius * 0.85);
+    const radius =
+      random(params.minRadius, params.maxRadius) * (0.78 + strength * 0.34);
+    const angle = random(PI * 0.27, PI * 0.73);
+    const spawnDist = random(ringRadius * 0.22, ringRadius * 0.72);
 
     bubbles.push(
       new Bubble(
@@ -190,7 +141,9 @@ function spawnBubbles() {
 function updateBubbles() {
   for (let i = bubbles.length - 1; i >= 0; i--) {
     bubbles[i].update();
-    if (bubbles[i].isDead()) {
+    if (bubbles[i].shouldPop()) {
+      popBubble(i);
+    } else if (bubbles[i].isDead()) {
       bubbles.splice(i, 1);
     }
   }
@@ -213,21 +166,36 @@ function packBubbleUniforms() {
   return packed;
 }
 
+function packPopUniforms() {
+  const packed = new Array(MAX_POPS * 4).fill(0);
+
+  for (let i = 0; i < pops.length; i++) {
+    const pop = pops[i];
+    const index = i * 4;
+    packed[index] = pop.x;
+    packed[index + 1] = pop.y;
+    packed[index + 2] = pop.radius;
+    packed[index + 3] = pop.progress;
+  }
+
+  return packed;
+}
+
 function wandPosition() {
-  return [width * 0.5, height * 0.26];
+  return [width * 0.5, height * 0.32];
 }
 
 function windowResized() {
   resizeCanvas(window.innerWidth, window.innerHeight);
-  initBuffers();
 }
 
 function createMeter() {
   const meter = document.createElement("div");
   meter.id = "meter";
   meter.innerHTML = `
-    <div>Blow strength</div>
+    <div class="meter-label"><span>Breath</span><span class="meter-state">ready</span></div>
     <div class="bar"><div class="fill"></div></div>
+    <div class="meter-tip">Blow steadily · tap a bubble to pop it</div>
   `;
   document.body.appendChild(meter);
 }
@@ -240,6 +208,89 @@ function updateMeter() {
 
   const amount = audioReady ? min(100, blowLevel * 220) : 0;
   fill.style.width = `${amount}%`;
+
+  const state = document.querySelector("#meter .meter-state");
+  if (state) {
+    state.textContent = blowLevel > 0.025 ? "blowing" : "ready";
+  }
+}
+
+function popAtPointer(event) {
+  if (!audioReady) {
+    return;
+  }
+
+  const pointerX = event.clientX;
+  const pointerY = height - event.clientY;
+  let nearest = -1;
+  let nearestDistance = Infinity;
+
+  for (let i = 0; i < bubbles.length; i++) {
+    const b = bubbles[i];
+    const distance = dist(pointerX, pointerY, b.x, b.y);
+    if (distance < b.radius * 1.15 && distance < nearestDistance) {
+      nearest = i;
+      nearestDistance = distance;
+    }
+  }
+
+  if (nearest >= 0) {
+    popBubble(nearest);
+  }
+}
+
+function popBubble(index) {
+  const bubble = bubbles[index];
+  if (!bubble) {
+    return;
+  }
+
+  if (pops.length >= MAX_POPS) {
+    pops.shift();
+  }
+  pops.push(new BubblePop(bubble.x, bubble.y, bubble.radius));
+  bubbles.splice(index, 1);
+  playPopSound(bubble.radius);
+}
+
+function updatePops() {
+  for (let i = pops.length - 1; i >= 0; i--) {
+    pops[i].update();
+    if (pops[i].progress >= 1) {
+      pops.splice(i, 1);
+    }
+  }
+}
+
+function playPopSound(radius) {
+  if (!audioReady || millis() - lastPopAt < 35) {
+    return;
+  }
+  lastPopAt = millis();
+
+  const context = getAudioContext();
+  const duration = 0.055;
+  const length = floor(context.sampleRate * duration);
+  const buffer = context.createBuffer(1, length, context.sampleRate);
+  const data = buffer.getChannelData(0);
+
+  for (let i = 0; i < length; i++) {
+    const envelope = pow(1 - i / length, 5);
+    data[i] = random(-1, 1) * envelope;
+  }
+
+  const source = context.createBufferSource();
+  const filter = context.createBiquadFilter();
+  const gain = context.createGain();
+  filter.type = "bandpass";
+  filter.frequency.value = map(radius, params.minRadius, params.maxRadius, 2600, 900, true);
+  filter.Q.value = 0.8;
+  gain.gain.value = 0.12;
+  source.buffer = buffer;
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(context.destination);
+  source.start();
 }
 
 class Bubble {
@@ -251,21 +302,26 @@ class Bubble {
     this.life = 1;
     this.wobble = random(TWO_PI);
     this.wobbleSpeed = random(0.015, 0.04);
+    this.age = 0;
+    this.popAge = random(320, 650);
+    this.popChance = random(0.001, 0.004);
 
-    const launch = map(strength, 0, 1, 2.0, 6.5);
+    const launch = map(strength, 0, 1, 1.2, 3.8);
     this.vx = random(-params.drift, params.drift) * strength;
     this.vy = launch * params.riseSpeed;
   }
 
   update() {
     const wand = wandPosition();
+    this.age++;
     this.wobble += this.wobbleSpeed;
-    this.x += this.vx + sin(this.wobble) * 0.45;
+    this.x += this.vx + sin(this.wobble) * 0.38;
     this.y += this.vy;
 
-    this.vy -= 0.006;
-    this.vx *= 0.997;
-    this.vy *= 0.9995;
+    this.vy += 0.004;
+    this.vx += noise(this.age * 0.006, this.wobble) * 0.008 - 0.004;
+    this.vx *= 0.996;
+    this.vy *= 0.999;
 
     const depth = map(this.y, wand[1], height * 0.96, 0, 1, true);
     this.radius = this.baseRadius * (1.0 - depth * 0.45);
@@ -280,7 +336,28 @@ class Bubble {
     }
   }
 
+  shouldPop() {
+    const oldEnough = this.age > 140;
+    return (
+      this.y > height * 0.9 ||
+      (oldEnough && this.age > this.popAge && random() < this.popChance)
+    );
+  }
+
   isDead() {
     return this.life <= 0 || this.radius < 3;
+  }
+}
+
+class BubblePop {
+  constructor(x, y, radius) {
+    this.x = x;
+    this.y = y;
+    this.radius = radius;
+    this.progress = 0;
+  }
+
+  update() {
+    this.progress += 0.055 * (deltaTime / 16.67);
   }
 }
