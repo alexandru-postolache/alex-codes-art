@@ -90,12 +90,12 @@ vec4 bubbleLayer(vec2 p, vec2 uv, vec4 bubble) {
   float innerGlow = smoothstep(1.0, 0.1, d) * (0.5 + 0.5 * normal.z);
 
   vec3 color = refracted * (0.92 + sphereZ * 0.08);
-  color += film * (0.12 + rim * 0.48);
-  color += vec3(1.0, 0.985, 0.94) * highlight * 0.52;
+  color += film * (0.2 + rim * 0.62);
+  color += vec3(1.0, 0.985, 0.94) * highlight * 0.64;
   color += vec3(0.75, 0.9, 1.0) * crescent * 0.18;
   color += vec3(0.7, 0.86, 0.9) * innerGlow * 0.035;
 
-  float alpha = 0.1 + rim * 0.17 + fresnel * 0.08 + highlight * 0.2;
+  float alpha = 0.13 + rim * 0.23 + fresnel * 0.1 + highlight * 0.27;
   alpha *= bubble.w;
   return vec4(color, clamp(alpha, 0.0, 0.92));
 }
@@ -157,7 +157,7 @@ vec4 popLayer(vec2 p, vec4 pop) {
   float progress = pop.w;
   float radius = pop.z * (1.0 + progress * 0.65);
   float dist = length(p - pop.xy);
-  float ring = smoothstep(8.0, 1.0, abs(dist - radius));
+  float ring = 1.0 - smoothstep(1.0, 9.0, abs(dist - radius));
   ring *= 1.0 - progress;
   vec3 color = thinFilm(vec3(0.0, 0.7, 0.72), 360.0 + progress * 220.0);
   float shards = 0.0;
@@ -166,10 +166,17 @@ vec4 popLayer(vec2 p, vec4 pop) {
   float sector = floor((a + 3.14159) / 6.28318 * 12.0);
   float ray = pop.z * (0.72 + hash(vec2(sector, pop.x)) * 0.65) * progress;
   float angular = abs(fract((a + 3.14159) / 6.28318 * 12.0) - 0.5);
-  shards = smoothstep(0.13, 0.0, angular) * smoothstep(12.0, 1.0, abs(dist - ray));
-  shards *= smoothstep(1.0, 0.35, progress);
-  float flash = smoothstep(0.22, 0.0, progress) * smoothstep(pop.z * 0.9, 0.0, dist);
-  return vec4(color + vec3(0.9), clamp(ring * 0.9 + shards + flash * 0.24, 0.0, 1.0));
+  shards = (1.0 - smoothstep(0.0, 0.13, angular))
+    * (1.0 - smoothstep(1.0, 12.0, abs(dist - ray)));
+  shards *= 1.0 - smoothstep(0.35, 1.0, progress);
+  float flash = (1.0 - smoothstep(0.0, 0.24, progress))
+    * (1.0 - smoothstep(0.0, pop.z * 0.9, dist));
+  float halo = (1.0 - smoothstep(4.0, 16.0, abs(dist - radius * 1.08)))
+    * (1.0 - progress) * 0.32;
+  return vec4(
+    color + vec3(0.95),
+    clamp(ring * 0.95 + halo + shards + flash * 0.3, 0.0, 1.0)
+  );
 }
 
 void main() {
