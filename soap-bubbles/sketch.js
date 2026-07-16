@@ -21,11 +21,11 @@ let lastPopAt = 0;
 const params = {
   blowThreshold: 0.018,
   blowSensitivity: 12,
-  spawnRate: 8,
-  minRadius: 34,
-  maxRadius: 86,
-  riseSpeed: 1.65,
-  drift: 0.32,
+  spawnRate: 3.6,
+  minRadius: 42,
+  maxRadius: 96,
+  riseSpeed: 1.9,
+  drift: 1.25,
 };
 
 function preload() {
@@ -150,7 +150,7 @@ function spawnBubbles() {
     const radius =
       random(params.minRadius, params.maxRadius) * (0.78 + strength * 0.34);
     const angle = random(PI * 0.27, PI * 0.73);
-    const spawnDist = random(ringRadius * 0.22, ringRadius * 0.72);
+    const spawnDist = random(ringRadius * 0.42, ringRadius * 0.85);
 
     bubbles.push(
       new Bubble(
@@ -331,8 +331,8 @@ class Bubble {
     this.popAge = random(320, 650);
     this.popChance = random(0.001, 0.004);
 
-    const launch = map(strength, 0, 1, 1.2, 3.8);
-    this.vx = random(-params.drift, params.drift) * strength;
+    const launch = map(strength, 0, 1, 2.5, 4.8);
+    this.vx = random(-params.drift, params.drift) * (0.45 + strength);
     this.vy = launch * params.riseSpeed;
   }
 
@@ -340,13 +340,13 @@ class Bubble {
     const wand = wandPosition();
     this.age++;
     this.wobble += this.wobbleSpeed;
-    this.x += this.vx + sin(this.wobble) * 0.38;
+    this.x += this.vx + sin(this.wobble) * 0.52;
     this.y += this.vy;
 
-    this.vy += 0.004;
-    this.vx += noise(this.age * 0.006, this.wobble) * 0.008 - 0.004;
-    this.vx *= 0.996;
-    this.vy *= 0.999;
+    this.vy += 0.012;
+    this.vx += noise(this.age * 0.006, this.wobble) * 0.018 - 0.009;
+    this.vx *= 0.998;
+    this.vy *= 0.9995;
 
     const depth = map(this.y, wand[1], height * 0.96, 0, 1, true);
     this.radius = this.baseRadius * (1.0 - depth * 0.45);
@@ -383,6 +383,6 @@ class BubblePop {
   }
 
   update() {
-    this.progress += 0.055 * (deltaTime / 16.67);
+    this.progress += 0.026 * (deltaTime / 16.67);
   }
 }

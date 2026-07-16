@@ -80,20 +80,22 @@ vec4 bubbleLayer(vec2 p, vec2 uv, vec4 bubble) {
 
   vec2 refractUV = clamp(uv + normal.xy * (1.0 - d) * 0.018, 0.002, 0.998);
   vec3 refracted = blurredPark(refractUV);
-  float rim = smoothstep(0.76, 0.995, d);
+  float rim = smoothstep(0.7, 0.995, d);
   float fresnel = pow(1.0 - normal.z, 3.0);
 
   vec2 highlightCenter = vec2(-0.34, 0.38);
-  float highlight = smoothstep(0.24, 0.03, length(q - highlightCenter));
-  float crescent = smoothstep(0.18, 0.02, abs(length(q - vec2(-0.13, 0.13)) - 0.73));
+  float highlight = smoothstep(0.3, 0.04, length(q - highlightCenter));
+  float crescent = smoothstep(0.22, 0.025, abs(length(q - vec2(-0.13, 0.13)) - 0.73));
   crescent *= smoothstep(0.3, 0.95, q.y - q.x);
+  float innerGlow = smoothstep(1.0, 0.1, d) * (0.5 + 0.5 * normal.z);
 
-  vec3 color = refracted * (0.96 + sphereZ * 0.04);
-  color += film * (0.38 + rim * 1.05);
-  color += vec3(1.0, 0.985, 0.94) * highlight * 0.9;
-  color += vec3(0.75, 0.9, 1.0) * crescent * 0.24;
+  vec3 color = refracted * (0.92 + sphereZ * 0.08);
+  color += film * (0.12 + rim * 0.48);
+  color += vec3(1.0, 0.985, 0.94) * highlight * 0.52;
+  color += vec3(0.75, 0.9, 1.0) * crescent * 0.18;
+  color += vec3(0.7, 0.86, 0.9) * innerGlow * 0.035;
 
-  float alpha = 0.035 + rim * 0.38 + fresnel * 0.15 + highlight * 0.42;
+  float alpha = 0.1 + rim * 0.17 + fresnel * 0.08 + highlight * 0.2;
   alpha *= bubble.w;
   return vec4(color, clamp(alpha, 0.0, 0.92));
 }
@@ -155,7 +157,7 @@ vec4 popLayer(vec2 p, vec4 pop) {
   float progress = pop.w;
   float radius = pop.z * (1.0 + progress * 0.65);
   float dist = length(p - pop.xy);
-  float ring = smoothstep(5.0, 1.0, abs(dist - radius));
+  float ring = smoothstep(8.0, 1.0, abs(dist - radius));
   ring *= 1.0 - progress;
   vec3 color = thinFilm(vec3(0.0, 0.7, 0.72), 360.0 + progress * 220.0);
   float shards = 0.0;
@@ -164,9 +166,10 @@ vec4 popLayer(vec2 p, vec4 pop) {
   float sector = floor((a + 3.14159) / 6.28318 * 12.0);
   float ray = pop.z * (0.72 + hash(vec2(sector, pop.x)) * 0.65) * progress;
   float angular = abs(fract((a + 3.14159) / 6.28318 * 12.0) - 0.5);
-  shards = smoothstep(0.09, 0.0, angular) * smoothstep(8.0, 1.0, abs(dist - ray));
+  shards = smoothstep(0.13, 0.0, angular) * smoothstep(12.0, 1.0, abs(dist - ray));
   shards *= smoothstep(1.0, 0.35, progress);
-  return vec4(color + vec3(0.8), clamp(ring * 0.7 + shards * 0.9, 0.0, 1.0));
+  float flash = smoothstep(0.22, 0.0, progress) * smoothstep(pop.z * 0.9, 0.0, dist);
+  return vec4(color + vec3(0.9), clamp(ring * 0.9 + shards + flash * 0.24, 0.0, 1.0));
 }
 
 void main() {
