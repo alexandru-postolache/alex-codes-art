@@ -210,7 +210,7 @@ function packPopUniforms() {
 }
 
 function wandPosition() {
-  return [width * 0.5, height * 0.55];
+  return [width * 0.5, height * 0.41];
 }
 
 function windowResized() {
