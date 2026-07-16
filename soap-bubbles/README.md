@@ -16,8 +16,14 @@ Then open the URL in your browser, click **Enable microphone**, and blow gently 
 ## How it works
 
 - **Microphone input** — `p5.AudioIn` feeds an `p5.Amplitude` analyzer. When the level crosses a threshold, bubbles spawn at the wand.
-- **Bubble physics** — Each bubble floats upward with a little wobble, drift, and fade-out near the top of the screen.
-- **Shader rendering** — A full-screen fragment shader draws a soft sky, a simple wand, blow mist, and up to 64 layered soap-film bubbles with iridescent rims and highlights.
+- **First-person view** — A large bubble wand and hands are drawn in the foreground shader, like you're holding the blower close to the camera.
+- **Depth of field** — A park photo fills the background. Areas away from the wand are blurred, mimicking a shallow focus on the bubbles.
+- **Bubble physics** — Each bubble floats upward, shrinks with distance, wobbles, and fades near the top.
+- **Shader rendering** — Iridescent thin-film colors, fresnel rims, specular highlights, and refracted background sampling inside each bubble.
+
+## Assets
+
+- `assets/park-bg.jpg` — Forest park photo from [Unsplash](https://unsplash.com/photos/tGTVxeOr_Rs) (free to use).
 
 ## Files
 

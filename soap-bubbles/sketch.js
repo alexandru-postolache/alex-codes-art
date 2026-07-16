@@ -1,6 +1,7 @@
 const MAX_BUBBLES = 64;
 
 let bubbleShader;
+let parkBackground;
 let mic;
 let amp;
 let audioReady = false;
@@ -13,15 +14,16 @@ let spawnAccumulator = 0;
 const params = {
   blowThreshold: 0.045,
   blowSensitivity: 14,
-  spawnRate: 18,
-  minRadius: 14,
-  maxRadius: 52,
-  riseSpeed: 1.4,
-  drift: 0.35,
+  spawnRate: 14,
+  minRadius: 38,
+  maxRadius: 110,
+  riseSpeed: 2.4,
+  drift: 0.55,
 };
 
 function preload() {
   bubbleShader = loadShader("shader.vert", "bubble.frag");
+  parkBackground = loadImage("assets/park-bg.jpg");
 }
 
 function setup() {
@@ -73,6 +75,7 @@ function draw() {
   bubbleShader.setUniform("u_bubbles", packBubbleUniforms());
   bubbleShader.setUniform("u_wand", wandPosition());
   bubbleShader.setUniform("u_blow", smoothedBlow);
+  bubbleShader.setUniform("u_background", parkBackground);
 
   plane(width, height);
   updateMeter();
@@ -91,19 +94,22 @@ function spawnBubbles() {
   }
 
   const wand = wandPosition();
+  const scale = min(width, height);
   const strength = map(blowLevel, 0, 0.5, 0, 1, true);
   spawnAccumulator += params.spawnRate * strength * (deltaTime / 1000);
 
   while (spawnAccumulator >= 1 && bubbles.length < MAX_BUBBLES) {
     spawnAccumulator -= 1;
 
-    const radius = random(params.minRadius, params.maxRadius) * (0.6 + strength * 0.7);
-    const spread = map(strength, 0, 1, 10, 36);
+    const radius = random(params.minRadius, params.maxRadius) * (0.65 + strength * 0.55);
+    const spread = map(strength, 0, 1, scale * 0.04, scale * 0.14);
+    const angle = random(PI * 0.15, PI * 0.85);
+    const spawnDist = random(scale * 0.08, scale * 0.17);
 
     bubbles.push(
       new Bubble(
-        wand[0] + random(-spread, spread),
-        wand[1] + random(4, 14),
+        wand[0] + cos(angle) * spawnDist + random(-spread * 0.2, spread * 0.2),
+        wand[1] + sin(angle) * spawnDist * 0.35 + random(0, scale * 0.04),
         radius,
         strength
       )
@@ -119,7 +125,6 @@ function updateBubbles() {
     }
   }
 
-  // Paint lower bubbles first, higher ones on top.
   bubbles.sort((a, b) => a.y - b.y);
 }
 
@@ -139,7 +144,7 @@ function packBubbleUniforms() {
 }
 
 function wandPosition() {
-  return [width * 0.5, height * 0.12];
+  return [width * 0.5, height * 0.38];
 }
 
 function windowResized() {
@@ -170,37 +175,41 @@ class Bubble {
   constructor(x, y, radius, strength) {
     this.x = x;
     this.y = y;
+    this.baseRadius = radius;
     this.radius = radius;
     this.life = 1;
     this.wobble = random(TWO_PI);
     this.wobbleSpeed = random(0.02, 0.05);
 
-    const launch = map(strength, 0, 1, 1.2, 4.5);
+    const launch = map(strength, 0, 1, 1.5, 5.5);
     this.vx = random(-params.drift, params.drift) * strength;
     this.vy = launch * params.riseSpeed;
   }
 
   update() {
+    const wand = wandPosition();
     this.wobble += this.wobbleSpeed;
-    this.x += this.vx + sin(this.wobble) * 0.35;
+    this.x += this.vx + sin(this.wobble) * 0.55;
     this.y += this.vy;
 
-    this.vy -= 0.012;
-    this.vx *= 0.995;
-    this.vy *= 0.998;
+    this.vy -= 0.008;
+    this.vx *= 0.996;
+    this.vy *= 0.999;
 
-    this.radius += sin(this.wobble * 1.7) * 0.04;
+    const depth = map(this.y, wand[1], height * 0.98, 0, 1, true);
+    this.radius = this.baseRadius * (1.0 - depth * 0.5);
+    this.radius += sin(this.wobble * 1.7) * 0.08;
 
     if (this.y > height + this.radius * 2) {
       this.life = 0;
     }
 
-    if (this.y > height * 0.85) {
-      this.life -= 0.003;
+    if (this.y > height * 0.82) {
+      this.life -= 0.004;
     }
   }
 
   isDead() {
-    return this.life <= 0;
+    return this.life <= 0 || this.radius < 2;
   }
 }
