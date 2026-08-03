@@ -8,7 +8,7 @@ This repository contains the source code for interactive [p5.js](https://p5js.or
 
 | Folder | Description | Blog tutorial |
 |--------|-------------|---------------|
-| [`wfc/`](wfc/) | Interactive Wave Function Collapse visualization with 2D tilesets, Wang tiles, and a 3D mode | [Wave Function Collapse in p5.js](https://alexcodesart.com/wave-function-collapse-in-p5-js-a-visual-guide-to-the-generative-art-algorithm/) |
+| [`wfc/`](wfc/) | Interactive Wave Function Collapse visualization with 2D tilesets, Wang tiles, and a 3D mode | [Article draft](wfc/article.md) |
 | [`metaballs/`](metaballs/) | Animated organic blobs rendered with GLSL shaders and signed distance functions | [Create Animated Metaballs with Shaders in p5.js](https://alexcodesart.com/create-animated-metaballs-with-shaders-in-p5-js-a-creative-coding-tutorial/) |
 | [`mandala/`](mandala/) | Interactive mandala maker with symmetry, fading trails, curvy motion, and Web MIDI | [Mandala series (parts 1–3)](mandala/) |
 | [`radial-strokes/`](radial-strokes/) | Generative radial arc strokes with color gradients and live controls | [Building Interactive Radial Strokes with p5.js](https://alexcodesart.com/mastering-creative-coding-building-interactive-radial-strokes-with-p5-js/) |

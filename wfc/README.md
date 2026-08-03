@@ -17,6 +17,6 @@ python3 -m http.server 8081
 
 Open http://localhost:8081/wfc/index.html (2D) or http://localhost:8081/wfc/wfc3d.html (3D).
 
-## Blog tutorial
+## Article
 
-[Wave Function Collapse in p5.js: A Visual Guide to the Generative Art Algorithm](https://alexcodesart.com/wave-function-collapse-in-p5-js-a-visual-guide-to-the-generative-art-algorithm/)
+The full article draft lives in this folder: [article.md](article.md).
