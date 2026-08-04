@@ -24,10 +24,6 @@ let isAnimating = true;
 let brushReady = false;
 let brushInitialized = false;
 let appliedBrushScale = null;
-let brushContourCache = null;
-let brushContourCacheKey = '';
-let watercolorBackgroundCache = null;
-let watercolorBackgroundCacheKey = '';
 
 function getBrushWebglMode() {
   return 'webgl2';
@@ -147,23 +143,6 @@ function shouldUseWatercolorBackground(params) {
   return params.watercolorBackground && brushReady && !params.debug;
 }
 
-function invalidateWatercolorBackgroundCache() {
-  watercolorBackgroundCache?.remove();
-  watercolorBackgroundCache = null;
-  watercolorBackgroundCacheKey = '';
-}
-
-function buildWatercolorBackgroundCacheKey(params, palette) {
-  return [
-    width,
-    height,
-    palette.backgroundColor,
-    params.watercolorBackground,
-    params.brushScale,
-    params.noiseSeed,
-  ].join('|');
-}
-
 function renderWatercolorBackgroundRect(palette, params) {
   syncBrushScale(params);
   brush.noField();
@@ -189,49 +168,12 @@ function renderWatercolorBackgroundRect(palette, params) {
   brush.noWash();
 }
 
-function getOrRenderWatercolorBackgroundCache(palette, params) {
-  const cacheKey = buildWatercolorBackgroundCacheKey(params, palette);
-  if (watercolorBackgroundCache && watercolorBackgroundCacheKey === cacheKey) {
-    return watercolorBackgroundCache;
-  }
-
-  invalidateWatercolorBackgroundCache();
-
-  try {
-    watercolorBackgroundCache = createGraphics(width, height, getBrushWebglMode());
-    watercolorBackgroundCache.pixelDensity(pixelDensity());
-    watercolorBackgroundCache.clear();
-
-    brush.load(watercolorBackgroundCache);
-    watercolorBackgroundCache.push();
-    watercolorBackgroundCache.translate(-width / 2, -height / 2);
-    renderWatercolorBackgroundRect(palette, params);
-    watercolorBackgroundCache.pop();
-    brush.load();
-
-    watercolorBackgroundCacheKey = cacheKey;
-    return watercolorBackgroundCache;
-  } catch (error) {
-    console.warn('Watercolor background cache unavailable, drawing directly on canvas.', error);
-    invalidateWatercolorBackgroundCache();
-    brush.load();
-    return null;
-  }
-}
-
 function drawWatercolorBackgroundLayer(palette, params) {
-  const cache = getOrRenderWatercolorBackgroundCache(palette, params);
-  if (cache) {
-    image(cache, 0, 0, width, height);
-    return;
-  }
-
   renderWatercolorBackgroundRect(palette, params);
 }
 
 function drawBackground(palette, params) {
   if (!shouldUseWatercolorBackground(params)) {
-    invalidateWatercolorBackgroundCache();
     background(palette.backgroundColor);
     return;
   }
@@ -270,32 +212,6 @@ function drawContourSegmentsClassic(fieldGrid, rows, cols, thresholdValues, para
   }
 }
 
-function invalidateBrushContourCache() {
-  brushContourCache?.remove();
-  brushContourCache = null;
-  brushContourCacheKey = '';
-}
-
-function buildBrushContourCacheKey(params, rows, cols, fieldCacheKey, palette, thresholdCount) {
-  return [
-    fieldCacheKey,
-    width,
-    height,
-    cols,
-    rows,
-    params.brushName,
-    params.brushScale,
-    params.strokeWeightMin,
-    params.strokeWeightMax,
-    params.fillEnabled,
-    params.watercolorBackground,
-    palette.innerColor,
-    palette.backgroundColor,
-    thresholdCount,
-    cachedColorKey,
-  ].join('|');
-}
-
 function resolveBrushName(params) {
   if (typeof window.normalizeContourBrushName === 'function') {
     return window.normalizeContourBrushName(params.brushName);
@@ -321,7 +237,7 @@ function renderBrushContourLinesToTarget(
   brush.noField();
 
   if (typeof brush.seed === 'function') {
-    brush.seed(params.noiseSeed);
+    brush.seed(params.noiseSeed + 1);
   }
 
   let i = 0;
@@ -356,71 +272,6 @@ function renderBrushContourLinesToTarget(
   return true;
 }
 
-function getOrRenderBrushContourCache(
-  fieldGrid,
-  rows,
-  cols,
-  thresholdValues,
-  params,
-  colors,
-  cellWidth,
-  cellHeight,
-  fieldCacheKey,
-  palette
-) {
-  const cacheKey = buildBrushContourCacheKey(
-    params,
-    rows,
-    cols,
-    fieldCacheKey,
-    palette,
-    thresholdValues.length
-  );
-
-  if (brushContourCache && brushContourCacheKey === cacheKey) {
-    return brushContourCache;
-  }
-
-  invalidateBrushContourCache();
-
-  try {
-    brushContourCache = createGraphics(width, height, getBrushWebglMode());
-    brushContourCache.pixelDensity(pixelDensity());
-    brushContourCache.clear();
-
-    brush.load(brushContourCache);
-    brushContourCache.push();
-    brushContourCache.translate(-width / 2, -height / 2);
-
-    const drew = renderBrushContourLinesToTarget(
-      fieldGrid,
-      rows,
-      cols,
-      thresholdValues,
-      params,
-      colors,
-      cellWidth,
-      cellHeight
-    );
-
-    brushContourCache.pop();
-    brush.load();
-
-    if (!drew) {
-      invalidateBrushContourCache();
-      return null;
-    }
-
-    brushContourCacheKey = cacheKey;
-    return brushContourCache;
-  } catch (error) {
-    console.warn('Brush contour cache unavailable, drawing directly on canvas.', error);
-    invalidateBrushContourCache();
-    brush.load();
-    return null;
-  }
-}
-
 function drawContourSegmentsBrush(
   fieldGrid,
   rows,
@@ -429,9 +280,7 @@ function drawContourSegmentsBrush(
   params,
   colors,
   cellWidth,
-  cellHeight,
-  fieldCacheKey,
-  palette
+  cellHeight
 ) {
   if (!brushReady) {
     drawContourSegmentsClassic(
@@ -446,28 +295,6 @@ function drawContourSegmentsBrush(
       cellHeight
     );
     return;
-  }
-
-  if (!shouldAnimate(params)) {
-    const cache = getOrRenderBrushContourCache(
-      fieldGrid,
-      rows,
-      cols,
-      thresholdValues,
-      params,
-      colors,
-      cellWidth,
-      cellHeight,
-      fieldCacheKey,
-      palette
-    );
-
-    if (cache) {
-      image(cache, 0, 0, width, height);
-      return;
-    }
-  } else {
-    invalidateBrushContourCache();
   }
 
   renderBrushContourLinesToTarget(
@@ -528,8 +355,6 @@ function getContourSegmentsForCell(
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   appliedBrushScale = null;
-  invalidateBrushContourCache();
-  invalidateWatercolorBackgroundCache();
   invalidateFieldCache();
   redraw();
 }
@@ -849,7 +674,6 @@ function draw() {
   }
 
   const fieldGrid = getOrBuildFieldGrid(rows, cols, params.noiseScale, cellWidth, cellHeight, params);
-  const fieldCacheKey = lastFieldCacheKey;
   nz += params.noiseScale * params.speed;
 
   if (debug) {
@@ -876,12 +700,9 @@ function draw() {
       params,
       colors,
       cellWidth,
-      cellHeight,
-      fieldCacheKey,
-      palette
+      cellHeight
     );
   } else {
-    invalidateBrushContourCache();
     drawContourSegmentsClassic(
       fieldGrid,
       rows,
