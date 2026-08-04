@@ -22,6 +22,7 @@ let gridRows = 0;
 let lastFieldCacheKey = '';
 let isAnimating = true;
 let brushReady = false;
+let brushInitialized = false;
 let appliedBrushScale = null;
 let brushContourCache = null;
 let brushContourCacheKey = '';
@@ -29,12 +30,6 @@ let watercolorBackgroundCache = null;
 let watercolorBackgroundCacheKey = '';
 
 function getBrushWebglMode() {
-  if (typeof WEBGL2 !== 'undefined') {
-    return WEBGL2;
-  }
-  if (typeof WEBGL !== 'undefined') {
-    return WEBGL;
-  }
   return 'webgl2';
 }
 
@@ -86,13 +81,29 @@ function ensureNoiseSeed(seed) {
   }
 }
 
-function setup() {
-  createCanvas(windowWidth, windowHeight, BRUSH_WEBGL);
-  brushReady = typeof brush !== 'undefined' && typeof brush.line === 'function';
-  if (brushReady) {
+function ensureBrushInitialized() {
+  if (!brushReady || brushInitialized) {
+    return;
+  }
+
+  try {
     if (typeof brush.load === 'function') {
       brush.load();
     }
+    brushInitialized = true;
+  } catch (error) {
+    console.warn('p5.brush failed to initialize.', error);
+    brushReady = false;
+    brushInitialized = false;
+  }
+}
+
+function setup() {
+  createCanvas(windowWidth, windowHeight, getBrushWebglMode());
+  brushReady = typeof brush !== 'undefined' && typeof brush.line === 'function';
+  ensureBrushInitialized();
+
+  if (brushReady) {
     syncBrushScale(getParams());
     brush.noField();
   }
@@ -121,10 +132,10 @@ function syncBrushScale(params) {
     return;
   }
 
-  const scale = params.brushScale ?? 2;
-  if (appliedBrushScale !== scale) {
-    brush.scaleBrushes(scale);
-    appliedBrushScale = scale;
+  const nextBrushScale = params.brushScale ?? 2;
+  if (appliedBrushScale !== nextBrushScale) {
+    brush.scaleBrushes(nextBrushScale);
+    appliedBrushScale = nextBrushScale;
   }
 }
 
@@ -187,7 +198,7 @@ function getOrRenderWatercolorBackgroundCache(palette, params) {
   invalidateWatercolorBackgroundCache();
 
   try {
-    watercolorBackgroundCache = createGraphics(width, height, BRUSH_WEBGL);
+    watercolorBackgroundCache = createGraphics(width, height, getBrushWebglMode());
     watercolorBackgroundCache.pixelDensity(pixelDensity());
     watercolorBackgroundCache.clear();
 
@@ -373,7 +384,7 @@ function getOrRenderBrushContourCache(
   invalidateBrushContourCache();
 
   try {
-    brushContourCache = createGraphics(width, height, BRUSH_WEBGL);
+    brushContourCache = createGraphics(width, height, getBrushWebglMode());
     brushContourCache.pixelDensity(pixelDensity());
     brushContourCache.clear();
 
@@ -818,6 +829,8 @@ function getStrokeWeight(index, count, params) {
 function draw() {
   const params = getParams();
   if (!params) return;
+
+  ensureBrushInitialized();
 
   const cols = Math.round(params.cols);
   const { rows, cellWidth, cellHeight } = getGridDimensions(cols, width, height);
