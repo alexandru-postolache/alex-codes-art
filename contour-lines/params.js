@@ -16,6 +16,7 @@
     brushName: 'HB',
     brushScale: 2,
   fillEnabled: false,
+  watercolorFillBands: false,
   watercolorBackground: false,
   debug: false,
     mouseInfluence: true,

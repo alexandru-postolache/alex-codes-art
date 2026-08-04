@@ -150,6 +150,19 @@ function shouldUseWatercolorBackground(params) {
   return params.watercolorBackground && brushReady && !params.debug;
 }
 
+function shouldUseWatercolorFillBands(params) {
+  return params.fillEnabled && params.watercolorFillBands && brushReady && !params.debug;
+}
+
+function getWatercolorFillStep(cols, rows) {
+  const maxCells = 4000;
+  const totalCells = Math.max(1, (cols - 1) * (rows - 1));
+  if (totalCells <= maxCells) {
+    return 1;
+  }
+  return Math.ceil(Math.sqrt(totalCells / maxCells));
+}
+
 function renderWatercolorBackgroundRect(palette, params) {
   syncBrushScale(params);
   brush.noField();
@@ -498,18 +511,18 @@ function getBandIndex(value, thresholds) {
     return 0;
   }
 
-  const min = thresholds[0];
-  const max = thresholds[count - 1];
+  const thresholdMin = thresholds[0];
+  const thresholdMax = thresholds[count - 1];
 
-  if (value < min) {
+  if (value < thresholdMin) {
     return 0;
   }
-  if (value >= max) {
+  if (value >= thresholdMax) {
     return count - 1;
   }
 
-  const step = (max - min) / (count - 1);
-  return Math.min(count - 1, Math.floor((value - min) / step) + 1);
+  const step = (thresholdMax - thresholdMin) / (count - 1);
+  return Math.min(count - 1, Math.floor((value - thresholdMin) / step) + 1);
 }
 
 function colorToRgb(c) {
@@ -661,7 +674,64 @@ function drawFieldPixels(fieldGrid, rows, cols, params, colorForValue) {
   pop();
 }
 
-function drawContourFills(fieldGrid, rows, cols, thresholds, params) {
+function drawContourFillsWatercolor(
+  fieldGrid,
+  rows,
+  cols,
+  thresholds,
+  params,
+  colors,
+  cellWidth,
+  cellHeight
+) {
+  syncBrushScale(params);
+  brush.noField();
+  brush.noStroke();
+
+  if (typeof brush.seed === 'function') {
+    brush.seed(params.noiseSeed + 2);
+  }
+
+  if (typeof brush.fillTexture === 'function') {
+    brush.fillTexture(0.45, 0.3);
+  }
+
+  if (typeof brush.fillBleed === 'function') {
+    brush.fillBleed(0.2, 'out');
+  }
+
+  const step = getWatercolorFillStep(cols, rows);
+  const rectWidth = cellWidth * step + 1;
+  const rectHeight = cellHeight * step + 1;
+
+  for (let y = 0; y < rows - 1; y += step) {
+    for (let x = 0; x < cols - 1; x += step) {
+      const sampleX = Math.min(x + step * 0.5, cols - 1.001);
+      const sampleY = Math.min(y + step * 0.5, rows - 1.001);
+      const v = sampleFieldGridFast(fieldGrid, cols, rows, sampleX, sampleY);
+      const band = getBandIndex(constrain(v, 0, 1), thresholds);
+
+      brush.fill(colors[band], 255);
+      brush.rect(
+        (x + step * 0.5) * cellWidth,
+        (y + step * 0.5) * cellHeight,
+        rectWidth,
+        rectHeight,
+        'center'
+      );
+    }
+  }
+
+  brush.noFill();
+  brush.noWash();
+}
+
+function drawContourFills(fieldGrid, rows, cols, thresholds, params, colors, cellWidth, cellHeight) {
+  if (shouldUseWatercolorFillBands(params)) {
+    drawContourFillsWatercolor(fieldGrid, rows, cols, thresholds, params, colors, cellWidth, cellHeight);
+    return;
+  }
+
   drawFieldPixels(fieldGrid, rows, cols, params, (v) => {
     const band = getBandIndex(constrain(v, 0, 1), thresholds);
     return cachedRgbColors[band];
@@ -711,7 +781,16 @@ function draw() {
   const colors = getThresholdColors(palette.innerColor, thresholdValues.length);
 
   if (params.fillEnabled && !debug) {
-    drawContourFills(fieldGrid, rows, cols, thresholdValues, params);
+    drawContourFills(
+      fieldGrid,
+      rows,
+      cols,
+      thresholdValues,
+      params,
+      colors,
+      cellWidth,
+      cellHeight
+    );
   }
 
   noFill();
