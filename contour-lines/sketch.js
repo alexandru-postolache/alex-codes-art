@@ -21,6 +21,8 @@ let gridCols = 0;
 let gridRows = 0;
 let lastFieldCacheKey = '';
 let isAnimating = true;
+let brushReady = false;
+let appliedBrushScale = null;
 
 const FILL_MAX_PIXELS = 1920 * 1080;
 
@@ -73,7 +75,13 @@ function ensureNoiseSeed(seed) {
 }
 
 function setup() {
-  createCanvas(windowWidth, windowHeight);
+  createCanvas(windowWidth, windowHeight, WEBGL);
+  brushReady = typeof brush !== 'undefined' && typeof brush.line === 'function';
+  if (brushReady) {
+    syncBrushScale(getParams());
+    brush.noField();
+  }
+
   window.requestContourRedraw = () => redraw();
   window.syncContourLoopMode = () => {
     const currentParams = getParams();
@@ -83,8 +91,158 @@ function setup() {
   };
 }
 
+function begin2DDraw() {
+  push();
+  translate(-width / 2, -height / 2);
+}
+
+function end2DDraw() {
+  pop();
+}
+
+
+function syncBrushScale(params) {
+  if (!brushReady || !params) {
+    return;
+  }
+
+  const scale = params.brushScale ?? 2;
+  if (appliedBrushScale !== scale) {
+    brush.scaleBrushes(scale);
+    appliedBrushScale = scale;
+  }
+}
+
+function shouldUseBrush(params) {
+  return params.brushEnabled && !params.debug && brushReady;
+}
+
+function drawContourSegmentsClassic(fieldGrid, rows, cols, thresholdValues, params, colors, debug, cellWidth, cellHeight) {
+  let i = 0;
+  for (let t of thresholdValues) {
+    stroke(debug ? color(255, 220, 80) : colors[i]);
+    strokeWeight(debug ? 1.5 : getStrokeWeight(i, thresholdValues.length, params));
+    i++;
+
+    beginShape(LINES);
+    for (let y = 0; y < rows - 1; y++) {
+      for (let x = 0; x < cols - 1; x++) {
+        const segments = getContourSegmentsForCell(
+          fieldGrid,
+          cols,
+          x,
+          y,
+          t,
+          cellWidth,
+          cellHeight,
+          debug
+        );
+
+        for (let e = 0; e < segments.length; e += 2) {
+          vertex(segments[e].x, segments[e].y);
+          vertex(segments[e + 1].x, segments[e + 1].y);
+        }
+      }
+    }
+    endShape();
+  }
+}
+
+function drawContourSegmentsBrush(fieldGrid, rows, cols, thresholdValues, params, colors, cellWidth, cellHeight) {
+  if (!brushReady) {
+    drawContourSegmentsClassic(
+      fieldGrid,
+      rows,
+      cols,
+      thresholdValues,
+      params,
+      colors,
+      false,
+      cellWidth,
+      cellHeight
+    );
+    return;
+  }
+
+  syncBrushScale(params);
+  brush.noField();
+
+  let i = 0;
+  for (let t of thresholdValues) {
+    const strokeColor = colors[i];
+    const weight = getStrokeWeight(i, thresholdValues.length, params);
+    brush.pick(params.brushName);
+    brush.stroke(strokeColor);
+    brush.strokeWeight(weight);
+    i++;
+
+    for (let y = 0; y < rows - 1; y++) {
+      for (let x = 0; x < cols - 1; x++) {
+        const segments = getContourSegmentsForCell(
+          fieldGrid,
+          cols,
+          x,
+          y,
+          t,
+          cellWidth,
+          cellHeight,
+          false
+        );
+
+        for (let e = 0; e < segments.length; e += 2) {
+          brush.line(segments[e].x, segments[e].y, segments[e + 1].x, segments[e + 1].y);
+        }
+      }
+    }
+  }
+}
+
+function getContourSegmentsForCell(
+  fieldGrid,
+  cols,
+  x,
+  y,
+  threshold,
+  cellWidth,
+  cellHeight,
+  debug
+) {
+  const topLeft = getCornerValue(fieldGrid, cols, x, y);
+  const topRight = getCornerValue(fieldGrid, cols, x + 1, y);
+  const bottomLeft = getCornerValue(fieldGrid, cols, x, y + 1);
+  const bottomRight = getCornerValue(fieldGrid, cols, x + 1, y + 1);
+
+  if (topLeft >= threshold && topRight >= threshold && bottomLeft >= threshold && bottomRight >= threshold) {
+    return [];
+  }
+  if (topLeft < threshold && topRight < threshold && bottomLeft < threshold && bottomRight < threshold) {
+    return [];
+  }
+
+  let caseIndex = 0;
+  if (topLeft >= threshold) caseIndex |= 1;
+  if (topRight >= threshold) caseIndex |= 2;
+  if (bottomRight >= threshold) caseIndex |= 4;
+  if (bottomLeft >= threshold) caseIndex |= 8;
+
+  return getEdges(
+    caseIndex,
+    x,
+    y,
+    topLeft,
+    topRight,
+    bottomRight,
+    bottomLeft,
+    threshold,
+    cellWidth,
+    cellHeight,
+    !debug
+  );
+}
+
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
+  appliedBrushScale = null;
   invalidateFieldCache();
   redraw();
 }
@@ -389,10 +547,12 @@ function draw() {
   const { rows, cellWidth, cellHeight } = getGridDimensions(cols, width, height);
   const thresholdValues = getThresholdValues();
   const debug = params.debug;
+  const useBrush = shouldUseBrush(params);
 
   const palette = resolvePaletteColors(params);
 
   background(palette.backgroundColor);
+  begin2DDraw();
 
   const fieldGrid = getOrBuildFieldGrid(rows, cols, params.noiseScale, cellWidth, cellHeight, params);
   nz += params.noiseScale * params.speed;
@@ -412,60 +572,27 @@ function draw() {
   }
 
   noFill();
-  let i = 0;
-  for (let t of thresholdValues) {
-    stroke(debug ? color(255, 220, 80) : colors[i]);
-    strokeWeight(debug ? 1.5 : getStrokeWeight(i, thresholdValues.length, params));
-    i++;
-
-    beginShape(LINES);
-    for (let y = 0; y < rows - 1; y++) {
-      for (let x = 0; x < cols - 1; x++) {
-        const topLeft = getCornerValue(fieldGrid, cols, x, y);
-        const topRight = getCornerValue(fieldGrid, cols, x + 1, y);
-        const bottomLeft = getCornerValue(fieldGrid, cols, x, y + 1);
-        const bottomRight = getCornerValue(fieldGrid, cols, x + 1, y + 1);
-
-        if (topLeft >= t && topRight >= t && bottomLeft >= t && bottomRight >= t) {
-          continue;
-        }
-        if (topLeft < t && topRight < t && bottomLeft < t && bottomRight < t) {
-          continue;
-        }
-
-        let caseIndex = 0;
-        if (topLeft >= t) caseIndex |= 1;
-        if (topRight >= t) caseIndex |= 2;
-        if (bottomRight >= t) caseIndex |= 4;
-        if (bottomLeft >= t) caseIndex |= 8;
-
-        const edges = getEdges(
-          caseIndex,
-          x,
-          y,
-          topLeft,
-          topRight,
-          bottomRight,
-          bottomLeft,
-          t,
-          cellWidth,
-          cellHeight,
-          !debug
-        );
-
-        for (let e = 0; e < edges.length; e += 2) {
-          vertex(edges[e].x, edges[e].y);
-          vertex(edges[e + 1].x, edges[e + 1].y);
-        }
-      }
-    }
-    endShape();
+  if (useBrush) {
+    drawContourSegmentsBrush(fieldGrid, rows, cols, thresholdValues, params, colors, cellWidth, cellHeight);
+  } else {
+    drawContourSegmentsClassic(
+      fieldGrid,
+      rows,
+      cols,
+      thresholdValues,
+      params,
+      colors,
+      debug,
+      cellWidth,
+      cellHeight
+    );
   }
 
   if (debug && params.mouseInfluence) {
     drawMouseInfluenceDebug(params);
   }
 
+  end2DDraw();
   updateLoopMode(params);
 }
 

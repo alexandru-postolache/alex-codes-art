@@ -1,24 +1,6 @@
 import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js';
 
-const PARAM_DEFAULTS = {
-  noiseScale: 0.01,
-  noiseSeed: 42,
-  cols: 200,
-  speed: 0.1,
-  contourCount: 9,
-  thresholdMin: 0.1,
-  thresholdMax: 0.9,
-  baseColor: '#96000e',
-  backgroundColor: '#dfb2b6',
-  useComplementaryColors: false,
-  strokeWeightMin: 1,
-  strokeWeightMax: 5,
-  fillEnabled: false,
-  debug: false,
-  mouseInfluence: true,
-  mouseStrength: 0.25,
-  mouseRadius: 120,
-};
+const PARAM_DEFAULTS = window.contourParamDefaults;
 
 const PARAM_SCHEMA = {
   noiseScale: { type: 'number', min: 0.001, max: 0.05 },
@@ -33,6 +15,9 @@ const PARAM_SCHEMA = {
   useComplementaryColors: { type: 'boolean' },
   strokeWeightMin: { type: 'number', min: 0.5, max: 50 },
   strokeWeightMax: { type: 'number', min: 0.5, max: 50 },
+  brushEnabled: { type: 'boolean' },
+  brushName: { type: 'string' },
+  brushScale: { type: 'number', min: 0.5, max: 10 },
   fillEnabled: { type: 'boolean' },
   debug: { type: 'boolean' },
   mouseInfluence: { type: 'boolean' },
@@ -40,7 +25,7 @@ const PARAM_SCHEMA = {
   mouseRadius: { type: 'int', min: 20, max: 500 },
 };
 
-const params = { ...PARAM_DEFAULTS };
+const params = window.contourParams;
 
 let thresholdValues = [];
 let urlSyncTimer = null;
@@ -77,6 +62,10 @@ function parseParamValue(key, rawValue) {
 
   if (schema.type === 'boolean') {
     return parseBoolean(rawValue);
+  }
+
+  if (schema.type === 'string') {
+    return String(rawValue);
   }
 
   if (schema.type === 'color') {
@@ -156,19 +145,7 @@ function syncParamsToUrl() {
 }
 
 function updateThresholds() {
-  thresholdValues = [];
-  const count = Math.max(1, Math.round(params.contourCount));
-  const min = Math.min(params.thresholdMin, params.thresholdMax);
-  const max = Math.max(params.thresholdMin, params.thresholdMax);
-
-  if (count === 1) {
-    thresholdValues.push((min + max) / 2);
-  } else {
-    for (let i = 0; i < count; i++) {
-      thresholdValues.push(min + (i / (count - 1)) * (max - min));
-    }
-  }
-
+  thresholdValues = window.computeContourThresholdValues(params);
   window.contourThresholdValues = thresholdValues;
 }
 
@@ -259,6 +236,35 @@ updateColorBindings();
 const strokeFolder = pane.addFolder({ title: 'Stroke', expanded: false });
 strokeFolder.addBinding(params, 'strokeWeightMin', { label: 'inner weight', min: 0.5, max: 50, step: 0.5 });
 strokeFolder.addBinding(params, 'strokeWeightMax', { label: 'outer weight', min: 0.5, max: 50, step: 0.5 });
+const brushEnabledBinding = strokeFolder.addBinding(params, 'brushEnabled', { label: 'brush strokes' });
+const brushNameBinding = strokeFolder.addBinding(params, 'brushName', {
+  label: 'brush',
+  options: {
+    HB: 'HB',
+    Marker: 'marker',
+    Spray: 'spray',
+    Pen: 'pen',
+    Pencil: 'pencil',
+  },
+});
+const brushScaleBinding = strokeFolder.addBinding(params, 'brushScale', {
+  label: 'brush scale',
+  min: 0.5,
+  max: 10,
+  step: 0.5,
+});
+
+function updateBrushBindings() {
+  const disabled = !params.brushEnabled;
+  brushNameBinding.disabled = disabled;
+  brushScaleBinding.disabled = disabled;
+}
+
+brushEnabledBinding.on('change', () => {
+  updateBrushBindings();
+});
+
+updateBrushBindings();
 
 const mouseFolder = pane.addFolder({ title: 'Mouse', expanded: true });
 mouseFolder.addBinding(params, 'mouseInfluence', { label: 'mouse influence' });
