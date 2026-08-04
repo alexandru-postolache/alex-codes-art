@@ -15,6 +15,10 @@ let fieldGridBuffer = null;
 let gridCols = 0;
 let gridRows = 0;
 let lastFieldCacheKey = '';
+let fillRasterCache = {
+  key: '',
+  image: null,
+};
 let isAnimating = true;
 let brushReady = false;
 let brushInitialized = false;
@@ -65,6 +69,12 @@ function updateLoopMode(params) {
 
 function invalidateFieldCache() {
   lastFieldCacheKey = '';
+  invalidateFillRasterCache();
+}
+
+function invalidateFillRasterCache() {
+  fillRasterCache.key = '';
+  fillRasterCache.image = null;
 }
 
 function ensureNoiseSeed(seed) {
@@ -287,23 +297,108 @@ function fillRegionPolygonClassic(polygon, colorValue) {
   endShape(CLOSE);
 }
 
-function fillRegionPolygonWatercolor(polygon, colorValue) {
-  brush.fill(colorValue, 255);
-  if (typeof brush.polygon === 'function') {
-    brush.polygon(polygon.map((point) => [point.x, point.y]));
-    return;
+function getFillRasterDimensions(cols, canvasWidth, canvasHeight) {
+  let rasterWidth = Math.min(canvasWidth, Math.max(160, cols * 2));
+  let rasterHeight = Math.max(1, Math.round((rasterWidth * canvasHeight) / canvasWidth));
+
+  const maxPixels = 360 * 220;
+  const pixelCount = rasterWidth * rasterHeight;
+  if (pixelCount > maxPixels) {
+    const scale = Math.sqrt(maxPixels / pixelCount);
+    rasterWidth = Math.max(120, Math.round(rasterWidth * scale));
+    rasterHeight = Math.max(68, Math.round(rasterHeight * scale));
   }
 
-  brush.beginShape();
-  for (const point of polygon) {
-    brush.vertex(point.x, point.y);
-  }
-  brush.endShape(CLOSE);
+  return { rasterWidth, rasterHeight };
 }
 
-function fillUniformCellWatercolor(x, y, cellWidth, cellHeight, colorValue) {
-  brush.fill(colorValue, 255);
-  brush.rect((x + 0.5) * cellWidth, (y + 0.5) * cellHeight, cellWidth, cellHeight, 'center');
+function buildFillRasterCacheKey(fieldKey, colorKey, rasterWidth, rasterHeight, seed) {
+  return `${fieldKey}|${colorKey}|${rasterWidth}|${rasterHeight}|${seed}|watercolor-v2`;
+}
+
+function buildWatercolorFillRasterImage(
+  fieldGrid,
+  cols,
+  rows,
+  thresholds,
+  rgbColors,
+  rasterWidth,
+  rasterHeight,
+  seed
+) {
+  const img = createImage(rasterWidth, rasterHeight);
+  const pixels = img.pixels;
+  img.loadPixels();
+
+  const restoreNoiseSeed = appliedNoiseSeed;
+  ensureNoiseSeed(seed + 17);
+
+  for (let py = 0; py < rasterHeight; py++) {
+    const gy = ((py + 0.5) / rasterHeight) * (rows - 1);
+    for (let px = 0; px < rasterWidth; px++) {
+      const gx = ((px + 0.5) / rasterWidth) * (cols - 1);
+      const value = sampleFieldGridFast(fieldGrid, cols, rows, gx, gy);
+      const band = getBandIndex(constrain(value, 0, 1), thresholds);
+      const [r, g, b] = rgbColors[band];
+
+      const grain = noise(px * 0.09, py * 0.09, seed * 0.001);
+      const paper = noise(px * 0.22, py * 0.22, seed * 0.002 + 41);
+      const mix = 0.9 + grain * 0.14;
+      const alpha = 215 + paper * 40;
+
+      const i = (py * rasterWidth + px) * 4;
+      pixels[i] = constrain(r * mix, 0, 255);
+      pixels[i + 1] = constrain(g * mix, 0, 255);
+      pixels[i + 2] = constrain(b * mix, 0, 255);
+      pixels[i + 3] = constrain(alpha, 0, 255);
+    }
+  }
+
+  img.updatePixels();
+  if (restoreNoiseSeed !== null) {
+    ensureNoiseSeed(restoreNoiseSeed);
+  }
+  return img;
+}
+
+function getOrBuildWatercolorFillRaster(
+  fieldGrid,
+  rows,
+  cols,
+  thresholds,
+  params,
+  colors,
+  canvasWidth,
+  canvasHeight
+) {
+  const fieldKey = buildFieldCacheKey(params, rows, cols);
+  const colorKey = cachedColorKey;
+  const { rasterWidth, rasterHeight } = getFillRasterDimensions(cols, canvasWidth, canvasHeight);
+  const cacheKey = buildFillRasterCacheKey(
+    fieldKey,
+    colorKey,
+    rasterWidth,
+    rasterHeight,
+    params.noiseSeed
+  );
+
+  if (fillRasterCache.key === cacheKey && fillRasterCache.image) {
+    return fillRasterCache.image;
+  }
+
+  getThresholdColors(params.baseColor, thresholds.length);
+  fillRasterCache.image = buildWatercolorFillRasterImage(
+    fieldGrid,
+    cols,
+    rows,
+    thresholds,
+    cachedRgbColors,
+    rasterWidth,
+    rasterHeight,
+    params.noiseSeed
+  );
+  fillRasterCache.key = cacheKey;
+  return fillRasterCache.image;
 }
 
 function drawContourFillsClassic(fieldGrid, rows, cols, thresholds, colors, cellWidth, cellHeight) {
@@ -334,53 +429,31 @@ function drawContourFillsClassic(fieldGrid, rows, cols, thresholds, colors, cell
   pop();
 }
 
-function drawContourFillsWatercolor(fieldGrid, rows, cols, thresholds, colors, params, cellWidth, cellHeight) {
-  syncBrushScale(params);
-  brush.noField();
-  brush.noStroke();
+function drawContourFillsWatercolor(fieldGrid, rows, cols, thresholds, colors, params, canvasWidth, canvasHeight) {
+  const fillImage = getOrBuildWatercolorFillRaster(
+    fieldGrid,
+    rows,
+    cols,
+    thresholds,
+    params,
+    colors,
+    canvasWidth,
+    canvasHeight
+  );
 
-  if (typeof brush.seed === 'function') {
-    brush.seed(params.noiseSeed + 2);
+  push();
+  if (typeof DISABLE_DEPTH_TEST !== 'undefined') {
+    hint(DISABLE_DEPTH_TEST);
   }
-
-  if (typeof brush.fillTexture === 'function') {
-    brush.fillTexture(0.45, 0.3);
-  }
-
-  if (typeof brush.fillBleed === 'function') {
-    brush.fillBleed(0.2, 'out');
-  }
-
-  for (let y = 0; y < rows - 1; y++) {
-    for (let x = 0; x < cols - 1; x++) {
-      const cellPolygons = buildCellBandPolygons(
-        x,
-        y,
-        fieldGrid,
-        cols,
-        thresholds,
-        cellWidth,
-        cellHeight
-      );
-
-      for (const { band, polygon, uniform } of cellPolygons) {
-        const colorValue = colors[band];
-        if (uniform) {
-          fillUniformCellWatercolor(x, y, cellWidth, cellHeight, colorValue);
-        } else {
-          fillRegionPolygonWatercolor(polygon, colorValue);
-        }
-      }
-    }
-  }
-
-  brush.noFill();
-  brush.noWash();
+  noStroke();
+  imageMode(CORNER);
+  image(fillImage, 0, 0, canvasWidth, canvasHeight);
+  pop();
 }
 
 function drawContourFills(fieldGrid, rows, cols, thresholds, params, colors, cellWidth, cellHeight) {
   if (shouldUseWatercolorFillBands(params)) {
-    drawContourFillsWatercolor(fieldGrid, rows, cols, thresholds, colors, params, cellWidth, cellHeight);
+    drawContourFillsWatercolor(fieldGrid, rows, cols, thresholds, colors, params, width, height);
     return;
   }
 
