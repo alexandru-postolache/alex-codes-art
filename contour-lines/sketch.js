@@ -27,8 +27,13 @@ let brushReady = false;
 let brushInitialized = false;
 let appliedBrushScale = null;
 
+const FILL_MAX_PIXELS = 1920 * 1080;
+
 function getBrushWebglMode() {
-  return 'webgl2';
+  if (typeof WEBGL2 !== 'undefined') {
+    return WEBGL2;
+  }
+  return WEBGL;
 }
 
 function getParams() {
