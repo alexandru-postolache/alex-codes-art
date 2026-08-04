@@ -11,6 +11,8 @@ let cachedColorKey = '';
 let appliedNoiseSeed = null;
 let fillBuffer = null;
 let fillBufferSizeKey = '';
+let fillImage = null;
+let fillImageSizeKey = '';
 let gxLookup = null;
 let gyLookup = null;
 let lookupSizeKey = '';
@@ -536,6 +538,7 @@ function ensureFillBuffer(canvasWidth, canvasHeight) {
     fillBuffer.pixelDensity(1);
     fillBuffer.noStroke();
     fillBufferSizeKey = sizeKey;
+    fillImageSizeKey = '';
     lookupSizeKey = '';
   }
 
@@ -634,7 +637,23 @@ function drawFieldPixels(fieldGrid, rows, cols, params, colorForValue) {
   }
 
   fillBuffer.updatePixels();
-  image(fillBuffer, 0, 0, width, height);
+
+  const imageKey = `${fillWidth}x${fillHeight}`;
+  if (!fillImage || fillImageSizeKey !== imageKey) {
+    fillImage = createImage(fillWidth, fillHeight);
+    fillImageSizeKey = imageKey;
+  }
+
+  fillImage.loadPixels();
+  fillImage.pixels.set(bufferPixels);
+  fillImage.updatePixels();
+
+  push();
+  if (typeof DISABLE_DEPTH_TEST !== 'undefined') {
+    hint(DISABLE_DEPTH_TEST);
+  }
+  image(fillImage, 0, 0, width, height);
+  pop();
 }
 
 function drawContourFills(fieldGrid, rows, cols, thresholds, params) {
