@@ -23,11 +23,6 @@ const PARAM_SCHEMA = {
   brushScale: { type: 'number', min: 0.5, max: 10 },
   fillEnabled: { type: 'boolean' },
   watercolorBackground: { type: 'boolean' },
-  blurEnabled: { type: 'boolean' },
-  blurAmount: { type: 'number', min: 0, max: 20 },
-  blurRadius: { type: 'int', min: 20, max: 600 },
-  blurX: { type: 'number', min: 0, max: 1 },
-  blurY: { type: 'number', min: 0, max: 1 },
   debug: { type: 'boolean' },
   mouseInfluence: { type: 'boolean' },
   mouseStrength: { type: 'number', min: -0.5, max: 0.5 },
@@ -205,25 +200,8 @@ function randomizeSeed() {
 }
 
 function saveSketchPng() {
-  if (typeof window.saveFullCanvasPng === 'function') {
-    window.saveFullCanvasPng();
-    return;
-  }
-
   if (typeof saveCanvas === 'function') {
     saveCanvas(`contour-lines-${Date.now()}`, 'png');
-  }
-}
-
-function startExportSelection() {
-  if (typeof window.startContourExportSelection === 'function') {
-    window.startContourExportSelection();
-  }
-}
-
-function startBlurPlacement() {
-  if (typeof window.startContourBlurPlacement === 'function') {
-    window.startContourBlurPlacement();
   }
 }
 
@@ -281,48 +259,6 @@ complementaryBinding.on('change', () => {
 });
 
 updateColorBindings();
-
-const effectsFolder = pane.addFolder({ title: 'Effects', expanded: false });
-const blurEnabledBinding = effectsFolder.addBinding(params, 'blurEnabled', { label: 'blur' });
-const blurAmountBinding = effectsFolder.addBinding(params, 'blurAmount', {
-  label: 'blur amount',
-  min: 0,
-  max: 20,
-  step: 0.5,
-});
-const blurRadiusBinding = effectsFolder.addBinding(params, 'blurRadius', {
-  label: 'blur radius (px)',
-  min: 20,
-  max: 600,
-  step: 5,
-});
-const blurXBinding = effectsFolder.addBinding(params, 'blurX', { label: 'blur center X', min: 0, max: 1, step: 0.01 });
-const blurYBinding = effectsFolder.addBinding(params, 'blurY', { label: 'blur center Y', min: 0, max: 1, step: 0.01 });
-effectsFolder.addButton({ title: 'place blur center (or press B)' }).on('click', () => {
-  startBlurPlacement();
-});
-
-function updateBlurBindings() {
-  const disabled = !params.blurEnabled;
-  blurAmountBinding.disabled = disabled;
-  blurRadiusBinding.disabled = disabled;
-  blurXBinding.disabled = disabled;
-  blurYBinding.disabled = disabled;
-}
-
-blurEnabledBinding.on('change', () => {
-  updateBlurBindings();
-});
-
-updateBlurBindings();
-
-const exportFolder = pane.addFolder({ title: 'Export', expanded: false });
-exportFolder.addButton({ title: 'save full canvas (S)' }).on('click', () => {
-  saveSketchPng();
-});
-exportFolder.addButton({ title: 'select region to export (E)' }).on('click', () => {
-  startExportSelection();
-});
 
 const strokeFolder = pane.addFolder({ title: 'Stroke', expanded: false });
 strokeFolder.addBinding(params, 'strokeWeightMin', { label: 'inner weight', min: 0.5, max: 50, step: 0.5 });
@@ -406,25 +342,6 @@ window.addEventListener('keydown', (event) => {
   if (event.key === 'r' || event.key === 'R') {
     event.preventDefault();
     randomizeSeed();
-    return;
-  }
-
-  if (event.key === 'e' || event.key === 'E') {
-    event.preventDefault();
-    startExportSelection();
-    return;
-  }
-
-  if (event.key === 'b' || event.key === 'B') {
-    event.preventDefault();
-    startBlurPlacement();
-    return;
-  }
-
-  if (event.key === 'Escape') {
-    if (typeof window.cancelContourInteractionModes === 'function') {
-      window.cancelContourInteractionModes();
-    }
   }
 });
 

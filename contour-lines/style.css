@@ -60,18 +60,6 @@ main {
   text-align: center;
 }
 
-.keyboard-hints__status {
-  margin: 8px 0 0;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.14);
-  color: rgba(255, 220, 120, 0.95);
-  font-size: 11px;
-}
-
-.keyboard-hints__status:empty {
-  display: none;
-}
-
 .keyboard-hints.is-hidden {
   opacity: 0;
   transition: opacity 0.2s ease;
