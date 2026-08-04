@@ -65,6 +65,9 @@ function parseParamValue(key, rawValue) {
   }
 
   if (schema.type === 'string') {
+    if (key === 'brushName' && typeof window.normalizeContourBrushName === 'function') {
+      return window.normalizeContourBrushName(String(rawValue));
+    }
     return String(rawValue);
   }
 
@@ -241,10 +244,16 @@ const brushNameBinding = strokeFolder.addBinding(params, 'brushName', {
   label: 'brush',
   options: {
     HB: 'HB',
+    '2H': '2H',
+    '2B': '2B',
+    Pen: 'pen',
+    Rotring: 'rotring',
+    Pencil: 'cpencil',
+    Pastel: 'pastel',
+    Crayon: 'crayon',
+    Charcoal: 'charcoal',
     Marker: 'marker',
     Spray: 'spray',
-    Pen: 'pen',
-    Pencil: 'pencil',
   },
 });
 const brushScaleBinding = strokeFolder.addBinding(params, 'brushScale', {

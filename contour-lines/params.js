@@ -43,4 +43,30 @@
   window.contourParams = { ...PARAM_DEFAULTS };
   window.contourThresholdValues = computeThresholdValues(window.contourParams);
   window.computeContourThresholdValues = computeThresholdValues;
+
+  window.contourBrushNames = [
+    'pen',
+    'rotring',
+    '2B',
+    'HB',
+    '2H',
+    'cpencil',
+    'pastel',
+    'crayon',
+    'charcoal',
+    'spray',
+    'marker',
+  ];
+
+  window.contourBrushAliases = {
+    pencil: 'cpencil',
+    fountainPen: 'pen',
+  };
+
+  window.normalizeContourBrushName = function normalizeContourBrushName(name) {
+    const aliased = window.contourBrushAliases[name] ?? name;
+    return window.contourBrushNames.includes(aliased) ? aliased : 'HB';
+  };
+
+  window.contourParams.brushName = window.normalizeContourBrushName(window.contourParams.brushName);
 })();

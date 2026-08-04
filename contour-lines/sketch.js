@@ -175,6 +175,13 @@ function buildBrushContourCacheKey(params, rows, cols, fieldCacheKey, palette, t
   ].join('|');
 }
 
+function resolveBrushName(params) {
+  if (typeof window.normalizeContourBrushName === 'function') {
+    return window.normalizeContourBrushName(params.brushName);
+  }
+  return params.brushName ?? 'HB';
+}
+
 function renderBrushContourLinesToTarget(
   fieldGrid,
   rows,
