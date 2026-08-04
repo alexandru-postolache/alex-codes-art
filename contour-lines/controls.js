@@ -5,6 +5,8 @@ const PARAM_DEFAULTS = window.contourParamDefaults;
 const PARAM_SCHEMA = {
   noiseScale: { type: 'number', min: 0.001, max: 0.05 },
   noiseSeed: { type: 'int', min: 0, max: 999999 },
+  noiseDetail: { type: 'int', min: 1, max: 8 },
+  noiseFalloff: { type: 'number', min: 0.1, max: 1 },
   cols: { type: 'int', min: 20, max: 400 },
   speed: { type: 'number', min: 0, max: 1 },
   contourCount: { type: 'int', min: 1, max: 20 },
@@ -12,6 +14,7 @@ const PARAM_SCHEMA = {
   thresholdMax: { type: 'number', min: 0, max: 1 },
   baseColor: { type: 'color' },
   backgroundColor: { type: 'color' },
+  colorPalette: { type: 'string' },
   useComplementaryColors: { type: 'boolean' },
   strokeWeightMin: { type: 'number', min: 0.5, max: 50 },
   strokeWeightMax: { type: 'number', min: 0.5, max: 50 },
@@ -20,6 +23,11 @@ const PARAM_SCHEMA = {
   brushScale: { type: 'number', min: 0.5, max: 10 },
   fillEnabled: { type: 'boolean' },
   watercolorBackground: { type: 'boolean' },
+  blurEnabled: { type: 'boolean' },
+  blurAmount: { type: 'number', min: 0, max: 20 },
+  blurRadius: { type: 'int', min: 20, max: 600 },
+  blurX: { type: 'number', min: 0, max: 1 },
+  blurY: { type: 'number', min: 0, max: 1 },
   debug: { type: 'boolean' },
   mouseInfluence: { type: 'boolean' },
   mouseStrength: { type: 'number', min: -0.5, max: 0.5 },
@@ -68,6 +76,12 @@ function parseParamValue(key, rawValue) {
   if (schema.type === 'string') {
     if (key === 'brushName' && typeof window.normalizeContourBrushName === 'function') {
       return window.normalizeContourBrushName(String(rawValue));
+    }
+    if (key === 'colorPalette' && window.contourColorPalettes?.includes(String(rawValue))) {
+      return String(rawValue);
+    }
+    if (key === 'colorPalette') {
+      return null;
     }
     return String(rawValue);
   }
@@ -191,11 +205,26 @@ function randomizeSeed() {
 }
 
 function saveSketchPng() {
-  if (typeof saveCanvas !== 'function') {
+  if (typeof window.saveFullCanvasPng === 'function') {
+    window.saveFullCanvasPng();
     return;
   }
 
-  saveCanvas(`contour-lines-${Date.now()}`, 'png');
+  if (typeof saveCanvas === 'function') {
+    saveCanvas(`contour-lines-${Date.now()}`, 'png');
+  }
+}
+
+function startExportSelection() {
+  if (typeof window.startContourExportSelection === 'function') {
+    window.startContourExportSelection();
+  }
+}
+
+function startBlurPlacement() {
+  if (typeof window.startContourBlurPlacement === 'function') {
+    window.startContourBlurPlacement();
+  }
 }
 
 loadParamsFromUrl();
@@ -206,6 +235,8 @@ pane = new Pane({ title: 'Contour Lines', expanded: true });
 const noiseFolder = pane.addFolder({ title: 'Noise', expanded: true });
 noiseFolder.addBinding(params, 'noiseScale', { min: 0.001, max: 0.05, step: 0.001 });
 noiseFolder.addBinding(params, 'noiseSeed', { label: 'seed', min: 0, max: 999999, step: 1 });
+noiseFolder.addBinding(params, 'noiseDetail', { label: 'detail (lod)', min: 1, max: 8, step: 1 });
+noiseFolder.addBinding(params, 'noiseFalloff', { label: 'falloff', min: 0.1, max: 1, step: 0.05 });
 noiseFolder.addBinding(params, 'speed', { min: 0, max: 1, step: 0.01 });
 noiseFolder.addButton({ title: 'randomize seed' }).on('click', () => {
   randomizeSeed();
@@ -221,6 +252,19 @@ contourFolder.addBinding(params, 'thresholdMax', { min: 0, max: 1, step: 0.05 })
 
 const colorFolder = pane.addFolder({ title: 'Colors', expanded: true });
 colorFolder.addBinding(params, 'baseColor', { label: 'inner color' });
+colorFolder.addBinding(params, 'colorPalette', {
+  label: 'palette',
+  options: {
+    Tints: 'tints',
+    Shades: 'shades',
+    Monochromatic: 'monochromatic',
+    Complementary: 'complementary',
+    Triadic: 'triadic',
+    Analogous: 'analogous',
+    'Split complementary': 'splitComplementary',
+    Tetradic: 'tetradic',
+  },
+});
 const backgroundBinding = colorFolder.addBinding(params, 'backgroundColor');
 const complementaryBinding = colorFolder.addBinding(params, 'useComplementaryColors', {
   label: 'complementary colors',
@@ -237,6 +281,48 @@ complementaryBinding.on('change', () => {
 });
 
 updateColorBindings();
+
+const effectsFolder = pane.addFolder({ title: 'Effects', expanded: false });
+const blurEnabledBinding = effectsFolder.addBinding(params, 'blurEnabled', { label: 'blur' });
+const blurAmountBinding = effectsFolder.addBinding(params, 'blurAmount', {
+  label: 'blur amount',
+  min: 0,
+  max: 20,
+  step: 0.5,
+});
+const blurRadiusBinding = effectsFolder.addBinding(params, 'blurRadius', {
+  label: 'blur radius (px)',
+  min: 20,
+  max: 600,
+  step: 5,
+});
+const blurXBinding = effectsFolder.addBinding(params, 'blurX', { label: 'blur center X', min: 0, max: 1, step: 0.01 });
+const blurYBinding = effectsFolder.addBinding(params, 'blurY', { label: 'blur center Y', min: 0, max: 1, step: 0.01 });
+effectsFolder.addButton({ title: 'place blur center (or press B)' }).on('click', () => {
+  startBlurPlacement();
+});
+
+function updateBlurBindings() {
+  const disabled = !params.blurEnabled;
+  blurAmountBinding.disabled = disabled;
+  blurRadiusBinding.disabled = disabled;
+  blurXBinding.disabled = disabled;
+  blurYBinding.disabled = disabled;
+}
+
+blurEnabledBinding.on('change', () => {
+  updateBlurBindings();
+});
+
+updateBlurBindings();
+
+const exportFolder = pane.addFolder({ title: 'Export', expanded: false });
+exportFolder.addButton({ title: 'save full canvas (S)' }).on('click', () => {
+  saveSketchPng();
+});
+exportFolder.addButton({ title: 'select region to export (E)' }).on('click', () => {
+  startExportSelection();
+});
 
 const strokeFolder = pane.addFolder({ title: 'Stroke', expanded: false });
 strokeFolder.addBinding(params, 'strokeWeightMin', { label: 'inner weight', min: 0.5, max: 50, step: 0.5 });
@@ -320,11 +406,31 @@ window.addEventListener('keydown', (event) => {
   if (event.key === 'r' || event.key === 'R') {
     event.preventDefault();
     randomizeSeed();
+    return;
+  }
+
+  if (event.key === 'e' || event.key === 'E') {
+    event.preventDefault();
+    startExportSelection();
+    return;
+  }
+
+  if (event.key === 'b' || event.key === 'B') {
+    event.preventDefault();
+    startBlurPlacement();
+    return;
+  }
+
+  if (event.key === 'Escape') {
+    if (typeof window.cancelContourInteractionModes === 'function') {
+      window.cancelContourInteractionModes();
+    }
   }
 });
 
 window.contourParams = params;
 window.updateContourThresholds = updateThresholds;
+window.contourPane = pane;
 
 if (window.location.search) {
   pane.refresh();

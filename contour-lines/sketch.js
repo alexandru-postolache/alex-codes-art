@@ -8,6 +8,8 @@ let nz = 0;
 let cachedColors = [];
 let cachedColorKey = '';
 let appliedNoiseSeed = null;
+let appliedNoiseDetail = null;
+let appliedNoiseFalloff = null;
 
 let noiseGridBuffer = null;
 let fieldGridBuffer = null;
@@ -18,6 +20,21 @@ let isAnimating = true;
 let brushReady = false;
 let brushInitialized = false;
 let appliedBrushScale = null;
+let blurPatchBuffer = null;
+let blurMaskBuffer = null;
+let blurPatchSize = { w: 0, h: 0 };
+
+const exportState = {
+  mode: 'idle',
+  x: 0,
+  y: 0,
+  w: 0,
+  h: 0,
+  dragStart: null,
+};
+
+let blurPlacementActive = false;
+let hintsVisible = true;
 
 function getBrushWebglMode() {
   if (typeof WEBGL2 !== 'undefined') {
@@ -74,6 +91,84 @@ function ensureNoiseSeed(seed) {
   }
 }
 
+function ensureNoiseDetail(lod, falloff) {
+  const detail = Math.max(1, Math.round(lod ?? 4));
+  const noiseFalloff = falloff ?? 0.5;
+  if (appliedNoiseDetail !== detail || appliedNoiseFalloff !== noiseFalloff) {
+    noiseDetail(detail, noiseFalloff);
+    appliedNoiseDetail = detail;
+    appliedNoiseFalloff = noiseFalloff;
+  }
+}
+
+function setInteractionStatus(message = '') {
+  const statusEl = document.getElementById('interaction-status');
+  if (statusEl) {
+    statusEl.textContent = message;
+  }
+}
+
+function setContourHintsVisible(visible) {
+  hintsVisible = visible;
+  const hintsEl = document.getElementById('keyboard-hints');
+  if (hintsEl) {
+    hintsEl.classList.toggle('is-hidden', !visible);
+  }
+}
+
+function cancelContourInteractionModes() {
+  exportState.mode = 'idle';
+  exportState.dragStart = null;
+  exportState.w = 0;
+  exportState.h = 0;
+  blurPlacementActive = false;
+  setInteractionStatus('');
+  redraw();
+}
+
+function startContourExportSelection() {
+  exportState.mode = 'selecting';
+  exportState.dragStart = null;
+  exportState.w = 0;
+  exportState.h = 0;
+  blurPlacementActive = false;
+  setInteractionStatus('Drag a rectangle to export. Esc to cancel.');
+  redraw();
+}
+
+function startContourBlurPlacement() {
+  blurPlacementActive = true;
+  exportState.mode = 'idle';
+  exportState.dragStart = null;
+  setInteractionStatus('Click to place blur center. Esc to cancel.');
+  redraw();
+}
+
+function saveFullCanvasPng() {
+  saveCanvas(`contour-lines-${Date.now()}`, 'png');
+}
+
+function saveCropRegion(rect) {
+  const x = Math.max(0, Math.floor(rect.x));
+  const y = Math.max(0, Math.floor(rect.y));
+  const w = Math.min(width - x, Math.ceil(rect.w));
+  const h = Math.min(height - y, Math.ceil(rect.h));
+  if (w < 2 || h < 2) {
+    return;
+  }
+
+  const cropped = get(x, y, w, h);
+  cropped.save(`contour-crop-${Date.now()}.png`);
+  setInteractionStatus(`Saved ${w}×${h}px region.`);
+}
+
+function getBlurCenterPixels(params) {
+  return {
+    x: constrain(params.blurX, 0, 1) * width,
+    y: constrain(params.blurY, 0, 1) * height,
+  };
+}
+
 function ensureBrushInitialized() {
   if (!brushReady || brushInitialized) {
     return;
@@ -108,6 +203,12 @@ function setup() {
       updateLoopMode(currentParams);
     }
   };
+  window.saveFullCanvasPng = saveFullCanvasPng;
+  window.startContourExportSelection = startContourExportSelection;
+  window.startContourBlurPlacement = startContourBlurPlacement;
+  window.cancelContourInteractionModes = cancelContourInteractionModes;
+  window.setContourHintsVisible = setContourHintsVisible;
+  setContourHintsVisible(true);
 }
 
 function begin2DDraw() {
@@ -522,8 +623,72 @@ function getContourSegmentsForCell(
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   appliedBrushScale = null;
+  blurPatchBuffer = null;
+  blurMaskBuffer = null;
+  blurPatchSize = { w: 0, h: 0 };
   invalidateFieldCache();
   redraw();
+}
+
+function mousePressed() {
+  const params = getParams();
+  if (!params) {
+    return;
+  }
+
+  if (blurPlacementActive) {
+    params.blurX = mouseX / width;
+    params.blurY = mouseY / height;
+    blurPlacementActive = false;
+    if (window.contourPane) {
+      window.contourPane.refresh();
+    }
+    setInteractionStatus('');
+    redraw();
+    return false;
+  }
+
+  if (exportState.mode === 'selecting') {
+    exportState.dragStart = { x: mouseX, y: mouseY };
+    exportState.x = mouseX;
+    exportState.y = mouseY;
+    exportState.w = 0;
+    exportState.h = 0;
+    redraw();
+    return false;
+  }
+}
+
+function mouseDragged() {
+  if (exportState.mode !== 'selecting' || !exportState.dragStart) {
+    return;
+  }
+
+  exportState.x = min(mouseX, exportState.dragStart.x);
+  exportState.y = min(mouseY, exportState.dragStart.y);
+  exportState.w = abs(mouseX - exportState.dragStart.x);
+  exportState.h = abs(mouseY - exportState.dragStart.y);
+  redraw();
+  return false;
+}
+
+function mouseReleased() {
+  if (exportState.mode !== 'selecting' || !exportState.dragStart) {
+    return;
+  }
+
+  if (exportState.w > 10 && exportState.h > 10) {
+    saveCropRegion(exportState);
+  } else {
+    setInteractionStatus('Selection too small. Try again or press Esc.');
+  }
+
+  exportState.mode = 'idle';
+  exportState.dragStart = null;
+  exportState.w = 0;
+  exportState.h = 0;
+  redraw();
+  return false;
 }
 
 function mouseMoved() {
@@ -550,12 +715,13 @@ function buildFieldCacheKey(params, rows, cols) {
   const mouseKey = params.mouseInfluence
     ? `${mouseX}|${mouseY}|${params.mouseStrength}|${params.mouseRadius}`
     : 'off';
-  return `${rows}|${cols}|${params.noiseScale}|${params.noiseSeed}|${nz}|${mouseKey}`;
+  return `${rows}|${cols}|${params.noiseScale}|${params.noiseSeed}|${params.noiseDetail}|${params.noiseFalloff}|${nz}|${mouseKey}`;
 }
 
 function getOrBuildFieldGrid(rows, cols, noiseScale, cellWidth, cellHeight, params) {
   ensureGridBuffers(rows, cols);
   ensureNoiseSeed(params.noiseSeed);
+  ensureNoiseDetail(params.noiseDetail, params.noiseFalloff);
 
   const cacheKey = buildFieldCacheKey(params, rows, cols);
   if (cacheKey === lastFieldCacheKey) {
@@ -690,23 +856,73 @@ function sampleFieldGridFast(fieldGrid, cols, rows, gx, gy) {
   return top + (bottom - top) * ty;
 }
 
-function getThresholdColors(baseColor, count) {
-  const key = `${baseColor}-${count}`;
+function blendPaletteColors(palette, count) {
+  if (count <= 0) {
+    return [];
+  }
+  if (palette.length === 0) {
+    return [];
+  }
+  if (count === 1) {
+    return [palette[0]];
+  }
+
+  const colors = [];
+  for (let i = 0; i < count; i++) {
+    const t = i / (count - 1);
+    const segment = t * (palette.length - 1);
+    const index = Math.min(Math.floor(segment), palette.length - 2);
+    const frac = segment - index;
+    colors.push(lerpColor(palette[index], palette[index + 1], frac));
+  }
+  return colors;
+}
+
+function getPaletteColors(baseColor, paletteType, count) {
+  const generator = new ColorGenerator(baseColor);
+  const paletteCount = Math.max(1, count);
+
+  switch (paletteType) {
+    case 'shades':
+      return generator.getShades(paletteCount);
+    case 'monochromatic':
+      return generator.getMonochromatic(paletteCount, true, true);
+    case 'complementary':
+      return blendPaletteColors(generator.getComplementary(), paletteCount);
+    case 'triadic':
+      return blendPaletteColors(generator.getTriadic(), paletteCount);
+    case 'analogous':
+      return blendPaletteColors(generator.getAnalogous(30), paletteCount);
+    case 'splitComplementary':
+      return blendPaletteColors(generator.getSplitComplementary(30), paletteCount);
+    case 'tetradic':
+      return blendPaletteColors(generator.getTetradic(), paletteCount);
+    case 'tints':
+    default:
+      return generator.getTints(paletteCount);
+  }
+}
+
+function getThresholdColors(baseColor, paletteType, count) {
+  const key = `${baseColor}-${paletteType}-${count}`;
   if (key !== cachedColorKey) {
-    const colorGenerator = new ColorGenerator(baseColor);
-    cachedColors = colorGenerator.getTints(count);
+    cachedColors = getPaletteColors(baseColor, paletteType, count);
     cachedColorKey = key;
   }
   return cachedColors;
 }
 
 function resolvePaletteColors(params) {
+  const paletteType = params.colorPalette ?? 'tints';
+  const contourCount = Math.max(1, Math.round(params.contourCount));
+  const paletteColors = getPaletteColors(params.baseColor, paletteType, contourCount);
   const innerColor = params.baseColor;
 
   if (!params.useComplementaryColors) {
     return {
       innerColor,
       backgroundColor: params.backgroundColor,
+      paletteColors,
     };
   }
 
@@ -717,7 +933,106 @@ function resolvePaletteColors(params) {
   return {
     innerColor,
     backgroundColor: complementaryTints[complementaryTints.length - 1],
+    paletteColors,
   };
+}
+
+function ensureBlurBuffers(patchWidth, patchHeight) {
+  if (
+    !blurPatchBuffer ||
+    !blurMaskBuffer ||
+    blurPatchSize.w !== patchWidth ||
+    blurPatchSize.h !== patchHeight
+  ) {
+    blurPatchBuffer = createGraphics(patchWidth, patchHeight, P2D);
+    blurMaskBuffer = createGraphics(patchWidth, patchHeight, P2D);
+    blurPatchSize = { w: patchWidth, h: patchHeight };
+  }
+}
+
+function applyLocalizedBlur(params) {
+  if (!params.blurEnabled || params.blurAmount <= 0 || params.blurRadius <= 0) {
+    return;
+  }
+
+  const { x: cx, y: cy } = getBlurCenterPixels(params);
+  const radius = params.blurRadius;
+  const x1 = Math.max(0, Math.floor(cx - radius));
+  const y1 = Math.max(0, Math.floor(cy - radius));
+  const x2 = Math.min(width, Math.ceil(cx + radius));
+  const y2 = Math.min(height, Math.ceil(cy + radius));
+  const patchWidth = x2 - x1;
+  const patchHeight = y2 - y1;
+
+  if (patchWidth < 2 || patchHeight < 2) {
+    return;
+  }
+
+  ensureBlurBuffers(patchWidth, patchHeight);
+
+  const region = get(x1, y1, patchWidth, patchHeight);
+  blurPatchBuffer.clear();
+  blurPatchBuffer.image(region, 0, 0);
+  blurPatchBuffer.filter(BLUR, params.blurAmount);
+
+  const maskCtx = blurMaskBuffer.drawingContext;
+  blurMaskBuffer.clear();
+  const gradient = maskCtx.createRadialGradient(
+    cx - x1,
+    cy - y1,
+    0,
+    cx - x1,
+    cy - y1,
+    radius
+  );
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.65, 'rgba(255,255,255,0.35)');
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+  maskCtx.fillStyle = gradient;
+  maskCtx.fillRect(0, 0, patchWidth, patchHeight);
+
+  const blurredPatch = blurPatchBuffer.get();
+  const maskImage = blurMaskBuffer.get();
+  blurredPatch.mask(maskImage);
+
+  push();
+  translate(-width / 2, -height / 2);
+  image(blurredPatch, x1, y1);
+  pop();
+}
+
+function drawBlurCenterMarker(params) {
+  if (!params.blurEnabled) {
+    return;
+  }
+
+  const { x, y } = getBlurCenterPixels(params);
+  push();
+  begin2DDraw();
+  noFill();
+  stroke(255, 220, 120, 180);
+  strokeWeight(1.5);
+  circle(x, y, 10);
+  noFill();
+  stroke(255, 220, 120, 90);
+  circle(x, y, params.blurRadius * 2);
+  end2DDraw();
+  pop();
+}
+
+function drawExportSelectionOverlay() {
+  if (exportState.mode !== 'selecting' || exportState.w <= 0 || exportState.h <= 0) {
+    return;
+  }
+
+  push();
+  begin2DDraw();
+  fill(255, 220, 80, 45);
+  stroke(255, 220, 80, 220);
+  strokeWeight(1.5);
+  rect(exportState.x, exportState.y, exportState.w, exportState.h);
+  end2DDraw();
+  pop();
 }
 
 function getStrokeWeight(index, count, params) {
@@ -760,7 +1075,11 @@ function draw() {
     }
   }
 
-  const colors = getThresholdColors(palette.innerColor, thresholdValues.length);
+  const colors = palette.paletteColors ?? getThresholdColors(
+    palette.innerColor,
+    params.colorPalette ?? 'tints',
+    thresholdValues.length
+  );
 
   if (params.fillEnabled && !debug) {
     drawContourFills(
@@ -805,6 +1124,13 @@ function draw() {
   }
 
   end2DDraw();
+
+  if (!debug) {
+    applyLocalizedBlur(params);
+    drawBlurCenterMarker(params);
+  }
+
+  drawExportSelectionOverlay();
   updateLoopMode(params);
 }
 
