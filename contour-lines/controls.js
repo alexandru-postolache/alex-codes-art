@@ -19,7 +19,6 @@ const PARAM_SCHEMA = {
   brushName: { type: 'string' },
   brushScale: { type: 'number', min: 0.5, max: 10 },
   fillEnabled: { type: 'boolean' },
-  watercolorFillBands: { type: 'boolean' },
   watercolorBackground: { type: 'boolean' },
   debug: { type: 'boolean' },
   mouseInfluence: { type: 'boolean' },
@@ -227,21 +226,11 @@ const complementaryBinding = colorFolder.addBinding(params, 'useComplementaryCol
   label: 'complementary colors',
 });
 colorFolder.addBinding(params, 'fillEnabled', { label: 'fill bands' });
-const watercolorFillBinding = colorFolder.addBinding(params, 'watercolorFillBands', {
-  label: 'watercolor fill bands',
-});
 colorFolder.addBinding(params, 'watercolorBackground', { label: 'watercolor background' });
 
 function updateColorBindings() {
   backgroundBinding.disabled = params.useComplementaryColors;
-  watercolorFillBinding.disabled = !params.fillEnabled;
 }
-
-colorFolder.on('change', (event) => {
-  if (event.target.key === 'fillEnabled') {
-    updateColorBindings();
-  }
-});
 
 complementaryBinding.on('change', () => {
   updateColorBindings();
