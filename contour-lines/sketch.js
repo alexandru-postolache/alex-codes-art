@@ -23,6 +23,8 @@ let lastFieldCacheKey = '';
 let isAnimating = true;
 let brushReady = false;
 let appliedBrushScale = null;
+let brushContourCache = null;
+let brushContourCacheKey = '';
 
 const FILL_MAX_PIXELS = 1920 * 1080;
 
@@ -148,24 +150,51 @@ function drawContourSegmentsClassic(fieldGrid, rows, cols, thresholdValues, para
   }
 }
 
-function drawContourSegmentsBrush(fieldGrid, rows, cols, thresholdValues, params, colors, cellWidth, cellHeight) {
+function invalidateBrushContourCache() {
+  brushContourCache?.remove();
+  brushContourCache = null;
+  brushContourCacheKey = '';
+}
+
+function buildBrushContourCacheKey(params, rows, cols, fieldCacheKey, palette, thresholdCount) {
+  return [
+    fieldCacheKey,
+    width,
+    height,
+    cols,
+    rows,
+    params.brushName,
+    params.brushScale,
+    params.strokeWeightMin,
+    params.strokeWeightMax,
+    params.fillEnabled,
+    palette.innerColor,
+    palette.backgroundColor,
+    thresholdCount,
+    cachedColorKey,
+  ].join('|');
+}
+
+function renderBrushContourLinesToTarget(
+  fieldGrid,
+  rows,
+  cols,
+  thresholdValues,
+  params,
+  colors,
+  cellWidth,
+  cellHeight
+) {
   if (!brushReady) {
-    drawContourSegmentsClassic(
-      fieldGrid,
-      rows,
-      cols,
-      thresholdValues,
-      params,
-      colors,
-      false,
-      cellWidth,
-      cellHeight
-    );
-    return;
+    return false;
   }
 
   syncBrushScale(params);
   brush.noField();
+
+  if (typeof brush.seed === 'function') {
+    brush.seed(params.noiseSeed);
+  }
 
   let i = 0;
   for (let t of thresholdValues) {
@@ -195,6 +224,126 @@ function drawContourSegmentsBrush(fieldGrid, rows, cols, thresholdValues, params
       }
     }
   }
+
+  return true;
+}
+
+function getOrRenderBrushContourCache(
+  fieldGrid,
+  rows,
+  cols,
+  thresholdValues,
+  params,
+  colors,
+  cellWidth,
+  cellHeight,
+  fieldCacheKey,
+  palette
+) {
+  const cacheKey = buildBrushContourCacheKey(
+    params,
+    rows,
+    cols,
+    fieldCacheKey,
+    palette,
+    thresholdValues.length
+  );
+
+  if (brushContourCache && brushContourCacheKey === cacheKey) {
+    return brushContourCache;
+  }
+
+  invalidateBrushContourCache();
+  brushContourCache = createGraphics(width, height, WEBGL);
+  brushContourCache.pixelDensity(pixelDensity());
+  brushContourCache.clear();
+
+  brush.load(brushContourCache);
+  brushContourCache.push();
+  brushContourCache.translate(-width / 2, -height / 2);
+
+  const drew = renderBrushContourLinesToTarget(
+    fieldGrid,
+    rows,
+    cols,
+    thresholdValues,
+    params,
+    colors,
+    cellWidth,
+    cellHeight
+  );
+
+  brushContourCache.pop();
+  brush.load();
+
+  if (!drew) {
+    invalidateBrushContourCache();
+    return null;
+  }
+
+  brushContourCacheKey = cacheKey;
+  return brushContourCache;
+}
+
+function drawContourSegmentsBrush(
+  fieldGrid,
+  rows,
+  cols,
+  thresholdValues,
+  params,
+  colors,
+  cellWidth,
+  cellHeight,
+  fieldCacheKey,
+  palette
+) {
+  if (!brushReady) {
+    drawContourSegmentsClassic(
+      fieldGrid,
+      rows,
+      cols,
+      thresholdValues,
+      params,
+      colors,
+      false,
+      cellWidth,
+      cellHeight
+    );
+    return;
+  }
+
+  if (!shouldAnimate(params)) {
+    const cache = getOrRenderBrushContourCache(
+      fieldGrid,
+      rows,
+      cols,
+      thresholdValues,
+      params,
+      colors,
+      cellWidth,
+      cellHeight,
+      fieldCacheKey,
+      palette
+    );
+
+    if (cache) {
+      image(cache, 0, 0, width, height);
+      return;
+    }
+  } else {
+    invalidateBrushContourCache();
+  }
+
+  renderBrushContourLinesToTarget(
+    fieldGrid,
+    rows,
+    cols,
+    thresholdValues,
+    params,
+    colors,
+    cellWidth,
+    cellHeight
+  );
 }
 
 function getContourSegmentsForCell(
@@ -243,6 +392,7 @@ function getContourSegmentsForCell(
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   appliedBrushScale = null;
+  invalidateBrushContourCache();
   invalidateFieldCache();
   redraw();
 }
@@ -555,6 +705,7 @@ function draw() {
   begin2DDraw();
 
   const fieldGrid = getOrBuildFieldGrid(rows, cols, params.noiseScale, cellWidth, cellHeight, params);
+  const fieldCacheKey = lastFieldCacheKey;
   nz += params.noiseScale * params.speed;
 
   if (debug) {
@@ -573,8 +724,20 @@ function draw() {
 
   noFill();
   if (useBrush) {
-    drawContourSegmentsBrush(fieldGrid, rows, cols, thresholdValues, params, colors, cellWidth, cellHeight);
+    drawContourSegmentsBrush(
+      fieldGrid,
+      rows,
+      cols,
+      thresholdValues,
+      params,
+      colors,
+      cellWidth,
+      cellHeight,
+      fieldCacheKey,
+      palette
+    );
   } else {
+    invalidateBrushContourCache();
     drawContourSegmentsClassic(
       fieldGrid,
       rows,
