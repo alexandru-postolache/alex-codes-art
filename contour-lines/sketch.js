@@ -28,7 +28,7 @@ let brushContourCacheKey = '';
 let watercolorBackgroundCache = null;
 let watercolorBackgroundCacheKey = '';
 
-const FILL_MAX_PIXELS = 1920 * 1080;
+const BRUSH_WEBGL = typeof WEBGL2 !== 'undefined' ? WEBGL2 : WEBGL;
 
 function getParams() {
   return window.contourParams;
@@ -79,9 +79,12 @@ function ensureNoiseSeed(seed) {
 }
 
 function setup() {
-  createCanvas(windowWidth, windowHeight, WEBGL);
+  createCanvas(windowWidth, windowHeight, BRUSH_WEBGL);
   brushReady = typeof brush !== 'undefined' && typeof brush.line === 'function';
   if (brushReady) {
+    if (typeof brush.load === 'function') {
+      brush.load();
+    }
     syncBrushScale(getParams());
     brush.noField();
   }
@@ -174,19 +177,37 @@ function getOrRenderWatercolorBackgroundCache(palette, params) {
   }
 
   invalidateWatercolorBackgroundCache();
-  watercolorBackgroundCache = createGraphics(width, height, WEBGL);
-  watercolorBackgroundCache.pixelDensity(pixelDensity());
-  watercolorBackgroundCache.clear();
 
-  brush.load(watercolorBackgroundCache);
-  watercolorBackgroundCache.push();
-  watercolorBackgroundCache.translate(-width / 2, -height / 2);
+  try {
+    watercolorBackgroundCache = createGraphics(width, height, BRUSH_WEBGL);
+    watercolorBackgroundCache.pixelDensity(pixelDensity());
+    watercolorBackgroundCache.clear();
+
+    brush.load(watercolorBackgroundCache);
+    watercolorBackgroundCache.push();
+    watercolorBackgroundCache.translate(-width / 2, -height / 2);
+    renderWatercolorBackgroundRect(palette, params);
+    watercolorBackgroundCache.pop();
+    brush.load();
+
+    watercolorBackgroundCacheKey = cacheKey;
+    return watercolorBackgroundCache;
+  } catch (error) {
+    console.warn('Watercolor background cache unavailable, drawing directly on canvas.', error);
+    invalidateWatercolorBackgroundCache();
+    brush.load();
+    return null;
+  }
+}
+
+function drawWatercolorBackgroundLayer(palette, params) {
+  const cache = getOrRenderWatercolorBackgroundCache(palette, params);
+  if (cache) {
+    image(cache, 0, 0, width, height);
+    return;
+  }
+
   renderWatercolorBackgroundRect(palette, params);
-  watercolorBackgroundCache.pop();
-  brush.load();
-
-  watercolorBackgroundCacheKey = cacheKey;
-  return watercolorBackgroundCache;
 }
 
 function drawBackground(palette, params) {
@@ -197,13 +218,6 @@ function drawBackground(palette, params) {
   }
 
   background(255);
-}
-
-function drawWatercolorBackgroundLayer(palette, params) {
-  const cache = getOrRenderWatercolorBackgroundCache(palette, params);
-  if (cache) {
-    image(cache, 0, 0, width, height);
-  }
 }
 
 function drawContourSegmentsClassic(fieldGrid, rows, cols, thresholdValues, params, colors, debug, cellWidth, cellHeight) {
@@ -349,35 +363,43 @@ function getOrRenderBrushContourCache(
   }
 
   invalidateBrushContourCache();
-  brushContourCache = createGraphics(width, height, WEBGL);
-  brushContourCache.pixelDensity(pixelDensity());
-  brushContourCache.clear();
 
-  brush.load(brushContourCache);
-  brushContourCache.push();
-  brushContourCache.translate(-width / 2, -height / 2);
+  try {
+    brushContourCache = createGraphics(width, height, BRUSH_WEBGL);
+    brushContourCache.pixelDensity(pixelDensity());
+    brushContourCache.clear();
 
-  const drew = renderBrushContourLinesToTarget(
-    fieldGrid,
-    rows,
-    cols,
-    thresholdValues,
-    params,
-    colors,
-    cellWidth,
-    cellHeight
-  );
+    brush.load(brushContourCache);
+    brushContourCache.push();
+    brushContourCache.translate(-width / 2, -height / 2);
 
-  brushContourCache.pop();
-  brush.load();
+    const drew = renderBrushContourLinesToTarget(
+      fieldGrid,
+      rows,
+      cols,
+      thresholdValues,
+      params,
+      colors,
+      cellWidth,
+      cellHeight
+    );
 
-  if (!drew) {
+    brushContourCache.pop();
+    brush.load();
+
+    if (!drew) {
+      invalidateBrushContourCache();
+      return null;
+    }
+
+    brushContourCacheKey = cacheKey;
+    return brushContourCache;
+  } catch (error) {
+    console.warn('Brush contour cache unavailable, drawing directly on canvas.', error);
     invalidateBrushContourCache();
+    brush.load();
     return null;
   }
-
-  brushContourCacheKey = cacheKey;
-  return brushContourCache;
 }
 
 function drawContourSegmentsBrush(
