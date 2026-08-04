@@ -9,13 +9,6 @@ let cachedColors = [];
 let cachedRgbColors = [];
 let cachedColorKey = '';
 let appliedNoiseSeed = null;
-let fillBuffer = null;
-let fillBufferSizeKey = '';
-let fillImage = null;
-let fillImageSizeKey = '';
-let gxLookup = null;
-let gyLookup = null;
-let lookupSizeKey = '';
 
 let noiseGridBuffer = null;
 let fieldGridBuffer = null;
@@ -26,8 +19,6 @@ let isAnimating = true;
 let brushReady = false;
 let brushInitialized = false;
 let appliedBrushScale = null;
-
-const FILL_MAX_PIXELS = 1920 * 1080;
 
 function getBrushWebglMode() {
   if (typeof WEBGL2 !== 'undefined') {
@@ -154,13 +145,412 @@ function shouldUseWatercolorFillBands(params) {
   return params.fillEnabled && params.watercolorFillBands && brushReady && !params.debug;
 }
 
-function getWatercolorFillStep(cols, rows) {
-  const maxCells = 4000;
-  const totalCells = Math.max(1, (cols - 1) * (rows - 1));
-  if (totalCells <= maxCells) {
-    return 1;
+function cellKey(x, y) {
+  return `${x},${y}`;
+}
+
+function buildCellBandGrid(fieldGrid, cols, rows, thresholds) {
+  const gridCols = cols - 1;
+  const gridRows = rows - 1;
+  const bands = new Uint8Array(gridCols * gridRows);
+
+  for (let y = 0; y < gridRows; y++) {
+    for (let x = 0; x < gridCols; x++) {
+      const value = sampleFieldGridFast(fieldGrid, cols, rows, x + 0.5, y + 0.5);
+      bands[y * gridCols + x] = getBandIndex(constrain(value, 0, 1), thresholds);
+    }
   }
-  return Math.ceil(Math.sqrt(totalCells / maxCells));
+
+  return { bands, gridCols, gridRows };
+}
+
+function findBandRegions(bands, gridCols, gridRows) {
+  const visited = new Uint8Array(bands.length);
+  const regions = [];
+
+  for (let y = 0; y < gridRows; y++) {
+    for (let x = 0; x < gridCols; x++) {
+      const startIndex = y * gridCols + x;
+      if (visited[startIndex]) {
+        continue;
+      }
+
+      const band = bands[startIndex];
+      const cells = [];
+      const queue = [{ x, y }];
+      visited[startIndex] = 1;
+
+      while (queue.length > 0) {
+        const { x: cx, y: cy } = queue.pop();
+        cells.push({ x: cx, y: cy });
+
+        for (const [dx, dy] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ]) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= gridCols || ny >= gridRows) {
+            continue;
+          }
+
+          const nextIndex = ny * gridCols + nx;
+          if (!visited[nextIndex] && bands[nextIndex] === band) {
+            visited[nextIndex] = 1;
+            queue.push({ x: nx, y: ny });
+          }
+        }
+      }
+
+      regions.push({ band, cells });
+    }
+  }
+
+  return regions;
+}
+
+function thresholdBetweenBands(bandA, bandB, thresholds) {
+  const low = Math.min(bandA, bandB);
+  if (low < 0) {
+    return thresholds[0];
+  }
+  if (low >= thresholds.length - 1) {
+    return thresholds[thresholds.length - 1];
+  }
+  return thresholds[low];
+}
+
+function segmentPointKey(x, y) {
+  return `${Math.round(x * 10000)},${Math.round(y * 10000)}`;
+}
+
+function addSplitBoundaryEdge(segments, ax, ay, bx, by, v1, v2, threshold) {
+  const denom = v2 - v1;
+  if (Math.abs(denom) < 1e-6) {
+    segments.push({ ax, ay, bx, by });
+    return;
+  }
+
+  const t = constrain((threshold - v1) / denom, 0, 1);
+  if (t <= 0.001 || t >= 0.999) {
+    segments.push({ ax, ay, bx, by });
+    return;
+  }
+
+  const mx = lerp(ax, bx, t);
+  const my = lerp(ay, by, t);
+  segments.push({ ax, ay, bx: mx, by: my });
+  segments.push({ ax: mx, ay: my, bx, by });
+}
+
+function buildRegionBoundarySegments(
+  region,
+  cellSet,
+  bands,
+  gridCols,
+  gridRows,
+  fieldGrid,
+  cols,
+  thresholds,
+  cellWidth,
+  cellHeight
+) {
+  const segments = [];
+  const { band } = region;
+
+  for (const { x, y } of region.cells) {
+    const px = x * cellWidth;
+    const py = y * cellHeight;
+    const cw = cellWidth;
+    const ch = cellHeight;
+
+    if (!cellSet.has(cellKey(x, y - 1))) {
+      const ax = px;
+      const ay = py;
+      const bx = px + cw;
+      const by = py;
+      if (y > 0) {
+        const neighborBand = bands[(y - 1) * gridCols + x];
+        if (neighborBand !== band) {
+          const threshold = thresholdBetweenBands(band, neighborBand, thresholds);
+          addSplitBoundaryEdge(
+            segments,
+            ax,
+            ay,
+            bx,
+            by,
+            getCornerValue(fieldGrid, cols, x, y),
+            getCornerValue(fieldGrid, cols, x + 1, y),
+            threshold
+          );
+          continue;
+        }
+      }
+      segments.push({ ax, ay, bx, by });
+    }
+
+    if (!cellSet.has(cellKey(x + 1, y))) {
+      const ax = px + cw;
+      const ay = py;
+      const bx = px + cw;
+      const by = py + ch;
+      if (x + 1 < gridCols) {
+        const neighborBand = bands[y * gridCols + x + 1];
+        if (neighborBand !== band) {
+          const threshold = thresholdBetweenBands(band, neighborBand, thresholds);
+          addSplitBoundaryEdge(
+            segments,
+            ax,
+            ay,
+            bx,
+            by,
+            getCornerValue(fieldGrid, cols, x + 1, y),
+            getCornerValue(fieldGrid, cols, x + 1, y + 1),
+            threshold
+          );
+          continue;
+        }
+      }
+      segments.push({ ax, ay, bx, by });
+    }
+
+    if (!cellSet.has(cellKey(x, y + 1))) {
+      const ax = px + cw;
+      const ay = py + ch;
+      const bx = px;
+      const by = py + ch;
+      if (y + 1 < gridRows) {
+        const neighborBand = bands[(y + 1) * gridCols + x];
+        if (neighborBand !== band) {
+          const threshold = thresholdBetweenBands(band, neighborBand, thresholds);
+          addSplitBoundaryEdge(
+            segments,
+            ax,
+            ay,
+            bx,
+            by,
+            getCornerValue(fieldGrid, cols, x + 1, y + 1),
+            getCornerValue(fieldGrid, cols, x, y + 1),
+            threshold
+          );
+          continue;
+        }
+      }
+      segments.push({ ax, ay, bx, by });
+    }
+
+    if (!cellSet.has(cellKey(x - 1, y))) {
+      const ax = px;
+      const ay = py + ch;
+      const bx = px;
+      const by = py;
+      if (x > 0) {
+        const neighborBand = bands[y * gridCols + x - 1];
+        if (neighborBand !== band) {
+          const threshold = thresholdBetweenBands(band, neighborBand, thresholds);
+          addSplitBoundaryEdge(
+            segments,
+            ax,
+            ay,
+            bx,
+            by,
+            getCornerValue(fieldGrid, cols, x, y + 1),
+            getCornerValue(fieldGrid, cols, x, y),
+            threshold
+          );
+          continue;
+        }
+      }
+      segments.push({ ax, ay, bx, by });
+    }
+  }
+
+  return segments;
+}
+
+function chainBoundarySegments(segments) {
+  if (segments.length === 0) {
+    return [];
+  }
+
+  const adjacency = new Map();
+  segments.forEach((segment, index) => {
+    const startKey = segmentPointKey(segment.ax, segment.ay);
+    const endKey = segmentPointKey(segment.bx, segment.by);
+    if (!adjacency.has(startKey)) adjacency.set(startKey, []);
+    if (!adjacency.has(endKey)) adjacency.set(endKey, []);
+    adjacency.get(startKey).push({ index, end: 'start' });
+    adjacency.get(endKey).push({ index, end: 'end' });
+  });
+
+  const used = new Set();
+  const polygons = [];
+
+  for (let startIndex = 0; startIndex < segments.length; startIndex++) {
+    if (used.has(startIndex)) {
+      continue;
+    }
+
+    const polygon = [];
+    let segment = segments[startIndex];
+    used.add(startIndex);
+    polygon.push({ x: segment.ax, y: segment.ay });
+
+    let x = segment.bx;
+    let y = segment.by;
+    polygon.push({ x, y });
+
+    while (true) {
+      const key = segmentPointKey(x, y);
+      const candidates = (adjacency.get(key) || []).filter((candidate) => !used.has(candidate.index));
+      if (candidates.length === 0) {
+        break;
+      }
+
+      const next = candidates[0];
+      used.add(next.index);
+      segment = segments[next.index];
+
+      if (next.end === 'start') {
+        x = segment.bx;
+        y = segment.by;
+      } else {
+        x = segment.ax;
+        y = segment.ay;
+      }
+
+      if (segmentPointKey(x, y) === segmentPointKey(polygon[0].x, polygon[0].y) && polygon.length > 2) {
+        break;
+      }
+
+      polygon.push({ x, y });
+    }
+
+    if (polygon.length >= 3) {
+      polygons.push(polygon);
+    }
+  }
+
+  return polygons;
+}
+
+function polygonSignedArea(polygon) {
+  let area = 0;
+  for (let i = 0; i < polygon.length; i++) {
+    const j = (i + 1) % polygon.length;
+    area += polygon[i].x * polygon[j].y - polygon[j].x * polygon[i].y;
+  }
+  return area * 0.5;
+}
+
+function buildBandRegionPolygons(fieldGrid, rows, cols, thresholds, cellWidth, cellHeight) {
+  const { bands, gridCols, gridRows } = buildCellBandGrid(fieldGrid, cols, rows, thresholds);
+  const regions = findBandRegions(bands, gridCols, gridRows);
+  const shapes = [];
+
+  for (const region of regions) {
+    const cellSet = new Set(region.cells.map(({ x, y }) => cellKey(x, y)));
+    const segments = buildRegionBoundarySegments(
+      region,
+      cellSet,
+      bands,
+      gridCols,
+      gridRows,
+      fieldGrid,
+      cols,
+      thresholds,
+      cellWidth,
+      cellHeight
+    );
+    const polygons = chainBoundarySegments(segments);
+
+    for (const polygon of polygons) {
+      shapes.push({
+        band: region.band,
+        polygon,
+        area: Math.abs(polygonSignedArea(polygon)),
+      });
+    }
+  }
+
+  shapes.sort((a, b) => b.area - a.area);
+  return shapes;
+}
+
+function fillRegionPolygonClassic(polygon, colorValue) {
+  fill(colorValue);
+  noStroke();
+  beginShape();
+  for (const point of polygon) {
+    vertex(point.x, point.y);
+  }
+  endShape(CLOSE);
+}
+
+function fillRegionPolygonWatercolor(polygon, colorValue, params) {
+  brush.fill(colorValue, 255);
+  if (typeof brush.polygon === 'function') {
+    brush.polygon(polygon.map((point) => [point.x, point.y]));
+    return;
+  }
+
+  brush.beginShape();
+  for (const point of polygon) {
+    brush.vertex(point.x, point.y);
+  }
+  brush.endShape(CLOSE);
+}
+
+function drawContourFillsClassic(shapes, colors) {
+  push();
+  if (typeof DISABLE_DEPTH_TEST !== 'undefined') {
+    hint(DISABLE_DEPTH_TEST);
+  }
+  noStroke();
+
+  for (const shape of shapes) {
+    fillRegionPolygonClassic(shape.polygon, colors[shape.band]);
+  }
+
+  pop();
+}
+
+function drawContourFillsWatercolor(shapes, colors, params) {
+  syncBrushScale(params);
+  brush.noField();
+  brush.noStroke();
+
+  if (typeof brush.seed === 'function') {
+    brush.seed(params.noiseSeed + 2);
+  }
+
+  if (typeof brush.fillTexture === 'function') {
+    brush.fillTexture(0.45, 0.3);
+  }
+
+  if (typeof brush.fillBleed === 'function') {
+    brush.fillBleed(0.2, 'out');
+  }
+
+  for (const shape of shapes) {
+    fillRegionPolygonWatercolor(shape.polygon, colors[shape.band], params);
+  }
+
+  brush.noFill();
+  brush.noWash();
+}
+
+function drawContourFills(fieldGrid, rows, cols, thresholds, params, colors, cellWidth, cellHeight) {
+  const shapes = buildBandRegionPolygons(fieldGrid, rows, cols, thresholds, cellWidth, cellHeight);
+
+  if (shouldUseWatercolorFillBands(params)) {
+    drawContourFillsWatercolor(shapes, colors, params);
+    return;
+  }
+
+  drawContourFillsClassic(shapes, colors);
 }
 
 function renderWatercolorBackgroundRect(palette, params) {
@@ -533,55 +923,6 @@ function colorToRgb(c) {
   return rgb;
 }
 
-function getFillBufferDimensions(canvasWidth, canvasHeight) {
-  let fillWidth = canvasWidth;
-  let fillHeight = canvasHeight;
-
-  if (fillWidth * fillHeight > FILL_MAX_PIXELS) {
-    const scale = Math.sqrt(FILL_MAX_PIXELS / (fillWidth * fillHeight));
-    fillWidth = Math.max(1, Math.floor(fillWidth * scale));
-    fillHeight = Math.max(1, Math.floor(fillHeight * scale));
-  }
-
-  return { fillWidth, fillHeight };
-}
-
-function ensureFillBuffer(canvasWidth, canvasHeight) {
-  const { fillWidth, fillHeight } = getFillBufferDimensions(canvasWidth, canvasHeight);
-  const sizeKey = `${fillWidth}x${fillHeight}`;
-
-  if (!fillBuffer || fillBufferSizeKey !== sizeKey) {
-    fillBuffer?.remove();
-    fillBuffer = createGraphics(fillWidth, fillHeight);
-    fillBuffer.pixelDensity(1);
-    fillBuffer.noStroke();
-    fillBufferSizeKey = sizeKey;
-    fillImageSizeKey = '';
-    lookupSizeKey = '';
-  }
-
-  return { fillWidth, fillHeight };
-}
-
-function ensureFillLookups(fillWidth, fillHeight, cols, rows) {
-  const lookupKey = `${fillWidth}x${fillHeight}x${cols}x${rows}`;
-  if (lookupSizeKey === lookupKey) {
-    return;
-  }
-
-  gxLookup = new Float32Array(fillWidth);
-  for (let px = 0; px < fillWidth; px++) {
-    gxLookup[px] = min((px / fillWidth) * cols, cols - 1.001);
-  }
-
-  gyLookup = new Float32Array(fillHeight);
-  for (let py = 0; py < fillHeight; py++) {
-    gyLookup[py] = min((py / fillHeight) * rows, rows - 1.001);
-  }
-
-  lookupSizeKey = lookupKey;
-}
-
 function sampleFieldGridFast(fieldGrid, cols, rows, gx, gy) {
   const x0 = gx | 0;
   const y0 = gy | 0;
@@ -629,113 +970,6 @@ function resolvePaletteColors(params) {
     innerColor,
     backgroundColor: complementaryTints[complementaryTints.length - 1],
   };
-}
-
-function drawFieldPixels(fieldGrid, rows, cols, params, colorForValue) {
-  const { fillWidth, fillHeight } = ensureFillBuffer(width, height);
-  ensureFillLookups(fillWidth, fillHeight, cols, rows);
-
-  fillBuffer.loadPixels();
-  const bufferPixels = fillBuffer.pixels;
-  const rowStride = fillWidth * 4;
-
-  for (let py = 0; py < fillHeight; py++) {
-    const gy = gyLookup[py];
-    const rowOffset = py * rowStride;
-
-    for (let px = 0; px < fillWidth; px++) {
-      const v = sampleFieldGridFast(fieldGrid, cols, rows, gxLookup[px], gy);
-      const [r, g, b] = colorForValue(v);
-      const idx = rowOffset + px * 4;
-      bufferPixels[idx] = r;
-      bufferPixels[idx + 1] = g;
-      bufferPixels[idx + 2] = b;
-      bufferPixels[idx + 3] = 255;
-    }
-  }
-
-  fillBuffer.updatePixels();
-
-  const imageKey = `${fillWidth}x${fillHeight}`;
-  if (!fillImage || fillImageSizeKey !== imageKey) {
-    fillImage = createImage(fillWidth, fillHeight);
-    fillImageSizeKey = imageKey;
-  }
-
-  fillImage.loadPixels();
-  fillImage.pixels.set(bufferPixels);
-  fillImage.updatePixels();
-
-  push();
-  if (typeof DISABLE_DEPTH_TEST !== 'undefined') {
-    hint(DISABLE_DEPTH_TEST);
-  }
-  image(fillImage, 0, 0, width, height);
-  pop();
-}
-
-function drawContourFillsWatercolor(
-  fieldGrid,
-  rows,
-  cols,
-  thresholds,
-  params,
-  colors,
-  cellWidth,
-  cellHeight
-) {
-  syncBrushScale(params);
-  brush.noField();
-  brush.noStroke();
-
-  if (typeof brush.seed === 'function') {
-    brush.seed(params.noiseSeed + 2);
-  }
-
-  if (typeof brush.fillTexture === 'function') {
-    brush.fillTexture(0.45, 0.3);
-  }
-
-  if (typeof brush.fillBleed === 'function') {
-    brush.fillBleed(0.2, 'out');
-  }
-
-  const step = getWatercolorFillStep(cols, rows);
-  const rectWidth = cellWidth * step + 1;
-  const rectHeight = cellHeight * step + 1;
-
-  for (let y = 0; y < rows - 1; y += step) {
-    for (let x = 0; x < cols - 1; x += step) {
-      const sampleX = Math.min(x + step * 0.5, cols - 1.001);
-      const sampleY = Math.min(y + step * 0.5, rows - 1.001);
-      const v = sampleFieldGridFast(fieldGrid, cols, rows, sampleX, sampleY);
-      const band = getBandIndex(constrain(v, 0, 1), thresholds);
-
-      brush.fill(colors[band], 255);
-      brush.rect(
-        (x + step * 0.5) * cellWidth,
-        (y + step * 0.5) * cellHeight,
-        rectWidth,
-        rectHeight,
-        'center'
-      );
-    }
-  }
-
-  brush.noFill();
-  brush.noWash();
-}
-
-function drawContourFills(fieldGrid, rows, cols, thresholds, params, colors, cellWidth, cellHeight) {
-  if (shouldUseWatercolorFillBands(params)) {
-    drawContourFillsWatercolor(fieldGrid, rows, cols, thresholds, params, colors, cellWidth, cellHeight);
-    return;
-  }
-
-  drawFieldPixels(fieldGrid, rows, cols, params, (v) => {
-    const band = getBandIndex(constrain(v, 0, 1), thresholds);
-    return cachedRgbColors[band];
-  });
 }
 
 function getStrokeWeight(index, count, params) {
