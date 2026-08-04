@@ -145,338 +145,136 @@ function shouldUseWatercolorFillBands(params) {
   return params.fillEnabled && params.watercolorFillBands && brushReady && !params.debug;
 }
 
-function cellKey(x, y) {
-  return `${x},${y}`;
+function getCornerBandAt(fieldGrid, cols, cx, cy, thresholds) {
+  const value = constrain(getCornerValue(fieldGrid, cols, cx, cy), 0, 1);
+  return getBandIndex(value, thresholds);
 }
 
-function buildCellBandGrid(fieldGrid, cols, rows, thresholds) {
-  const gridCols = cols - 1;
-  const gridRows = rows - 1;
-  const bands = new Uint8Array(gridCols * gridRows);
-
-  for (let y = 0; y < gridRows; y++) {
-    for (let x = 0; x < gridCols; x++) {
-      const value = sampleFieldGridFast(fieldGrid, cols, rows, x + 0.5, y + 0.5);
-      bands[y * gridCols + x] = getBandIndex(constrain(value, 0, 1), thresholds);
-    }
+function edgeCrossingThreshold(bandA, bandB, targetBand, thresholds) {
+  const other = bandA === targetBand ? bandB : bandA;
+  if (other < targetBand) {
+    return thresholds[Math.max(0, targetBand - 1)];
   }
-
-  return { bands, gridCols, gridRows };
+  return thresholds[Math.min(targetBand, thresholds.length - 1)];
 }
 
-function findBandRegions(bands, gridCols, gridRows) {
-  const visited = new Uint8Array(bands.length);
-  const regions = [];
-
-  for (let y = 0; y < gridRows; y++) {
-    for (let x = 0; x < gridCols; x++) {
-      const startIndex = y * gridCols + x;
-      if (visited[startIndex]) {
-        continue;
-      }
-
-      const band = bands[startIndex];
-      const cells = [];
-      const queue = [{ x, y }];
-      visited[startIndex] = 1;
-
-      while (queue.length > 0) {
-        const { x: cx, y: cy } = queue.pop();
-        cells.push({ x: cx, y: cy });
-
-        for (const [dx, dy] of [
-          [1, 0],
-          [-1, 0],
-          [0, 1],
-          [0, -1],
-        ]) {
-          const nx = cx + dx;
-          const ny = cy + dy;
-          if (nx < 0 || ny < 0 || nx >= gridCols || ny >= gridRows) {
-            continue;
-          }
-
-          const nextIndex = ny * gridCols + nx;
-          if (!visited[nextIndex] && bands[nextIndex] === band) {
-            visited[nextIndex] = 1;
-            queue.push({ x: nx, y: ny });
-          }
-        }
-      }
-
-      regions.push({ band, cells });
-    }
+function bandEdgePoint(pts, cornerA, cornerB, bands, values, targetBand, thresholds) {
+  const bandA = bands[cornerA];
+  const bandB = bands[cornerB];
+  const inA = bandA === targetBand;
+  const inB = bandB === targetBand;
+  if (inA === inB) {
+    return null;
   }
 
-  return regions;
+  const threshold = edgeCrossingThreshold(bandA, bandB, targetBand, thresholds);
+  const va = values[cornerA];
+  const vb = values[cornerB];
+  const denom = vb - va;
+  const t = Math.abs(denom) < 1e-6 ? 0.5 : constrain((threshold - va) / denom, 0, 1);
+
+  return {
+    x: lerp(pts[cornerA].x, pts[cornerB].x, t),
+    y: lerp(pts[cornerA].y, pts[cornerB].y, t),
+  };
 }
 
-function thresholdBetweenBands(bandA, bandB, thresholds) {
-  const low = Math.min(bandA, bandB);
-  if (low < 0) {
-    return thresholds[0];
+function marchingSquaresBandPolygons(maskIndex, pts, edgePoint) {
+  const c = pts;
+  const e01 = edgePoint(0, 1);
+  const e12 = edgePoint(1, 2);
+  const e23 = edgePoint(2, 3);
+  const e30 = edgePoint(3, 0);
+
+  const poly = (...points) => points.filter(Boolean);
+
+  switch (maskIndex) {
+    case 1:
+      return [poly(c[0], e01, e30)];
+    case 2:
+      return [poly(c[1], e12, e01)];
+    case 3:
+      return [poly(c[0], c[1], e12, e30)];
+    case 4:
+      return [poly(c[2], e23, e12)];
+    case 5:
+      return [poly(c[0], e01, e30), poly(c[2], e23, e12)];
+    case 6:
+      return [poly(c[1], c[2], e23, e01)];
+    case 7:
+      return [poly(c[0], c[1], c[2], e23, e30)];
+    case 8:
+      return [poly(c[3], e30, e23)];
+    case 9:
+      return [poly(c[0], c[3], e23, e01)];
+    case 10:
+      return [poly(c[1], e12, e01), poly(c[3], e30, e23)];
+    case 11:
+      return [poly(c[0], c[1], e12, e23, c[3])];
+    case 12:
+      return [poly(c[2], c[3], e30, e12)];
+    case 13:
+      return [poly(c[0], e01, e12, c[2], c[3])];
+    case 14:
+      return [poly(c[1], c[2], c[3], e30, e01)];
+    default:
+      return [];
   }
-  if (low >= thresholds.length - 1) {
-    return thresholds[thresholds.length - 1];
-  }
-  return thresholds[low];
 }
 
-function segmentPointKey(x, y) {
-  return `${Math.round(x * 10000)},${Math.round(y * 10000)}`;
-}
+function buildCellBandPolygons(x, y, fieldGrid, cols, thresholds, cellWidth, cellHeight) {
+  const bands = [
+    getCornerBandAt(fieldGrid, cols, x, y, thresholds),
+    getCornerBandAt(fieldGrid, cols, x + 1, y, thresholds),
+    getCornerBandAt(fieldGrid, cols, x + 1, y + 1, thresholds),
+    getCornerBandAt(fieldGrid, cols, x, y + 1, thresholds),
+  ];
+  const values = [
+    getCornerValue(fieldGrid, cols, x, y),
+    getCornerValue(fieldGrid, cols, x + 1, y),
+    getCornerValue(fieldGrid, cols, x + 1, y + 1),
+    getCornerValue(fieldGrid, cols, x, y + 1),
+  ];
 
-function addSplitBoundaryEdge(segments, ax, ay, bx, by, v1, v2, threshold) {
-  const denom = v2 - v1;
-  if (Math.abs(denom) < 1e-6) {
-    segments.push({ ax, ay, bx, by });
-    return;
-  }
+  const px = x * cellWidth;
+  const py = y * cellHeight;
+  const px1 = (x + 1) * cellWidth;
+  const py1 = (y + 1) * cellHeight;
+  const pts = [
+    { x: px, y: py },
+    { x: px1, y: py },
+    { x: px1, y: py1 },
+    { x: px, y: py1 },
+  ];
 
-  const t = constrain((threshold - v1) / denom, 0, 1);
-  if (t <= 0.001 || t >= 0.999) {
-    segments.push({ ax, ay, bx, by });
-    return;
-  }
+  const uniqueBands = [...new Set(bands)];
+  const results = [];
 
-  const mx = lerp(ax, bx, t);
-  const my = lerp(ay, by, t);
-  segments.push({ ax, ay, bx: mx, by: my });
-  segments.push({ ax: mx, ay: my, bx, by });
-}
+  for (const band of uniqueBands) {
+    const mask = bands.map((b) => (b === band ? 1 : 0));
+    const maskIndex = mask[0] | (mask[1] << 1) | (mask[2] << 2) | (mask[3] << 3);
 
-function buildRegionBoundarySegments(
-  region,
-  cellSet,
-  bands,
-  gridCols,
-  gridRows,
-  fieldGrid,
-  cols,
-  thresholds,
-  cellWidth,
-  cellHeight
-) {
-  const segments = [];
-  const { band } = region;
-
-  for (const { x, y } of region.cells) {
-    const px = x * cellWidth;
-    const py = y * cellHeight;
-    const cw = cellWidth;
-    const ch = cellHeight;
-
-    if (!cellSet.has(cellKey(x, y - 1))) {
-      const ax = px;
-      const ay = py;
-      const bx = px + cw;
-      const by = py;
-      if (y > 0) {
-        const neighborBand = bands[(y - 1) * gridCols + x];
-        if (neighborBand !== band) {
-          const threshold = thresholdBetweenBands(band, neighborBand, thresholds);
-          addSplitBoundaryEdge(
-            segments,
-            ax,
-            ay,
-            bx,
-            by,
-            getCornerValue(fieldGrid, cols, x, y),
-            getCornerValue(fieldGrid, cols, x + 1, y),
-            threshold
-          );
-          continue;
-        }
-      }
-      segments.push({ ax, ay, bx, by });
-    }
-
-    if (!cellSet.has(cellKey(x + 1, y))) {
-      const ax = px + cw;
-      const ay = py;
-      const bx = px + cw;
-      const by = py + ch;
-      if (x + 1 < gridCols) {
-        const neighborBand = bands[y * gridCols + x + 1];
-        if (neighborBand !== band) {
-          const threshold = thresholdBetweenBands(band, neighborBand, thresholds);
-          addSplitBoundaryEdge(
-            segments,
-            ax,
-            ay,
-            bx,
-            by,
-            getCornerValue(fieldGrid, cols, x + 1, y),
-            getCornerValue(fieldGrid, cols, x + 1, y + 1),
-            threshold
-          );
-          continue;
-        }
-      }
-      segments.push({ ax, ay, bx, by });
-    }
-
-    if (!cellSet.has(cellKey(x, y + 1))) {
-      const ax = px + cw;
-      const ay = py + ch;
-      const bx = px;
-      const by = py + ch;
-      if (y + 1 < gridRows) {
-        const neighborBand = bands[(y + 1) * gridCols + x];
-        if (neighborBand !== band) {
-          const threshold = thresholdBetweenBands(band, neighborBand, thresholds);
-          addSplitBoundaryEdge(
-            segments,
-            ax,
-            ay,
-            bx,
-            by,
-            getCornerValue(fieldGrid, cols, x + 1, y + 1),
-            getCornerValue(fieldGrid, cols, x, y + 1),
-            threshold
-          );
-          continue;
-        }
-      }
-      segments.push({ ax, ay, bx, by });
-    }
-
-    if (!cellSet.has(cellKey(x - 1, y))) {
-      const ax = px;
-      const ay = py + ch;
-      const bx = px;
-      const by = py;
-      if (x > 0) {
-        const neighborBand = bands[y * gridCols + x - 1];
-        if (neighborBand !== band) {
-          const threshold = thresholdBetweenBands(band, neighborBand, thresholds);
-          addSplitBoundaryEdge(
-            segments,
-            ax,
-            ay,
-            bx,
-            by,
-            getCornerValue(fieldGrid, cols, x, y + 1),
-            getCornerValue(fieldGrid, cols, x, y),
-            threshold
-          );
-          continue;
-        }
-      }
-      segments.push({ ax, ay, bx, by });
-    }
-  }
-
-  return segments;
-}
-
-function chainBoundarySegments(segments) {
-  if (segments.length === 0) {
-    return [];
-  }
-
-  const adjacency = new Map();
-  segments.forEach((segment, index) => {
-    const startKey = segmentPointKey(segment.ax, segment.ay);
-    const endKey = segmentPointKey(segment.bx, segment.by);
-    if (!adjacency.has(startKey)) adjacency.set(startKey, []);
-    if (!adjacency.has(endKey)) adjacency.set(endKey, []);
-    adjacency.get(startKey).push({ index, end: 'start' });
-    adjacency.get(endKey).push({ index, end: 'end' });
-  });
-
-  const used = new Set();
-  const polygons = [];
-
-  for (let startIndex = 0; startIndex < segments.length; startIndex++) {
-    if (used.has(startIndex)) {
+    if (maskIndex === 0) {
       continue;
     }
 
-    const polygon = [];
-    let segment = segments[startIndex];
-    used.add(startIndex);
-    polygon.push({ x: segment.ax, y: segment.ay });
-
-    let x = segment.bx;
-    let y = segment.by;
-    polygon.push({ x, y });
-
-    while (true) {
-      const key = segmentPointKey(x, y);
-      const candidates = (adjacency.get(key) || []).filter((candidate) => !used.has(candidate.index));
-      if (candidates.length === 0) {
-        break;
-      }
-
-      const next = candidates[0];
-      used.add(next.index);
-      segment = segments[next.index];
-
-      if (next.end === 'start') {
-        x = segment.bx;
-        y = segment.by;
-      } else {
-        x = segment.ax;
-        y = segment.ay;
-      }
-
-      if (segmentPointKey(x, y) === segmentPointKey(polygon[0].x, polygon[0].y) && polygon.length > 2) {
-        break;
-      }
-
-      polygon.push({ x, y });
+    if (maskIndex === 15) {
+      results.push({ band, polygon: [...pts], uniform: true });
+      continue;
     }
 
-    if (polygon.length >= 3) {
-      polygons.push(polygon);
-    }
-  }
-
-  return polygons;
-}
-
-function polygonSignedArea(polygon) {
-  let area = 0;
-  for (let i = 0; i < polygon.length; i++) {
-    const j = (i + 1) % polygon.length;
-    area += polygon[i].x * polygon[j].y - polygon[j].x * polygon[i].y;
-  }
-  return area * 0.5;
-}
-
-function buildBandRegionPolygons(fieldGrid, rows, cols, thresholds, cellWidth, cellHeight) {
-  const { bands, gridCols, gridRows } = buildCellBandGrid(fieldGrid, cols, rows, thresholds);
-  const regions = findBandRegions(bands, gridCols, gridRows);
-  const shapes = [];
-
-  for (const region of regions) {
-    const cellSet = new Set(region.cells.map(({ x, y }) => cellKey(x, y)));
-    const segments = buildRegionBoundarySegments(
-      region,
-      cellSet,
-      bands,
-      gridCols,
-      gridRows,
-      fieldGrid,
-      cols,
-      thresholds,
-      cellWidth,
-      cellHeight
-    );
-    const polygons = chainBoundarySegments(segments);
+    const edgePoint = (cornerA, cornerB) =>
+      bandEdgePoint(pts, cornerA, cornerB, bands, values, band, thresholds);
+    const polygons = marchingSquaresBandPolygons(maskIndex, pts, edgePoint);
 
     for (const polygon of polygons) {
-      shapes.push({
-        band: region.band,
-        polygon,
-        area: Math.abs(polygonSignedArea(polygon)),
-      });
+      if (polygon.length >= 3) {
+        results.push({ band, polygon, uniform: false });
+      }
     }
   }
 
-  shapes.sort((a, b) => b.area - a.area);
-  return shapes;
+  return results;
 }
 
 function fillRegionPolygonClassic(polygon, colorValue) {
@@ -489,7 +287,7 @@ function fillRegionPolygonClassic(polygon, colorValue) {
   endShape(CLOSE);
 }
 
-function fillRegionPolygonWatercolor(polygon, colorValue, params) {
+function fillRegionPolygonWatercolor(polygon, colorValue) {
   brush.fill(colorValue, 255);
   if (typeof brush.polygon === 'function') {
     brush.polygon(polygon.map((point) => [point.x, point.y]));
@@ -503,21 +301,40 @@ function fillRegionPolygonWatercolor(polygon, colorValue, params) {
   brush.endShape(CLOSE);
 }
 
-function drawContourFillsClassic(shapes, colors) {
+function fillUniformCellWatercolor(x, y, cellWidth, cellHeight, colorValue) {
+  brush.fill(colorValue, 255);
+  brush.rect((x + 0.5) * cellWidth, (y + 0.5) * cellHeight, cellWidth, cellHeight, 'center');
+}
+
+function drawContourFillsClassic(fieldGrid, rows, cols, thresholds, colors, cellWidth, cellHeight) {
   push();
   if (typeof DISABLE_DEPTH_TEST !== 'undefined') {
     hint(DISABLE_DEPTH_TEST);
   }
   noStroke();
 
-  for (const shape of shapes) {
-    fillRegionPolygonClassic(shape.polygon, colors[shape.band]);
+  for (let y = 0; y < rows - 1; y++) {
+    for (let x = 0; x < cols - 1; x++) {
+      const cellPolygons = buildCellBandPolygons(
+        x,
+        y,
+        fieldGrid,
+        cols,
+        thresholds,
+        cellWidth,
+        cellHeight
+      );
+
+      for (const { band, polygon } of cellPolygons) {
+        fillRegionPolygonClassic(polygon, colors[band]);
+      }
+    }
   }
 
   pop();
 }
 
-function drawContourFillsWatercolor(shapes, colors, params) {
+function drawContourFillsWatercolor(fieldGrid, rows, cols, thresholds, colors, params, cellWidth, cellHeight) {
   syncBrushScale(params);
   brush.noField();
   brush.noStroke();
@@ -534,8 +351,27 @@ function drawContourFillsWatercolor(shapes, colors, params) {
     brush.fillBleed(0.2, 'out');
   }
 
-  for (const shape of shapes) {
-    fillRegionPolygonWatercolor(shape.polygon, colors[shape.band], params);
+  for (let y = 0; y < rows - 1; y++) {
+    for (let x = 0; x < cols - 1; x++) {
+      const cellPolygons = buildCellBandPolygons(
+        x,
+        y,
+        fieldGrid,
+        cols,
+        thresholds,
+        cellWidth,
+        cellHeight
+      );
+
+      for (const { band, polygon, uniform } of cellPolygons) {
+        const colorValue = colors[band];
+        if (uniform) {
+          fillUniformCellWatercolor(x, y, cellWidth, cellHeight, colorValue);
+        } else {
+          fillRegionPolygonWatercolor(polygon, colorValue);
+        }
+      }
+    }
   }
 
   brush.noFill();
@@ -543,14 +379,12 @@ function drawContourFillsWatercolor(shapes, colors, params) {
 }
 
 function drawContourFills(fieldGrid, rows, cols, thresholds, params, colors, cellWidth, cellHeight) {
-  const shapes = buildBandRegionPolygons(fieldGrid, rows, cols, thresholds, cellWidth, cellHeight);
-
   if (shouldUseWatercolorFillBands(params)) {
-    drawContourFillsWatercolor(shapes, colors, params);
+    drawContourFillsWatercolor(fieldGrid, rows, cols, thresholds, colors, params, cellWidth, cellHeight);
     return;
   }
 
-  drawContourFillsClassic(shapes, colors);
+  drawContourFillsClassic(fieldGrid, rows, cols, thresholds, colors, cellWidth, cellHeight);
 }
 
 function renderWatercolorBackgroundRect(palette, params) {
