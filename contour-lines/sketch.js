@@ -25,6 +25,8 @@ let brushReady = false;
 let appliedBrushScale = null;
 let brushContourCache = null;
 let brushContourCacheKey = '';
+let watercolorBackgroundCache = null;
+let watercolorBackgroundCacheKey = '';
 
 const FILL_MAX_PIXELS = 1920 * 1080;
 
@@ -119,6 +121,91 @@ function shouldUseBrush(params) {
   return params.brushEnabled && !params.debug && brushReady;
 }
 
+function shouldUseWatercolorBackground(params) {
+  return params.watercolorBackground && brushReady && !params.debug;
+}
+
+function invalidateWatercolorBackgroundCache() {
+  watercolorBackgroundCache?.remove();
+  watercolorBackgroundCache = null;
+  watercolorBackgroundCacheKey = '';
+}
+
+function buildWatercolorBackgroundCacheKey(params, palette) {
+  return [
+    width,
+    height,
+    palette.backgroundColor,
+    params.watercolorBackground,
+    params.brushScale,
+    params.noiseSeed,
+  ].join('|');
+}
+
+function renderWatercolorBackgroundRect(palette, params) {
+  syncBrushScale(params);
+  brush.noField();
+  brush.noStroke();
+
+  if (typeof brush.seed === 'function') {
+    brush.seed(params.noiseSeed);
+  }
+
+  brush.fill(palette.backgroundColor, 255);
+
+  if (typeof brush.fillTexture === 'function') {
+    brush.fillTexture(0.55, 0.35);
+  }
+
+  if (typeof brush.fillBleed === 'function') {
+    brush.fillBleed(0.25, 'out');
+  }
+
+  const pad = 8;
+  brush.rect(width / 2, height / 2, width + pad, height + pad, 'center');
+  brush.noFill();
+  brush.noWash();
+}
+
+function getOrRenderWatercolorBackgroundCache(palette, params) {
+  const cacheKey = buildWatercolorBackgroundCacheKey(params, palette);
+  if (watercolorBackgroundCache && watercolorBackgroundCacheKey === cacheKey) {
+    return watercolorBackgroundCache;
+  }
+
+  invalidateWatercolorBackgroundCache();
+  watercolorBackgroundCache = createGraphics(width, height, WEBGL);
+  watercolorBackgroundCache.pixelDensity(pixelDensity());
+  watercolorBackgroundCache.clear();
+
+  brush.load(watercolorBackgroundCache);
+  watercolorBackgroundCache.push();
+  watercolorBackgroundCache.translate(-width / 2, -height / 2);
+  renderWatercolorBackgroundRect(palette, params);
+  watercolorBackgroundCache.pop();
+  brush.load();
+
+  watercolorBackgroundCacheKey = cacheKey;
+  return watercolorBackgroundCache;
+}
+
+function drawBackground(palette, params) {
+  if (!shouldUseWatercolorBackground(params)) {
+    invalidateWatercolorBackgroundCache();
+    background(palette.backgroundColor);
+    return;
+  }
+
+  background(255);
+}
+
+function drawWatercolorBackgroundLayer(palette, params) {
+  const cache = getOrRenderWatercolorBackgroundCache(palette, params);
+  if (cache) {
+    image(cache, 0, 0, width, height);
+  }
+}
+
 function drawContourSegmentsClassic(fieldGrid, rows, cols, thresholdValues, params, colors, debug, cellWidth, cellHeight) {
   let i = 0;
   for (let t of thresholdValues) {
@@ -168,6 +255,7 @@ function buildBrushContourCacheKey(params, rows, cols, fieldCacheKey, palette, t
     params.strokeWeightMin,
     params.strokeWeightMax,
     params.fillEnabled,
+    params.watercolorBackground,
     palette.innerColor,
     palette.backgroundColor,
     thresholdCount,
@@ -207,7 +295,7 @@ function renderBrushContourLinesToTarget(
   for (let t of thresholdValues) {
     const strokeColor = colors[i];
     const weight = getStrokeWeight(i, thresholdValues.length, params);
-    brush.pick(params.brushName);
+    brush.pick(resolveBrushName(params));
     brush.stroke(strokeColor);
     brush.strokeWeight(weight);
     i++;
@@ -400,6 +488,7 @@ function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
   appliedBrushScale = null;
   invalidateBrushContourCache();
+  invalidateWatercolorBackgroundCache();
   invalidateFieldCache();
   redraw();
 }
@@ -707,9 +796,14 @@ function draw() {
   const useBrush = shouldUseBrush(params);
 
   const palette = resolvePaletteColors(params);
+  const useWatercolorBackground = shouldUseWatercolorBackground(params);
 
-  background(palette.backgroundColor);
+  drawBackground(palette, params);
   begin2DDraw();
+
+  if (useWatercolorBackground) {
+    drawWatercolorBackgroundLayer(palette, params);
+  }
 
   const fieldGrid = getOrBuildFieldGrid(rows, cols, params.noiseScale, cellWidth, cellHeight, params);
   const fieldCacheKey = lastFieldCacheKey;
