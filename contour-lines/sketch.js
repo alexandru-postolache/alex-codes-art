@@ -28,7 +28,15 @@ let brushContourCacheKey = '';
 let watercolorBackgroundCache = null;
 let watercolorBackgroundCacheKey = '';
 
-const BRUSH_WEBGL = typeof WEBGL2 !== 'undefined' ? WEBGL2 : WEBGL;
+function getBrushWebglMode() {
+  if (typeof WEBGL2 !== 'undefined') {
+    return WEBGL2;
+  }
+  if (typeof WEBGL !== 'undefined') {
+    return WEBGL;
+  }
+  return 'webgl2';
+}
 
 function getParams() {
   return window.contourParams;
