@@ -29,7 +29,7 @@ function getThresholdValues() {
 function getGridDimensions(cols, canvasWidth, canvasHeight) {
   const screenRows = Math.max(2, Math.round((cols * canvasHeight) / canvasWidth));
   const rows = screenRows + 1;
-  const cellWidth = canvasWidth / cols;
+  const cellWidth = canvasWidth / Math.max(1, cols - 1);
   const cellHeight = canvasHeight / screenRows;
 
   return { cols, rows, cellWidth, cellHeight };
