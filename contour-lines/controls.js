@@ -190,6 +190,72 @@ function randomizeSeed() {
   onParamsChange();
 }
 
+const PRESERVED_ON_RANDOMIZE = new Set([
+  'cols',
+  'mouseInfluence',
+  'mouseStrength',
+  'mouseRadius',
+]);
+
+function randomFloat(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function randomInt(min, max) {
+  return Math.floor(randomFloat(min, max + 1));
+}
+
+function randomHexColor() {
+  const value = Math.floor(Math.random() * 0xffffff);
+  return `#${value.toString(16).padStart(6, '0')}`;
+}
+
+function randomizeParamValue(key, schema) {
+  if (schema.type === 'boolean') {
+    return Math.random() < 0.5;
+  }
+
+  if (schema.type === 'color') {
+    return randomHexColor();
+  }
+
+  if (key === 'colorPalette') {
+    const palettes = window.contourColorPalettes ?? ['tints'];
+    return palettes[Math.floor(Math.random() * palettes.length)];
+  }
+
+  if (schema.type === 'int') {
+    return randomInt(schema.min, schema.max);
+  }
+
+  return randomFloat(schema.min, schema.max);
+}
+
+function randomizeAllConfigs() {
+  for (const [key, schema] of Object.entries(PARAM_SCHEMA)) {
+    if (PRESERVED_ON_RANDOMIZE.has(key) || key === 'speed') {
+      continue;
+    }
+    params[key] = randomizeParamValue(key, schema);
+  }
+
+  if (params.strokeWeightMin > params.strokeWeightMax) {
+    [params.strokeWeightMin, params.strokeWeightMax] = [
+      params.strokeWeightMax,
+      params.strokeWeightMin,
+    ];
+  }
+
+  params.speed = 0;
+
+  pane.refresh();
+  updateThresholds();
+  if (window.syncContourLoopMode) {
+    window.syncContourLoopMode();
+  }
+  onParamsChange();
+}
+
 function saveSketchPng() {
   if (typeof saveCanvas === 'function') {
     saveCanvas(`contour-lines-${Date.now()}`, 'png');
@@ -209,6 +275,9 @@ noiseFolder.addBinding(params, 'noiseFalloff', { label: 'falloff', min: 0.1, max
 noiseFolder.addBinding(params, 'speed', { min: 0, max: 1, step: 0.01 });
 noiseFolder.addButton({ title: 'randomize seed' }).on('click', () => {
   randomizeSeed();
+});
+noiseFolder.addButton({ title: 'randomize all (N)' }).on('click', () => {
+  randomizeAllConfigs();
 });
 
 const gridFolder = pane.addFolder({ title: 'Grid', expanded: true });
@@ -282,6 +351,12 @@ window.addEventListener('keydown', (event) => {
   if (event.key === 'r' || event.key === 'R') {
     event.preventDefault();
     randomizeSeed();
+    return;
+  }
+
+  if (event.key === 'n' || event.key === 'N') {
+    event.preventDefault();
+    randomizeAllConfigs();
   }
 });
 
