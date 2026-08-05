@@ -20,7 +20,6 @@ let isAnimating = true;
 let brushReady = false;
 let brushInitialized = false;
 let appliedBrushScale = null;
-let hintsVisible = true;
 
 function getBrushWebglMode() {
   if (typeof WEBGL2 !== 'undefined') {
@@ -88,7 +87,6 @@ function ensureNoiseDetail(lod, falloff) {
 }
 
 function setContourHintsVisible(visible) {
-  hintsVisible = visible;
   const hintsEl = document.getElementById('keyboard-hints');
   if (hintsEl) {
     hintsEl.classList.toggle('is-hidden', !visible);
@@ -156,11 +154,11 @@ function syncBrushScale(params) {
 }
 
 function shouldUseBrush(params) {
-  return params.brushEnabled && !params.debug && brushReady;
+  return params.brushEnabled && brushReady;
 }
 
 function shouldUseWatercolorBackground(params) {
-  return params.watercolorBackground && brushReady && !params.debug;
+  return params.watercolorBackground && brushReady;
 }
 
 function getCornerBandAt(fieldGrid, cols, cx, cy, thresholds) {
@@ -371,11 +369,11 @@ function drawBackground(palette, params) {
   background(255);
 }
 
-function drawContourSegmentsClassic(fieldGrid, rows, cols, thresholdValues, params, colors, debug, cellWidth, cellHeight) {
+function drawContourSegmentsClassic(fieldGrid, rows, cols, thresholdValues, params, colors, cellWidth, cellHeight) {
   let i = 0;
   for (let t of thresholdValues) {
-    stroke(debug ? color(255, 220, 80) : colors[i]);
-    strokeWeight(debug ? 1.5 : getStrokeWeight(i, thresholdValues.length, params));
+    stroke(colors[i]);
+    strokeWeight(getStrokeWeight(i, thresholdValues.length, params));
     i++;
 
     beginShape(LINES);
@@ -388,8 +386,7 @@ function drawContourSegmentsClassic(fieldGrid, rows, cols, thresholdValues, para
           y,
           t,
           cellWidth,
-          cellHeight,
-          debug
+          cellHeight
         );
 
         for (let e = 0; e < segments.length; e += 2) {
@@ -448,8 +445,7 @@ function renderBrushContourLinesToTarget(
           y,
           t,
           cellWidth,
-          cellHeight,
-          false
+          cellHeight
         );
 
         for (let e = 0; e < segments.length; e += 2) {
@@ -480,7 +476,6 @@ function drawContourSegmentsBrush(
       thresholdValues,
       params,
       colors,
-      false,
       cellWidth,
       cellHeight
     );
@@ -506,8 +501,7 @@ function getContourSegmentsForCell(
   y,
   threshold,
   cellWidth,
-  cellHeight,
-  debug
+  cellHeight
 ) {
   const topLeft = getCornerValue(fieldGrid, cols, x, y);
   const topRight = getCornerValue(fieldGrid, cols, x + 1, y);
@@ -538,7 +532,7 @@ function getContourSegmentsForCell(
     threshold,
     cellWidth,
     cellHeight,
-    !debug
+    true
   );
 }
 
@@ -628,52 +622,6 @@ function mouseInfluenceAt(px, py, params) {
 
 function getCornerValue(fieldGrid, cols, x, y) {
   return fieldGrid[y * cols + x];
-}
-
-function drawMouseInfluenceDebug(params) {
-  if (!params.mouseInfluence || mouseX < 0 || mouseX > width || mouseY < 0 || mouseY > height) {
-    return;
-  }
-
-  noFill();
-  stroke(255, 220, 80, 120);
-  strokeWeight(1);
-  circle(mouseX, mouseY, params.mouseRadius * 2);
-}
-
-function drawNoiseGrid(fieldGrid, rows, cols, cellWidth, cellHeight) {
-  noStroke();
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      const v = constrain(fieldGrid[y * cols + x], 0, 1);
-      fill(v * 255, v * 80, v * 100);
-      rect(x * cellWidth, y * cellHeight, cellWidth, cellHeight);
-    }
-  }
-}
-
-function drawGridLines(cols, rows, cellWidth, cellHeight) {
-  stroke(255, 180);
-  strokeWeight(0.5);
-  for (let x = 0; x <= cols; x++) {
-    line(x * cellWidth, 0, x * cellWidth, height);
-  }
-  for (let y = 0; y <= rows; y++) {
-    line(0, y * cellHeight, width, y * cellHeight);
-  }
-}
-
-function drawGridValues(fieldGrid, rows, cols, cellWidth, cellHeight) {
-  noStroke();
-  fill(255);
-  textAlign(CENTER, CENTER);
-  textSize(min(min(cellWidth, cellHeight) * 0.45, 12));
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      const v = constrain(fieldGrid[y * cols + x], 0, 1);
-      text(nf(v, 1, 2), (x + 0.5) * cellWidth, (y + 0.5) * cellHeight);
-    }
-  }
 }
 
 function getBandIndex(value, thresholds) {
@@ -774,23 +722,10 @@ function resolvePaletteColors(params) {
   const paletteType = params.colorPalette ?? 'tints';
   const contourCount = Math.max(1, Math.round(params.contourCount));
   const paletteColors = getPaletteColors(params.baseColor, paletteType, contourCount);
-  const innerColor = params.baseColor;
-
-  if (!params.useComplementaryColors) {
-    return {
-      innerColor,
-      backgroundColor: params.backgroundColor,
-      paletteColors,
-    };
-  }
-
-  const baseGenerator = new ColorGenerator(innerColor);
-  const complementaryColor = baseGenerator.getComplementary()[1];
-  const complementaryTints = new ColorGenerator(complementaryColor).getTints(9);
 
   return {
-    innerColor,
-    backgroundColor: complementaryTints[complementaryTints.length - 1],
+    innerColor: params.baseColor,
+    backgroundColor: params.backgroundColor,
     paletteColors,
   };
 }
@@ -811,7 +746,6 @@ function draw() {
   const cols = Math.round(params.cols);
   const { rows, cellWidth, cellHeight } = getGridDimensions(cols, width, height);
   const thresholdValues = getThresholdValues();
-  const debug = params.debug;
   const useBrush = shouldUseBrush(params);
 
   const palette = resolvePaletteColors(params);
@@ -827,21 +761,13 @@ function draw() {
   const fieldGrid = getOrBuildFieldGrid(rows, cols, params.noiseScale, cellWidth, cellHeight, params);
   nz += params.noiseScale * params.speed;
 
-  if (debug) {
-    drawNoiseGrid(fieldGrid, rows, cols, cellWidth, cellHeight);
-    drawGridLines(cols, rows, cellWidth, cellHeight);
-    if (cols <= 30 && rows <= 30) {
-      drawGridValues(fieldGrid, rows, cols, cellWidth, cellHeight);
-    }
-  }
-
   const colors = palette.paletteColors ?? getThresholdColors(
     palette.innerColor,
     params.colorPalette ?? 'tints',
     thresholdValues.length
   );
 
-  if (params.fillEnabled && !debug) {
+  if (params.fillEnabled) {
     drawContourFills(
       fieldGrid,
       rows,
@@ -873,14 +799,9 @@ function draw() {
       thresholdValues,
       params,
       colors,
-      debug,
       cellWidth,
       cellHeight
     );
-  }
-
-  if (debug && params.mouseInfluence) {
-    drawMouseInfluenceDebug(params);
   }
 
   end2DDraw();

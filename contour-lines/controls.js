@@ -15,7 +15,6 @@ const PARAM_SCHEMA = {
   baseColor: { type: 'color' },
   backgroundColor: { type: 'color' },
   colorPalette: { type: 'string' },
-  useComplementaryColors: { type: 'boolean' },
   strokeWeightMin: { type: 'number', min: 0.5, max: 50 },
   strokeWeightMax: { type: 'number', min: 0.5, max: 50 },
   brushEnabled: { type: 'boolean' },
@@ -23,7 +22,6 @@ const PARAM_SCHEMA = {
   brushScale: { type: 'number', min: 0.5, max: 10 },
   fillEnabled: { type: 'boolean' },
   watercolorBackground: { type: 'boolean' },
-  debug: { type: 'boolean' },
   mouseInfluence: { type: 'boolean' },
   mouseStrength: { type: 'number', min: -0.5, max: 0.5 },
   mouseRadius: { type: 'int', min: 20, max: 500 },
@@ -243,22 +241,9 @@ colorFolder.addBinding(params, 'colorPalette', {
     Tetradic: 'tetradic',
   },
 });
-const backgroundBinding = colorFolder.addBinding(params, 'backgroundColor');
-const complementaryBinding = colorFolder.addBinding(params, 'useComplementaryColors', {
-  label: 'complementary colors',
-});
+colorFolder.addBinding(params, 'backgroundColor');
 colorFolder.addBinding(params, 'fillEnabled', { label: 'fill bands' });
 colorFolder.addBinding(params, 'watercolorBackground', { label: 'watercolor background' });
-
-function updateColorBindings() {
-  backgroundBinding.disabled = params.useComplementaryColors;
-}
-
-complementaryBinding.on('change', () => {
-  updateColorBindings();
-});
-
-updateColorBindings();
 
 const strokeFolder = pane.addFolder({ title: 'Stroke', expanded: false });
 strokeFolder.addBinding(params, 'strokeWeightMin', { label: 'inner weight', min: 0.5, max: 50, step: 0.5 });
@@ -308,8 +293,6 @@ mouseFolder.addBinding(params, 'mouseStrength', {
   step: 0.01,
 });
 mouseFolder.addBinding(params, 'mouseRadius', { label: 'radius (px)', min: 20, max: 500, step: 5 });
-
-pane.addBinding(params, 'debug', { label: 'debug mode' });
 
 contourFolder.on('change', () => updateThresholds());
 
