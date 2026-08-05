@@ -17,16 +17,6 @@ let gridCols = 0;
 let gridRows = 0;
 let lastFieldCacheKey = '';
 let isAnimating = true;
-let brushReady = false;
-let brushInitialized = false;
-let appliedBrushScale = null;
-
-function getBrushWebglMode() {
-  if (typeof WEBGL2 !== 'undefined') {
-    return WEBGL2;
-  }
-  return WEBGL;
-}
 
 function getParams() {
   return window.contourParams;
@@ -93,32 +83,8 @@ function setContourHintsVisible(visible) {
   }
 }
 
-function ensureBrushInitialized() {
-  if (!brushReady || brushInitialized) {
-    return;
-  }
-
-  try {
-    if (typeof brush.load === 'function') {
-      brush.load();
-    }
-    brushInitialized = true;
-  } catch (error) {
-    console.warn('p5.brush failed to initialize.', error);
-    brushReady = false;
-    brushInitialized = false;
-  }
-}
-
 function setup() {
-  createCanvas(windowWidth, windowHeight, getBrushWebglMode());
-  brushReady = typeof brush !== 'undefined' && typeof brush.line === 'function';
-  ensureBrushInitialized();
-
-  if (brushReady) {
-    syncBrushScale(getParams());
-    brush.noField();
-  }
+  createCanvas(windowWidth, windowHeight);
 
   window.requestContourRedraw = () => redraw();
   window.syncContourLoopMode = () => {
@@ -129,36 +95,6 @@ function setup() {
   };
   window.setContourHintsVisible = setContourHintsVisible;
   setContourHintsVisible(true);
-}
-
-function begin2DDraw() {
-  push();
-  translate(-width / 2, -height / 2);
-}
-
-function end2DDraw() {
-  pop();
-}
-
-
-function syncBrushScale(params) {
-  if (!brushReady || !params) {
-    return;
-  }
-
-  const nextBrushScale = params.brushScale ?? 2;
-  if (appliedBrushScale !== nextBrushScale) {
-    brush.scaleBrushes(nextBrushScale);
-    appliedBrushScale = nextBrushScale;
-  }
-}
-
-function shouldUseBrush(params) {
-  return params.brushEnabled && brushReady;
-}
-
-function shouldUseWatercolorBackground(params) {
-  return params.watercolorBackground && brushReady;
 }
 
 function getCornerBandAt(fieldGrid, cols, cx, cy, thresholds) {
@@ -304,10 +240,6 @@ function fillRegionPolygonClassic(polygon, colorValue) {
 }
 
 function drawContourFills(fieldGrid, rows, cols, thresholds, colors, cellWidth, cellHeight) {
-  push();
-  if (typeof DISABLE_DEPTH_TEST !== 'undefined') {
-    hint(DISABLE_DEPTH_TEST);
-  }
   noStroke();
 
   for (let y = 0; y < rows - 1; y++) {
@@ -327,49 +259,9 @@ function drawContourFills(fieldGrid, rows, cols, thresholds, colors, cellWidth, 
       }
     }
   }
-
-  pop();
 }
 
-function renderWatercolorBackgroundRect(palette, params) {
-  syncBrushScale(params);
-  brush.noField();
-  brush.noStroke();
-
-  if (typeof brush.seed === 'function') {
-    brush.seed(params.noiseSeed);
-  }
-
-  brush.fill(palette.backgroundColor, 255);
-
-  if (typeof brush.fillTexture === 'function') {
-    brush.fillTexture(0.55, 0.35);
-  }
-
-  if (typeof brush.fillBleed === 'function') {
-    brush.fillBleed(0.25, 'out');
-  }
-
-  const pad = 8;
-  brush.rect(width / 2, height / 2, width + pad, height + pad, 'center');
-  brush.noFill();
-  brush.noWash();
-}
-
-function drawWatercolorBackgroundLayer(palette, params) {
-  renderWatercolorBackgroundRect(palette, params);
-}
-
-function drawBackground(palette, params) {
-  if (!shouldUseWatercolorBackground(params)) {
-    background(palette.backgroundColor);
-    return;
-  }
-
-  background(255);
-}
-
-function drawContourSegmentsClassic(fieldGrid, rows, cols, thresholdValues, params, colors, cellWidth, cellHeight) {
+function drawContourSegments(fieldGrid, rows, cols, thresholdValues, params, colors, cellWidth, cellHeight) {
   let i = 0;
   for (let t of thresholdValues) {
     stroke(colors[i]);
@@ -397,101 +289,6 @@ function drawContourSegmentsClassic(fieldGrid, rows, cols, thresholdValues, para
     }
     endShape();
   }
-}
-
-function resolveBrushName(params) {
-  if (typeof window.normalizeContourBrushName === 'function') {
-    return window.normalizeContourBrushName(params.brushName);
-  }
-  return params.brushName ?? 'HB';
-}
-
-function renderBrushContourLinesToTarget(
-  fieldGrid,
-  rows,
-  cols,
-  thresholdValues,
-  params,
-  colors,
-  cellWidth,
-  cellHeight
-) {
-  if (!brushReady) {
-    return false;
-  }
-
-  syncBrushScale(params);
-  brush.noField();
-
-  if (typeof brush.seed === 'function') {
-    brush.seed(params.noiseSeed + 1);
-  }
-
-  let i = 0;
-  for (let t of thresholdValues) {
-    const strokeColor = colors[i];
-    const weight = getStrokeWeight(i, thresholdValues.length, params);
-    brush.pick(resolveBrushName(params));
-    brush.stroke(strokeColor);
-    brush.strokeWeight(weight);
-    i++;
-
-    for (let y = 0; y < rows - 1; y++) {
-      for (let x = 0; x < cols - 1; x++) {
-        const segments = getContourSegmentsForCell(
-          fieldGrid,
-          cols,
-          x,
-          y,
-          t,
-          cellWidth,
-          cellHeight
-        );
-
-        for (let e = 0; e < segments.length; e += 2) {
-          brush.line(segments[e].x, segments[e].y, segments[e + 1].x, segments[e + 1].y);
-        }
-      }
-    }
-  }
-
-  return true;
-}
-
-function drawContourSegmentsBrush(
-  fieldGrid,
-  rows,
-  cols,
-  thresholdValues,
-  params,
-  colors,
-  cellWidth,
-  cellHeight
-) {
-  if (!brushReady) {
-    drawContourSegmentsClassic(
-      fieldGrid,
-      rows,
-      cols,
-      thresholdValues,
-      params,
-      colors,
-      cellWidth,
-      cellHeight
-    );
-    return;
-  }
-
-  renderBrushContourLinesToTarget(
-    fieldGrid,
-    rows,
-    cols,
-    thresholdValues,
-    params,
-    colors,
-    cellWidth,
-    cellHeight
-  );
 }
 
 function getContourSegmentsForCell(
@@ -538,7 +335,6 @@ function getContourSegmentsForCell(
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
-  appliedBrushScale = null;
   invalidateFieldCache();
   redraw();
 }
@@ -741,22 +537,12 @@ function draw() {
   const params = getParams();
   if (!params) return;
 
-  ensureBrushInitialized();
-
   const cols = Math.round(params.cols);
   const { rows, cellWidth, cellHeight } = getGridDimensions(cols, width, height);
   const thresholdValues = getThresholdValues();
-  const useBrush = shouldUseBrush(params);
-
   const palette = resolvePaletteColors(params);
-  const useWatercolorBackground = shouldUseWatercolorBackground(params);
 
-  drawBackground(palette, params);
-  begin2DDraw();
-
-  if (useWatercolorBackground) {
-    drawWatercolorBackgroundLayer(palette, params);
-  }
+  background(palette.backgroundColor);
 
   const fieldGrid = getOrBuildFieldGrid(rows, cols, params.noiseScale, cellWidth, cellHeight, params);
   nz += params.noiseScale * params.speed;
@@ -780,31 +566,17 @@ function draw() {
   }
 
   noFill();
-  if (useBrush) {
-    drawContourSegmentsBrush(
-      fieldGrid,
-      rows,
-      cols,
-      thresholdValues,
-      params,
-      colors,
-      cellWidth,
-      cellHeight
-    );
-  } else {
-    drawContourSegmentsClassic(
-      fieldGrid,
-      rows,
-      cols,
-      thresholdValues,
-      params,
-      colors,
-      cellWidth,
-      cellHeight
-    );
-  }
+  drawContourSegments(
+    fieldGrid,
+    rows,
+    cols,
+    thresholdValues,
+    params,
+    colors,
+    cellWidth,
+    cellHeight
+  );
 
-  end2DDraw();
   updateLoopMode(params);
 }
 

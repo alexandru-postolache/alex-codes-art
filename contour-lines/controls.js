@@ -17,11 +17,7 @@ const PARAM_SCHEMA = {
   colorPalette: { type: 'string' },
   strokeWeightMin: { type: 'number', min: 0.5, max: 50 },
   strokeWeightMax: { type: 'number', min: 0.5, max: 50 },
-  brushEnabled: { type: 'boolean' },
-  brushName: { type: 'string' },
-  brushScale: { type: 'number', min: 0.5, max: 10 },
   fillEnabled: { type: 'boolean' },
-  watercolorBackground: { type: 'boolean' },
   mouseInfluence: { type: 'boolean' },
   mouseStrength: { type: 'number', min: -0.5, max: 0.5 },
   mouseRadius: { type: 'int', min: 20, max: 500 },
@@ -67,9 +63,6 @@ function parseParamValue(key, rawValue) {
   }
 
   if (schema.type === 'string') {
-    if (key === 'brushName' && typeof window.normalizeContourBrushName === 'function') {
-      return window.normalizeContourBrushName(String(rawValue));
-    }
     if (key === 'colorPalette' && window.contourColorPalettes?.includes(String(rawValue))) {
       return String(rawValue);
     }
@@ -243,46 +236,10 @@ colorFolder.addBinding(params, 'colorPalette', {
 });
 colorFolder.addBinding(params, 'backgroundColor');
 colorFolder.addBinding(params, 'fillEnabled', { label: 'fill bands' });
-colorFolder.addBinding(params, 'watercolorBackground', { label: 'watercolor background' });
 
 const strokeFolder = pane.addFolder({ title: 'Stroke', expanded: false });
 strokeFolder.addBinding(params, 'strokeWeightMin', { label: 'inner weight', min: 0.5, max: 50, step: 0.5 });
 strokeFolder.addBinding(params, 'strokeWeightMax', { label: 'outer weight', min: 0.5, max: 50, step: 0.5 });
-const brushEnabledBinding = strokeFolder.addBinding(params, 'brushEnabled', { label: 'brush strokes' });
-const brushNameBinding = strokeFolder.addBinding(params, 'brushName', {
-  label: 'brush',
-  options: {
-    HB: 'HB',
-    '2H': '2H',
-    '2B': '2B',
-    Pen: 'pen',
-    Rotring: 'rotring',
-    Pencil: 'cpencil',
-    Pastel: 'pastel',
-    Crayon: 'crayon',
-    Charcoal: 'charcoal',
-    Marker: 'marker',
-    Spray: 'spray',
-  },
-});
-const brushScaleBinding = strokeFolder.addBinding(params, 'brushScale', {
-  label: 'brush scale',
-  min: 0.5,
-  max: 10,
-  step: 0.5,
-});
-
-function updateBrushBindings() {
-  const disabled = !params.brushEnabled;
-  brushNameBinding.disabled = disabled;
-  brushScaleBinding.disabled = disabled;
-}
-
-brushEnabledBinding.on('change', () => {
-  updateBrushBindings();
-});
-
-updateBrushBindings();
 
 const mouseFolder = pane.addFolder({ title: 'Mouse', expanded: true });
 mouseFolder.addBinding(params, 'mouseInfluence', { label: 'mouse influence' });

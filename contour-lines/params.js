@@ -14,11 +14,7 @@
     colorPalette: 'tints',
     strokeWeightMin: 1,
     strokeWeightMax: 5,
-    brushEnabled: false,
-    brushName: 'HB',
-    brushScale: 2,
     fillEnabled: false,
-    watercolorBackground: false,
     mouseInfluence: true,
     mouseStrength: 0.25,
     mouseRadius: 120,
@@ -56,30 +52,4 @@
     'splitComplementary',
     'tetradic',
   ];
-
-  window.contourBrushNames = [
-    'pen',
-    'rotring',
-    '2B',
-    'HB',
-    '2H',
-    'cpencil',
-    'pastel',
-    'crayon',
-    'charcoal',
-    'spray',
-    'marker',
-  ];
-
-  window.contourBrushAliases = {
-    pencil: 'cpencil',
-    fountainPen: 'pen',
-  };
-
-  window.normalizeContourBrushName = function normalizeContourBrushName(name) {
-    const aliased = window.contourBrushAliases[name] ?? name;
-    return window.contourBrushNames.includes(aliased) ? aliased : 'HB';
-  };
-
-  window.contourParams.brushName = window.normalizeContourBrushName(window.contourParams.brushName);
 })();
