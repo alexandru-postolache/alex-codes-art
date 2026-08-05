@@ -229,18 +229,60 @@ function buildCellBandPolygons(x, y, fieldGrid, cols, thresholds, cellWidth, cel
   return results;
 }
 
-function fillRegionPolygonClassic(polygon, colorValue) {
+function getFillBleed(cellWidth, cellHeight) {
+  const density = typeof pixelDensity === 'function' ? pixelDensity() : 1;
+  return Math.max(1, Math.min(cellWidth, cellHeight) * 0.08) * density;
+}
+
+function expandFillPolygon(polygon, bleed) {
+  if (bleed <= 0 || polygon.length < 3) {
+    return polygon;
+  }
+
+  let cx = 0;
+  let cy = 0;
+  for (const point of polygon) {
+    cx += point.x;
+    cy += point.y;
+  }
+  cx /= polygon.length;
+  cy /= polygon.length;
+
+  return polygon.map((point) => {
+    const dx = point.x - cx;
+    const dy = point.y - cy;
+    const length = Math.hypot(dx, dy);
+    if (length < 1e-6) {
+      return { x: point.x, y: point.y };
+    }
+
+    const scale = (length + bleed) / length;
+    return {
+      x: cx + dx * scale,
+      y: cy + dy * scale,
+    };
+  });
+}
+
+function fillRegionPolygonClassic(polygon, colorValue, bleed = 0) {
+  const expanded = bleed > 0 ? expandFillPolygon(polygon, bleed) : polygon;
   fill(colorValue);
   noStroke();
   beginShape();
-  for (const point of polygon) {
+  for (const point of expanded) {
     vertex(point.x, point.y);
   }
   endShape(CLOSE);
 }
 
 function drawContourFills(fieldGrid, rows, cols, thresholds, colors, cellWidth, cellHeight) {
+  const bleed = getFillBleed(cellWidth, cellHeight);
+  const smoothingWasEnabled = typeof drawingContext?.imageSmoothingEnabled === 'boolean'
+    ? drawingContext.imageSmoothingEnabled
+    : true;
+
   noStroke();
+  noSmooth();
 
   for (let y = 0; y < rows - 1; y++) {
     for (let x = 0; x < cols - 1; x++) {
@@ -255,9 +297,13 @@ function drawContourFills(fieldGrid, rows, cols, thresholds, colors, cellWidth, 
       );
 
       for (const { band, polygon } of cellPolygons) {
-        fillRegionPolygonClassic(polygon, colors[band]);
+        fillRegionPolygonClassic(polygon, colors[band], bleed);
       }
     }
+  }
+
+  if (smoothingWasEnabled) {
+    smooth();
   }
 }
 
