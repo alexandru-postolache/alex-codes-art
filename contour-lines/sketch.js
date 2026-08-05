@@ -16,6 +16,10 @@ let fieldGridBuffer = null;
 let gridCols = 0;
 let gridRows = 0;
 let lastFieldCacheKey = '';
+let fillImageCache = {
+  key: '',
+  image: null,
+};
 let isAnimating = true;
 
 function getParams() {
@@ -56,6 +60,8 @@ function updateLoopMode(params) {
 
 function invalidateFieldCache() {
   lastFieldCacheKey = '';
+  fillImageCache.key = '';
+  fillImageCache.image = null;
 }
 
 function ensureNoiseSeed(seed) {
@@ -95,216 +101,6 @@ function setup() {
   };
   window.setContourHintsVisible = setContourHintsVisible;
   setContourHintsVisible(true);
-}
-
-function getCornerBandAt(fieldGrid, cols, cx, cy, thresholds) {
-  const value = constrain(getCornerValue(fieldGrid, cols, cx, cy), 0, 1);
-  return getBandIndex(value, thresholds);
-}
-
-function edgeCrossingThreshold(bandA, bandB, targetBand, thresholds) {
-  const other = bandA === targetBand ? bandB : bandA;
-  if (other < targetBand) {
-    return thresholds[Math.max(0, targetBand - 1)];
-  }
-  return thresholds[Math.min(targetBand, thresholds.length - 1)];
-}
-
-function bandEdgePoint(pts, cornerA, cornerB, bands, values, targetBand, thresholds) {
-  const bandA = bands[cornerA];
-  const bandB = bands[cornerB];
-  const inA = bandA === targetBand;
-  const inB = bandB === targetBand;
-  if (inA === inB) {
-    return null;
-  }
-
-  const threshold = edgeCrossingThreshold(bandA, bandB, targetBand, thresholds);
-  const va = values[cornerA];
-  const vb = values[cornerB];
-  const denom = vb - va;
-  const t = Math.abs(denom) < 1e-6 ? 0.5 : constrain((threshold - va) / denom, 0, 1);
-
-  return {
-    x: lerp(pts[cornerA].x, pts[cornerB].x, t),
-    y: lerp(pts[cornerA].y, pts[cornerB].y, t),
-  };
-}
-
-function marchingSquaresBandPolygons(maskIndex, pts, edgePoint) {
-  const c = pts;
-  const e01 = edgePoint(0, 1);
-  const e12 = edgePoint(1, 2);
-  const e23 = edgePoint(2, 3);
-  const e30 = edgePoint(3, 0);
-
-  const poly = (...points) => points.filter(Boolean);
-
-  switch (maskIndex) {
-    case 1:
-      return [poly(c[0], e01, e30)];
-    case 2:
-      return [poly(c[1], e12, e01)];
-    case 3:
-      return [poly(c[0], c[1], e12, e30)];
-    case 4:
-      return [poly(c[2], e23, e12)];
-    case 5:
-      return [poly(c[0], e01, e30), poly(c[2], e23, e12)];
-    case 6:
-      return [poly(c[1], c[2], e23, e01)];
-    case 7:
-      return [poly(c[0], c[1], c[2], e23, e30)];
-    case 8:
-      return [poly(c[3], e30, e23)];
-    case 9:
-      return [poly(c[0], c[3], e23, e01)];
-    case 10:
-      return [poly(c[1], e12, e01), poly(c[3], e30, e23)];
-    case 11:
-      return [poly(c[0], c[1], e12, e23, c[3])];
-    case 12:
-      return [poly(c[2], c[3], e30, e12)];
-    case 13:
-      return [poly(c[0], e01, e12, c[2], c[3])];
-    case 14:
-      return [poly(c[1], c[2], c[3], e30, e01)];
-    default:
-      return [];
-  }
-}
-
-function buildCellBandPolygons(x, y, fieldGrid, cols, thresholds, cellWidth, cellHeight) {
-  const bands = [
-    getCornerBandAt(fieldGrid, cols, x, y, thresholds),
-    getCornerBandAt(fieldGrid, cols, x + 1, y, thresholds),
-    getCornerBandAt(fieldGrid, cols, x + 1, y + 1, thresholds),
-    getCornerBandAt(fieldGrid, cols, x, y + 1, thresholds),
-  ];
-  const values = [
-    getCornerValue(fieldGrid, cols, x, y),
-    getCornerValue(fieldGrid, cols, x + 1, y),
-    getCornerValue(fieldGrid, cols, x + 1, y + 1),
-    getCornerValue(fieldGrid, cols, x, y + 1),
-  ];
-
-  const px = x * cellWidth;
-  const py = y * cellHeight;
-  const px1 = (x + 1) * cellWidth;
-  const py1 = (y + 1) * cellHeight;
-  const pts = [
-    { x: px, y: py },
-    { x: px1, y: py },
-    { x: px1, y: py1 },
-    { x: px, y: py1 },
-  ];
-
-  const uniqueBands = [...new Set(bands)];
-  const results = [];
-
-  for (const band of uniqueBands) {
-    const mask = bands.map((b) => (b === band ? 1 : 0));
-    const maskIndex = mask[0] | (mask[1] << 1) | (mask[2] << 2) | (mask[3] << 3);
-
-    if (maskIndex === 0) {
-      continue;
-    }
-
-    if (maskIndex === 15) {
-      results.push({ band, polygon: [...pts] });
-      continue;
-    }
-
-    const edgePoint = (cornerA, cornerB) =>
-      bandEdgePoint(pts, cornerA, cornerB, bands, values, band, thresholds);
-    const polygons = marchingSquaresBandPolygons(maskIndex, pts, edgePoint);
-
-    for (const polygon of polygons) {
-      if (polygon.length >= 3) {
-        results.push({ band, polygon });
-      }
-    }
-  }
-
-  return results;
-}
-
-function getFillBleed(cellWidth, cellHeight) {
-  const density = typeof pixelDensity === 'function' ? pixelDensity() : 1;
-  return Math.max(1, Math.min(cellWidth, cellHeight) * 0.08) * density;
-}
-
-function expandFillPolygon(polygon, bleed) {
-  if (bleed <= 0 || polygon.length < 3) {
-    return polygon;
-  }
-
-  let cx = 0;
-  let cy = 0;
-  for (const point of polygon) {
-    cx += point.x;
-    cy += point.y;
-  }
-  cx /= polygon.length;
-  cy /= polygon.length;
-
-  return polygon.map((point) => {
-    const dx = point.x - cx;
-    const dy = point.y - cy;
-    const length = Math.hypot(dx, dy);
-    if (length < 1e-6) {
-      return { x: point.x, y: point.y };
-    }
-
-    const scale = (length + bleed) / length;
-    return {
-      x: cx + dx * scale,
-      y: cy + dy * scale,
-    };
-  });
-}
-
-function fillRegionPolygonClassic(polygon, colorValue, bleed = 0) {
-  const expanded = bleed > 0 ? expandFillPolygon(polygon, bleed) : polygon;
-  fill(colorValue);
-  noStroke();
-  beginShape();
-  for (const point of expanded) {
-    vertex(point.x, point.y);
-  }
-  endShape(CLOSE);
-}
-
-function drawContourFills(fieldGrid, rows, cols, thresholds, colors, cellWidth, cellHeight) {
-  const bleed = getFillBleed(cellWidth, cellHeight);
-  const smoothingWasEnabled = typeof drawingContext?.imageSmoothingEnabled === 'boolean'
-    ? drawingContext.imageSmoothingEnabled
-    : true;
-
-  noStroke();
-  noSmooth();
-
-  for (let y = 0; y < rows - 1; y++) {
-    for (let x = 0; x < cols - 1; x++) {
-      const cellPolygons = buildCellBandPolygons(
-        x,
-        y,
-        fieldGrid,
-        cols,
-        thresholds,
-        cellWidth,
-        cellHeight
-      );
-
-      for (const { band, polygon } of cellPolygons) {
-        fillRegionPolygonClassic(polygon, colors[band], bleed);
-      }
-    }
-  }
-
-  if (smoothingWasEnabled) {
-    smooth();
-  }
 }
 
 function drawContourSegments(fieldGrid, rows, cols, thresholdValues, params, colors, cellWidth, cellHeight) {
@@ -577,6 +373,121 @@ function getStrokeWeight(index, count, params) {
     return (params.strokeWeightMin + params.strokeWeightMax) / 2;
   }
   return map(index, 0, count - 1, params.strokeWeightMin, params.strokeWeightMax);
+}
+
+function buildFillImageCacheKey(fieldCacheKey, thresholdValues, colors, canvasWidth, canvasHeight) {
+  const thresholdKey = thresholdValues.join(',');
+  const colorKey = colors.map((c) => `${red(c)}|${green(c)}|${blue(c)}`).join(',');
+  return `${fieldCacheKey}|${thresholdKey}|${colorKey}|${canvasWidth}|${canvasHeight}`;
+}
+
+function buildFillBandsImage(
+  fieldGrid,
+  rows,
+  cols,
+  thresholdValues,
+  colors,
+  cellWidth,
+  cellHeight,
+  canvasWidth,
+  canvasHeight
+) {
+  const img = createImage(canvasWidth, canvasHeight);
+  const bandCount = thresholdValues.length;
+  const thresholdMin = thresholdValues[0];
+  const thresholdMax = thresholdValues[bandCount - 1];
+  const step = bandCount > 1 ? (thresholdMax - thresholdMin) / (bandCount - 1) : 1;
+  const invStep = step > 0 ? 1 / step : 0;
+  const invCellWidth = 1 / cellWidth;
+  const invCellHeight = 1 / cellHeight;
+  const colorRGBA = colors.map((c) => [red(c), green(c), blue(c)]);
+
+  img.loadPixels();
+  const pixels = img.pixels;
+
+  for (let py = 0; py < canvasHeight; py++) {
+    const gy = py * invCellHeight;
+    for (let px = 0; px < canvasWidth; px++) {
+      const gx = px * invCellWidth;
+      const value = sampleFieldGridFast(fieldGrid, cols, rows, gx, gy);
+
+      let bandIndex;
+      if (bandCount === 1) {
+        bandIndex = 0;
+      } else if (value < thresholdMin) {
+        bandIndex = 0;
+      } else if (value >= thresholdMax) {
+        bandIndex = bandCount - 1;
+      } else {
+        bandIndex = Math.min(bandCount - 1, Math.floor((value - thresholdMin) * invStep) + 1);
+      }
+
+      const rgba = colorRGBA[bandIndex];
+      const idx = (py * canvasWidth + px) * 4;
+      pixels[idx] = rgba[0];
+      pixels[idx + 1] = rgba[1];
+      pixels[idx + 2] = rgba[2];
+      pixels[idx + 3] = 255;
+    }
+  }
+
+  img.updatePixels();
+  return img;
+}
+
+function getOrBuildFillBandsImage(
+  fieldGrid,
+  rows,
+  cols,
+  thresholdValues,
+  colors,
+  cellWidth,
+  cellHeight,
+  canvasWidth,
+  canvasHeight
+) {
+  const cacheKey = buildFillImageCacheKey(
+    lastFieldCacheKey,
+    thresholdValues,
+    colors,
+    canvasWidth,
+    canvasHeight
+  );
+
+  if (fillImageCache.key === cacheKey && fillImageCache.image) {
+    return fillImageCache.image;
+  }
+
+  fillImageCache.image = buildFillBandsImage(
+    fieldGrid,
+    rows,
+    cols,
+    thresholdValues,
+    colors,
+    cellWidth,
+    cellHeight,
+    canvasWidth,
+    canvasHeight
+  );
+  fillImageCache.key = cacheKey;
+  return fillImageCache.image;
+}
+
+function drawContourFills(fieldGrid, rows, cols, thresholdValues, colors, cellWidth, cellHeight) {
+  const fillImage = getOrBuildFillBandsImage(
+    fieldGrid,
+    rows,
+    cols,
+    thresholdValues,
+    colors,
+    cellWidth,
+    cellHeight,
+    width,
+    height
+  );
+
+  noStroke();
+  image(fillImage, 0, 0);
 }
 
 function draw() {
