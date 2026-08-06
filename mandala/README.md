@@ -43,4 +43,4 @@ Hold **Shift** for accent hits (velocity 127). These keys do not overlap with mo
 
 ### MIDI notes
 
-MIDI voices use the **same curvy motion** (and tempo, when enabled) as the `C` key and digit keys `1`–`9`. Colors come from the **Multi-line keys** palette — note number maps to keys 1–9. Each note spawns on a ring from **2%** (lowest) to **90%** (highest) of the canvas radius. Velocity controls speed and brightness.
+MIDI voices use the **same curvy motion settings** as the `C` key and digit keys `1`–`9` (`curvyBaseSpeed`, `curvyTurnRate`, etc.) — but not tempo. Colors come from the **Multi-line keys** palette — note number maps to keys 1–9. Each note spawns on a ring from **2%** (lowest) to **90%** (highest) of the canvas radius. Velocity controls speed and brightness.

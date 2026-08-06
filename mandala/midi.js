@@ -205,7 +205,12 @@ const midiEngine = {
       }
 
       let prevPos = voice.lineState.curvyPos.copy();
-      context.getCurvyTarget(voice.lineState, voice.justStarted, voice.lineState.curvyPos.copy());
+      context.getCurvyTarget(
+        voice.lineState,
+        voice.justStarted,
+        voice.lineState.curvyPos.copy(),
+        false
+      );
 
       if (!voice.justStarted) {
         let mult = speedScale(voice.vNorm);

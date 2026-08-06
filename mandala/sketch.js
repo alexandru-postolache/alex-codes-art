@@ -367,14 +367,11 @@ function trimTempoLineStatesForFrame(curvyCActive, heldDigits) {
   if (params.tempoEnabled) {
     for (let d of heldDigits) tempoLineStates.push(ensureKeyLineState(d));
   }
-  if (params.tempoEnabled && params.midiEnabled) {
-    for (let lineState of midiEngine.getActiveLineStates()) {
-      tempoLineStates.push(lineState);
-    }
-  }
 }
 
-function getCurvyTarget(state, justStarted, spawnPos) {
+function getCurvyTarget(state, justStarted, spawnPos, useTempo) {
+  let tempoActive = useTempo === undefined ? params.tempoEnabled : useTempo;
+
   if (justStarted) {
     if (spawnPos) {
       state.curvyPos.set(spawnPos);
@@ -386,12 +383,12 @@ function getCurvyTarget(state, justStarted, spawnPos) {
     state.curvyAngle = random(360);
     state.beatHeading = state.curvyAngle;
     state.curvyTime = random(1000);
-    if (params.tempoEnabled) {
+    if (tempoActive) {
       pickNextBeatSegment(state, true);
     }
   }
 
-  if (params.tempoEnabled) {
+  if (tempoActive) {
     return getTempoCurvyTarget(state);
   }
 
