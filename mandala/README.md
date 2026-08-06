@@ -40,3 +40,7 @@ Enable **MIDI** and **Keyboard drum pad (QWERTY)** in the Tweakpane MIDI folder 
 | R / T / Y / U | Ride / china / splash / crash 2 |
 
 Hold **Shift** for accent hits (velocity 127). These keys do not overlap with mouse drawing, `C` (curvy mode), or digit keys `1`–`9` (multi-line colors).
+
+### Radial spawn & velocity
+
+Each drum family spawns on its own ring from the center outward (kick near the middle, cymbals on the outer arc). **Velocity** controls motion speed and color brightness — not stroke thickness.

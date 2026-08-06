@@ -100,80 +100,117 @@ const midiEngine = {
     this.status = parts.join(" + ");
   },
 
-  getVoiceStyle(note, vNorm) {
+  getVoiceStyle(note) {
     if (note === 35 || note === 36) {
       return {
         type: "kick",
-        startSpeed: 8 + 10 * vNorm,
-        endSpeed: 1.2 + 0.8 * vNorm,
+        startSpeed: 10,
+        endSpeed: 1.4,
         turnRate: 0.15,
         headingKick: random(-20, 20),
-        color: { r: 255, g: 80, b: 60 }
+        color: { r: 255, g: 80, b: 60 },
+        radiusMin: 0.02,
+        radiusMax: 0.09
       };
     }
     if (note === 38 || note === 40) {
       return {
         type: "snare",
-        startSpeed: 6 + 8 * vNorm,
-        endSpeed: 0.6,
+        startSpeed: 9,
+        endSpeed: 0.7,
         turnRate: 1,
         headingKick: random([-120, -90, 90, 120]),
-        color: { r: 90, g: 180, b: 255 }
+        color: { r: 90, g: 180, b: 255 },
+        radiusMin: 0.14,
+        radiusMax: 0.24
       };
     }
     if ([41, 43, 45, 47, 48, 50].includes(note)) {
       return {
         type: "tom",
-        startSpeed: 7 + 7 * vNorm,
-        endSpeed: 0.8,
+        startSpeed: 8,
+        endSpeed: 0.9,
         turnRate: 0.7,
         headingKick: random([-65, -40, 40, 65]),
-        color: { r: 120, g: 255, b: 140 }
+        color: { r: 120, g: 255, b: 140 },
+        radiusMin: 0.22,
+        radiusMax: 0.36
       };
     }
     if ([42, 44, 46].includes(note)) {
       return {
         type: "hat",
-        startSpeed: 4 + 5 * vNorm,
-        endSpeed: 0.2,
+        startSpeed: 6,
+        endSpeed: 0.25,
         turnRate: 1.2,
         headingKick: random(-30, 30),
-        color: { r: 255, g: 245, b: 140 }
+        color: { r: 255, g: 245, b: 140 },
+        radiusMin: 0.34,
+        radiusMax: 0.48
       };
     }
     if ([49, 51, 52, 55, 57, 59].includes(note)) {
       return {
         type: "cymbal",
-        startSpeed: 9 + 7 * vNorm,
-        endSpeed: 1.5,
+        startSpeed: 11,
+        endSpeed: 1.6,
         turnRate: random([-1, 1]) * 0.8,
         headingKick: random([-150, -110, 110, 150]),
-        color: { r: 210, g: 120, b: 255 }
+        color: { r: 210, g: 120, b: 255 },
+        radiusMin: 0.52,
+        radiusMax: 0.72
       };
     }
 
     return {
       type: "other",
-      startSpeed: 6 + 7 * vNorm,
-      endSpeed: 0.8,
+      startSpeed: 7,
+      endSpeed: 0.9,
       turnRate: 0.5,
       headingKick: random(-90, 90),
-      color: { r: 255, g: 200, b: 110 }
+      color: { r: 255, g: 200, b: 110 },
+      radiusMin: 0.26,
+      radiusMax: 0.42
     };
   },
 
+  velocityNorm(velocity) {
+    return constrain(velocity / 127, 0, 1);
+  },
+
+  colorWithVelocity(color, vNorm) {
+    let brightness = lerp(0.32, 1, vNorm);
+    return {
+      r: min(255, color.r * brightness),
+      g: min(255, color.g * brightness),
+      b: min(255, color.b * brightness)
+    };
+  },
+
+  radialSpawnPosition(voice, context) {
+    let half = min(context.width, context.height) / 2;
+    let radiusFrac = random(voice.radiusMin, voice.radiusMax);
+    let angle = voice.spawnAngle;
+    let r = half * radiusFrac;
+    return createVector(cos(angle) * r, sin(angle) * r);
+  },
+
   spawnVoice(note, velocity) {
-    let vNorm = constrain(velocity / 127, 0, 1);
+    let vNorm = this.velocityNorm(velocity);
     let holdMs = this.params.midiPatternHoldMs * (0.75 + 0.6 * vNorm);
-    let style = this.getVoiceStyle(note, vNorm);
+    let style = this.getVoiceStyle(note);
     let now = millis();
 
     this.voices.push({
       id: this.nextVoiceId++,
       note,
       velocity,
+      vNorm,
       type: style.type,
       color: style.color,
+      radiusMin: style.radiusMin,
+      radiusMax: style.radiusMax,
+      spawnAngle: (note * 41 + this.nextVoiceId * 17) % 360,
       heading: random(360) + style.headingKick,
       startSpeed: style.startSpeed,
       endSpeed: style.endSpeed,
@@ -211,15 +248,11 @@ const midiEngine = {
 
     let segments = [];
     let now = millis();
-    let anchor = context.current.mag() === 0 && context.prev.mag() === 0
-      ? createVector(context.mouseX - context.width / 2, context.mouseY - context.height / 2)
-      : context.current.copy();
+    let speedScale = (voice) => lerp(0.38, 1.15, voice.vNorm);
 
     for (let voice of this.voices) {
       if (!voice.pos) {
-        voice.pos = anchor.copy();
-        voice.pos.x += random(-14, 14);
-        voice.pos.y += random(-14, 14);
+        voice.pos = this.radialSpawnPosition(voice, context);
         voice.prev = voice.pos.copy();
         voice.current = voice.pos.copy();
       }
@@ -227,7 +260,7 @@ const midiEngine = {
       let life = max(1, voice.untilMs - voice.startMs);
       let phase = constrain((now - voice.startMs) / life, 0, 1);
       let eased = 1 - pow(phase, 1.5);
-      let step = lerp(voice.endSpeed, voice.startSpeed, eased);
+      let step = lerp(voice.endSpeed, voice.startSpeed, eased) * speedScale(voice);
 
       if (voice.type === "kick") {
         voice.heading += map(noise(now * 0.0008 + voice.id), 0, 1, -2, 2) * voice.turnRate;
@@ -270,7 +303,7 @@ const midiEngine = {
         x2: voice.current.x,
         y2: voice.current.y,
         weight,
-        color: voice.color
+        color: this.colorWithVelocity(voice.color, voice.vNorm)
       });
       voice.prev = voice.current.copy();
     }
