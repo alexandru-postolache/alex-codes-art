@@ -1,7 +1,39 @@
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
+
+main {
+  width: 100%;
+  height: 100%;
+}
+
 canvas {
   display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+}
+
+.mandala-pane {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 1000;
+  max-height: calc(100vh - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.mandala-pane::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }

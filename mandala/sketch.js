@@ -102,6 +102,7 @@ function setup() {
   // --- Tweakpane ---
   pane = new Tweakpane.Pane({ title: 'Mandala Controls' });
   paneContainer = pane.element;
+  paneContainer.classList.add('mandala-pane');
 
   const motionFolder = pane.addFolder({ title: 'Motion', expanded: true });
   const tempoFolder = pane.addFolder({ title: 'Tempo', expanded: false });
