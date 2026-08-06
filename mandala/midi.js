@@ -195,11 +195,131 @@ const midiEngine = {
     return createVector(cos(angle) * r, sin(angle) * r);
   },
 
+  getTypeWeightMult(type) {
+    switch (type) {
+      case "kick": return 1.75;
+      case "snare": return 1.05;
+      case "tom": return 1.15;
+      case "hat": return 0.38;
+      case "cymbal": return 0.9;
+      default: return 1;
+    }
+  },
+
+  applyBounds(voice, halfW, halfH) {
+    let bounced = false;
+
+    if (voice.pos.x < -halfW || voice.pos.x > halfW) {
+      voice.heading = 180 - voice.heading;
+      voice.pos.x = constrain(voice.pos.x, -halfW, halfW);
+      bounced = true;
+    }
+    if (voice.pos.y < -halfH || voice.pos.y > halfH) {
+      voice.heading = -voice.heading;
+      voice.pos.y = constrain(voice.pos.y, -halfH, halfH);
+      bounced = true;
+    }
+
+    if (bounced && voice.type === "tom") {
+      voice.heading += random(-35, 35);
+      voice.bounceBoost = 1.45;
+    }
+
+    return bounced;
+  },
+
+  advanceKick(voice, step, now) {
+    voice.heading = voice.spawnAngle + map(
+      noise(now * 0.001 + voice.id),
+      0,
+      1,
+      -5,
+      5
+    );
+    voice.pos.x += cos(voice.heading) * step;
+    voice.pos.y += sin(voice.heading) * step;
+  },
+
+  advanceSnare(voice, step, now) {
+    if (voice.zigNextMs === undefined) {
+      voice.zigNextMs = now;
+      voice.zigSign = random([-1, 1]);
+    }
+    if (now >= voice.zigNextMs) {
+      voice.heading += voice.zigSign * random(78, 118);
+      voice.zigSign *= -1;
+      voice.zigNextMs = now + random(30, 70);
+    }
+    voice.pos.x += cos(voice.heading) * step;
+    voice.pos.y += sin(voice.heading) * step;
+  },
+
+  advanceTom(voice, step, now) {
+    let boost = voice.bounceBoost || 1;
+    voice.bounceBoost = lerp(boost, 1, 0.18);
+    voice.heading += sin(now * 0.03 + voice.id) * 2.5;
+    voice.pos.x += cos(voice.heading) * step * boost;
+    voice.pos.y += sin(voice.heading) * step * boost;
+  },
+
+  advanceHat(voice, step, now) {
+    voice.heading += map(
+      noise(now * 0.05 + voice.id * 2.7),
+      0,
+      1,
+      -1,
+      1
+    ) * 62;
+    let scratch = step * 0.42;
+    voice.pos.x += cos(voice.heading) * scratch;
+    voice.pos.y += sin(voice.heading) * scratch;
+  },
+
+  advanceCymbal(voice, step, now) {
+    if (voice.orbitRadius === undefined) {
+      voice.orbitAngle = voice.spawnAngle;
+      voice.orbitRadius = max(8, voice.pos.mag());
+      voice.orbitDir = voice.turnRate >= 0 ? 1 : -1;
+    }
+
+    voice.orbitAngle += voice.orbitDir * (2.4 + voice.turnRate);
+    voice.orbitRadius += step * 0.14;
+    voice.pos.x = cos(voice.orbitAngle) * voice.orbitRadius;
+    voice.pos.y = sin(voice.orbitAngle) * voice.orbitRadius;
+  },
+
+  advanceOther(voice, step, now) {
+    voice.heading += map(
+      noise(now * 0.002 + voice.id),
+      0,
+      1,
+      -1,
+      1
+    ) * voice.turnRate * 2;
+    voice.pos.x += cos(voice.heading) * step;
+    voice.pos.y += sin(voice.heading) * step;
+  },
+
+  advanceVoice(voice, step, now) {
+    switch (voice.type) {
+      case "kick": this.advanceKick(voice, step, now); break;
+      case "snare": this.advanceSnare(voice, step, now); break;
+      case "tom": this.advanceTom(voice, step, now); break;
+      case "hat": this.advanceHat(voice, step, now); break;
+      case "cymbal": this.advanceCymbal(voice, step, now); break;
+      default: this.advanceOther(voice, step, now); break;
+    }
+  },
+
   spawnVoice(note, velocity) {
     let vNorm = this.velocityNorm(velocity);
     let holdMs = this.params.midiPatternHoldMs * (0.75 + 0.6 * vNorm);
     let style = this.getVoiceStyle(note);
     let now = millis();
+    let spawnAngle = (note * 41 + this.nextVoiceId * 17) % 360;
+    let heading = style.type === "kick"
+      ? spawnAngle
+      : random(360) + style.headingKick;
 
     this.voices.push({
       id: this.nextVoiceId++,
@@ -210,8 +330,8 @@ const midiEngine = {
       color: style.color,
       radiusMin: style.radiusMin,
       radiusMax: style.radiusMax,
-      spawnAngle: (note * 41 + this.nextVoiceId * 17) % 360,
-      heading: random(360) + style.headingKick,
+      spawnAngle,
+      heading,
       startSpeed: style.startSpeed,
       endSpeed: style.endSpeed,
       turnRate: style.turnRate,
@@ -262,34 +382,18 @@ const midiEngine = {
       let eased = 1 - pow(phase, 1.5);
       let step = lerp(voice.endSpeed, voice.startSpeed, eased) * speedScale(voice);
 
-      if (voice.type === "kick") {
-        voice.heading += map(noise(now * 0.0008 + voice.id), 0, 1, -2, 2) * voice.turnRate;
-      } else if (voice.type === "snare") {
-        voice.heading += sin(now * 0.07 + voice.id) * voice.turnRate * 9;
-      } else if (voice.type === "tom") {
-        voice.heading += sin(now * 0.02 + voice.id) * voice.turnRate * 4.5;
-      } else if (voice.type === "hat") {
-        voice.heading += map(noise(now * 0.015 + voice.id), 0, 1, -1, 1) * voice.turnRate * 14;
-        step *= 1 + 0.2 * sin(now * 0.16 + voice.id);
-      } else if (voice.type === "cymbal") {
-        voice.heading += voice.turnRate * 1.2;
-        step *= 1 + 0.25 * sin(now * 0.01 + voice.id);
-      } else {
-        voice.heading += map(noise(now * 0.002 + voice.id), 0, 1, -1, 1) * voice.turnRate * 2;
-      }
-
-      voice.pos.x += cos(voice.heading) * step;
-      voice.pos.y += sin(voice.heading) * step;
+      this.advanceVoice(voice, step, now);
 
       let halfW = context.width / 2;
       let halfH = context.height / 2;
-      if (voice.pos.x < -halfW || voice.pos.x > halfW) {
-        voice.heading = 180 - voice.heading;
-        voice.pos.x = constrain(voice.pos.x, -halfW, halfW);
-      }
-      if (voice.pos.y < -halfH || voice.pos.y > halfH) {
-        voice.heading = -voice.heading;
-        voice.pos.y = constrain(voice.pos.y, -halfH, halfH);
+      if (voice.type !== "cymbal") {
+        this.applyBounds(voice, halfW, halfH);
+      } else {
+        let maxOrbit = min(halfW, halfH) * 0.88;
+        if (voice.orbitRadius > maxOrbit) {
+          voice.orbitRadius = maxOrbit;
+          voice.orbitDir *= -1;
+        }
       }
 
       voice.current.lerp(voice.pos, context.params.smoothing);
@@ -297,6 +401,7 @@ const midiEngine = {
       if (length < context.params.minSegmentLength) continue;
 
       let weight = map(length, 0, 10, context.params.thicknessMax, 1, true);
+      weight *= this.getTypeWeightMult(voice.type);
       segments.push({
         x1: voice.prev.x,
         y1: voice.prev.y,

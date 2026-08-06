@@ -44,3 +44,13 @@ Hold **Shift** for accent hits (velocity 127). These keys do not overlap with mo
 ### Radial spawn & velocity
 
 Each drum family spawns on its own ring from the center outward (kick near the middle, cymbals on the outer arc). **Velocity** controls motion speed and color brightness — not stroke thickness.
+
+Each drum type also has its own motion and stroke character:
+
+| Type | Look |
+|------|------|
+| Kick | Straight radial burst from center, heavy strokes |
+| Snare | Sharp zig-zag angles |
+| Tom | Bouncy paths with extra energy off the walls |
+| Hat | Tiny jittery scratches, thin strokes |
+| Cymbal | Expanding spiral arc on the outer ring |
