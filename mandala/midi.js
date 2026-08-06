@@ -5,24 +5,24 @@ const midiEngine = {
   nextVoiceId: 1,
   lastNote: null,
   lastVelocity: 0,
+  lastSource: null,
   status: "idle",
 
-  // QWERTY drum-pad layout (General MIDI note numbers).
   keyboardBindings: {
-    z: 36, // kick
-    x: 38, // snare
-    a: 43, // low tom
-    s: 40, // rim / alt snare
-    d: 45, // mid tom
-    f: 47, // high tom
-    g: 48, // floor tom
-    q: 49, // crash
-    w: 46, // open hi-hat
-    e: 42, // closed hi-hat
-    r: 51, // ride
-    t: 52, // china
-    y: 55, // splash
-    u: 57  // crash 2
+    z: 36,
+    x: 38,
+    a: 43,
+    s: 40,
+    d: 45,
+    f: 47,
+    g: 48,
+    q: 49,
+    w: 46,
+    e: 42,
+    r: 51,
+    t: 52,
+    y: 55,
+    u: 57
   },
 
   setParams(params) {
@@ -100,82 +100,21 @@ const midiEngine = {
     this.status = parts.join(" + ");
   },
 
-  getVoiceStyle(note) {
-    if (note === 35 || note === 36) {
-      return {
-        type: "kick",
-        startSpeed: 10,
-        endSpeed: 1.4,
-        turnRate: 0.15,
-        headingKick: random(-20, 20),
-        color: { r: 255, g: 80, b: 60 },
-        radiusMin: 0.02,
-        radiusMax: 0.09
-      };
-    }
-    if (note === 38 || note === 40) {
-      return {
-        type: "snare",
-        startSpeed: 9,
-        endSpeed: 0.7,
-        turnRate: 1,
-        headingKick: random([-120, -90, 90, 120]),
-        color: { r: 90, g: 180, b: 255 },
-        radiusMin: 0.14,
-        radiusMax: 0.24
-      };
-    }
-    if ([41, 43, 45, 47, 48, 50].includes(note)) {
-      return {
-        type: "tom",
-        startSpeed: 8,
-        endSpeed: 0.9,
-        turnRate: 0.7,
-        headingKick: random([-65, -40, 40, 65]),
-        color: { r: 120, g: 255, b: 140 },
-        radiusMin: 0.22,
-        radiusMax: 0.36
-      };
-    }
-    if ([42, 44, 46].includes(note)) {
-      return {
-        type: "hat",
-        startSpeed: 6,
-        endSpeed: 0.25,
-        turnRate: 1.2,
-        headingKick: random(-30, 30),
-        color: { r: 255, g: 245, b: 140 },
-        radiusMin: 0.34,
-        radiusMax: 0.48
-      };
-    }
-    if ([49, 51, 52, 55, 57, 59].includes(note)) {
-      return {
-        type: "cymbal",
-        startSpeed: 11,
-        endSpeed: 1.6,
-        turnRate: random([-1, 1]) * 0.8,
-        headingKick: random([-150, -110, 110, 150]),
-        color: { r: 210, g: 120, b: 255 },
-        radiusMin: 0.52,
-        radiusMax: 0.72
-      };
-    }
-
-    return {
-      type: "other",
-      startSpeed: 7,
-      endSpeed: 0.9,
-      turnRate: 0.5,
-      headingKick: random(-90, 90),
-      color: { r: 255, g: 200, b: 110 },
-      radiusMin: 0.26,
-      radiusMax: 0.42
-    };
-  },
-
   velocityNorm(velocity) {
     return constrain(velocity / 127, 0, 1);
+  },
+
+  noteRadiusFrac(note) {
+    return map(constrain(note, 0, 127), 0, 127, 0.02, 0.9);
+  },
+
+  notePaletteKey(note) {
+    return constrain(floor(map(note, 0, 127, 1, 9)), 1, 9);
+  },
+
+  noteColor(note) {
+    let key = this.notePaletteKey(note);
+    return this.params.multiLineColors[`k${key}`];
   },
 
   colorWithVelocity(color, vNorm) {
@@ -187,160 +126,50 @@ const midiEngine = {
     };
   },
 
-  radialSpawnPosition(voice, context) {
+  radialSpawnPosition(note, spawnAngle, context) {
     let half = min(context.width, context.height) / 2;
-    let radiusFrac = random(voice.radiusMin, voice.radiusMax);
-    let angle = voice.spawnAngle;
-    let r = half * radiusFrac;
-    return createVector(cos(angle) * r, sin(angle) * r);
+    let r = half * this.noteRadiusFrac(note);
+    return createVector(cos(spawnAngle) * r, sin(spawnAngle) * r);
   },
 
-  getTypeWeightMult(type) {
-    switch (type) {
-      case "kick": return 1.75;
-      case "snare": return 1.05;
-      case "tom": return 1.15;
-      case "hat": return 0.38;
-      case "cymbal": return 0.9;
-      default: return 1;
-    }
-  },
+  ensureVoiceLineStates(context) {
+    if (!context.createCurvyLineState) return;
 
-  applyBounds(voice, halfW, halfH) {
-    let bounced = false;
+    for (let voice of this.voices) {
+      if (voice.lineState) continue;
 
-    if (voice.pos.x < -halfW || voice.pos.x > halfW) {
-      voice.heading = 180 - voice.heading;
-      voice.pos.x = constrain(voice.pos.x, -halfW, halfW);
-      bounced = true;
-    }
-    if (voice.pos.y < -halfH || voice.pos.y > halfH) {
-      voice.heading = -voice.heading;
-      voice.pos.y = constrain(voice.pos.y, -halfH, halfH);
-      bounced = true;
-    }
-
-    if (bounced && voice.type === "tom") {
-      voice.heading += random(-35, 35);
-      voice.bounceBoost = 1.45;
-    }
-
-    return bounced;
-  },
-
-  advanceKick(voice, step, now) {
-    voice.heading = voice.spawnAngle + map(
-      noise(now * 0.001 + voice.id),
-      0,
-      1,
-      -5,
-      5
-    );
-    voice.pos.x += cos(voice.heading) * step;
-    voice.pos.y += sin(voice.heading) * step;
-  },
-
-  advanceSnare(voice, step, now) {
-    if (voice.zigNextMs === undefined) {
-      voice.zigNextMs = now;
-      voice.zigSign = random([-1, 1]);
-    }
-    if (now >= voice.zigNextMs) {
-      voice.heading += voice.zigSign * random(78, 118);
-      voice.zigSign *= -1;
-      voice.zigNextMs = now + random(30, 70);
-    }
-    voice.pos.x += cos(voice.heading) * step;
-    voice.pos.y += sin(voice.heading) * step;
-  },
-
-  advanceTom(voice, step, now) {
-    let boost = voice.bounceBoost || 1;
-    voice.bounceBoost = lerp(boost, 1, 0.18);
-    voice.heading += sin(now * 0.03 + voice.id) * 2.5;
-    voice.pos.x += cos(voice.heading) * step * boost;
-    voice.pos.y += sin(voice.heading) * step * boost;
-  },
-
-  advanceHat(voice, step, now) {
-    voice.heading += map(
-      noise(now * 0.05 + voice.id * 2.7),
-      0,
-      1,
-      -1,
-      1
-    ) * 62;
-    let scratch = step * 0.42;
-    voice.pos.x += cos(voice.heading) * scratch;
-    voice.pos.y += sin(voice.heading) * scratch;
-  },
-
-  advanceCymbal(voice, step, now) {
-    if (voice.orbitRadius === undefined) {
-      voice.orbitAngle = voice.spawnAngle;
-      voice.orbitRadius = max(8, voice.pos.mag());
-      voice.orbitDir = voice.turnRate >= 0 ? 1 : -1;
-    }
-
-    voice.orbitAngle += voice.orbitDir * (2.4 + voice.turnRate);
-    voice.orbitRadius += step * 0.14;
-    voice.pos.x = cos(voice.orbitAngle) * voice.orbitRadius;
-    voice.pos.y = sin(voice.orbitAngle) * voice.orbitRadius;
-  },
-
-  advanceOther(voice, step, now) {
-    voice.heading += map(
-      noise(now * 0.002 + voice.id),
-      0,
-      1,
-      -1,
-      1
-    ) * voice.turnRate * 2;
-    voice.pos.x += cos(voice.heading) * step;
-    voice.pos.y += sin(voice.heading) * step;
-  },
-
-  advanceVoice(voice, step, now) {
-    switch (voice.type) {
-      case "kick": this.advanceKick(voice, step, now); break;
-      case "snare": this.advanceSnare(voice, step, now); break;
-      case "tom": this.advanceTom(voice, step, now); break;
-      case "hat": this.advanceHat(voice, step, now); break;
-      case "cymbal": this.advanceCymbal(voice, step, now); break;
-      default: this.advanceOther(voice, step, now); break;
+      voice.lineState = context.createCurvyLineState();
+      let spawnPos = this.radialSpawnPosition(voice.note, voice.spawnAngle, context);
+      voice.lineState.curvyPos.set(spawnPos);
+      voice.lineState.prev.set(spawnPos);
+      voice.lineState.current.set(spawnPos);
     }
   },
 
   spawnVoice(note, velocity) {
     let vNorm = this.velocityNorm(velocity);
     let holdMs = this.params.midiPatternHoldMs * (0.75 + 0.6 * vNorm);
-    let style = this.getVoiceStyle(note);
     let now = millis();
     let spawnAngle = (note * 41 + this.nextVoiceId * 17) % 360;
-    let heading = style.type === "kick"
-      ? spawnAngle
-      : random(360) + style.headingKick;
 
     this.voices.push({
       id: this.nextVoiceId++,
       note,
       velocity,
       vNorm,
-      type: style.type,
-      color: style.color,
-      radiusMin: style.radiusMin,
-      radiusMax: style.radiusMax,
       spawnAngle,
-      heading,
-      startSpeed: style.startSpeed,
-      endSpeed: style.endSpeed,
-      turnRate: style.turnRate,
+      color: this.noteColor(note),
+      lineState: null,
+      justStarted: true,
       startMs: now,
-      untilMs: now + holdMs,
-      pos: null,
-      prev: null,
-      current: null
+      untilMs: now + holdMs
     });
+  },
+
+  getActiveLineStates() {
+    return this.voices
+      .filter((voice) => voice.lineState)
+      .map((voice) => voice.lineState);
   },
 
   isActive() {
@@ -362,55 +191,44 @@ const midiEngine = {
 
   getSegments(context) {
     if (!this.params || !this.params.midiEnabled) return [];
+    if (!context.getCurvyTarget || !context.createCurvyLineState) return [];
 
     this.pruneExpiredVoices();
     if (this.voices.length === 0) return [];
 
     let segments = [];
-    let now = millis();
-    let speedScale = (voice) => lerp(0.38, 1.15, voice.vNorm);
+    let speedScale = (vNorm) => lerp(0.38, 1.15, vNorm);
 
     for (let voice of this.voices) {
-      if (!voice.pos) {
-        voice.pos = this.radialSpawnPosition(voice, context);
-        voice.prev = voice.pos.copy();
-        voice.current = voice.pos.copy();
+      if (!voice.lineState) {
+        this.ensureVoiceLineStates(context);
       }
 
-      let life = max(1, voice.untilMs - voice.startMs);
-      let phase = constrain((now - voice.startMs) / life, 0, 1);
-      let eased = 1 - pow(phase, 1.5);
-      let step = lerp(voice.endSpeed, voice.startSpeed, eased) * speedScale(voice);
+      let prevPos = voice.lineState.curvyPos.copy();
+      context.getCurvyTarget(voice.lineState, voice.justStarted, voice.lineState.curvyPos.copy());
 
-      this.advanceVoice(voice, step, now);
-
-      let halfW = context.width / 2;
-      let halfH = context.height / 2;
-      if (voice.type !== "cymbal") {
-        this.applyBounds(voice, halfW, halfH);
-      } else {
-        let maxOrbit = min(halfW, halfH) * 0.88;
-        if (voice.orbitRadius > maxOrbit) {
-          voice.orbitRadius = maxOrbit;
-          voice.orbitDir *= -1;
-        }
+      if (!voice.justStarted) {
+        let mult = speedScale(voice.vNorm);
+        let moved = p5.Vector.sub(voice.lineState.curvyPos, prevPos);
+        voice.lineState.curvyPos = prevPos.copy().add(moved.mult(mult));
       }
 
-      voice.current.lerp(voice.pos, context.params.smoothing);
-      let length = p5.Vector.dist(voice.prev, voice.current);
+      voice.justStarted = false;
+
+      voice.lineState.current.lerp(voice.lineState.curvyPos, context.params.smoothing);
+      let length = p5.Vector.dist(voice.lineState.prev, voice.lineState.current);
       if (length < context.params.minSegmentLength) continue;
 
       let weight = map(length, 0, 10, context.params.thicknessMax, 1, true);
-      weight *= this.getTypeWeightMult(voice.type);
       segments.push({
-        x1: voice.prev.x,
-        y1: voice.prev.y,
-        x2: voice.current.x,
-        y2: voice.current.y,
+        x1: voice.lineState.prev.x,
+        y1: voice.lineState.prev.y,
+        x2: voice.lineState.current.x,
+        y2: voice.lineState.current.y,
         weight,
         color: this.colorWithVelocity(voice.color, voice.vNorm)
       });
-      voice.prev = voice.current.copy();
+      voice.lineState.prev = voice.lineState.current.copy();
     }
 
     return segments;

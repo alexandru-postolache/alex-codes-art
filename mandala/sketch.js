@@ -213,6 +213,7 @@ function appendStrokeForLine(lineState, active, justStarted, getTarget, colorOve
 
 function draw() {
   midiEngine.setParams(params);
+  midiEngine.ensureVoiceLineStates({ width, height, createCurvyLineState });
   updateBeatState();
   midiEngine.updateVisuals();
 
@@ -264,7 +265,9 @@ function draw() {
     mouseX,
     mouseY,
     width,
-    height
+    height,
+    getCurvyTarget,
+    createCurvyLineState
   });
 
   for (let segment of midiSegments) {
@@ -364,11 +367,20 @@ function trimTempoLineStatesForFrame(curvyCActive, heldDigits) {
   if (params.tempoEnabled) {
     for (let d of heldDigits) tempoLineStates.push(ensureKeyLineState(d));
   }
+  if (params.tempoEnabled && params.midiEnabled) {
+    for (let lineState of midiEngine.getActiveLineStates()) {
+      tempoLineStates.push(lineState);
+    }
+  }
 }
 
-function getCurvyTarget(state, justStarted) {
+function getCurvyTarget(state, justStarted, spawnPos) {
   if (justStarted) {
-    state.curvyPos.set(mouseX - width / 2, mouseY - height / 2);
+    if (spawnPos) {
+      state.curvyPos.set(spawnPos);
+    } else {
+      state.curvyPos.set(mouseX - width / 2, mouseY - height / 2);
+    }
     state.prev = state.curvyPos.copy();
     state.current = state.curvyPos.copy();
     state.curvyAngle = random(360);

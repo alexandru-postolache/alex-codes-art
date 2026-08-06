@@ -41,16 +41,6 @@ Enable **MIDI** and **Keyboard drum pad (QWERTY)** in the Tweakpane MIDI folder 
 
 Hold **Shift** for accent hits (velocity 127). These keys do not overlap with mouse drawing, `C` (curvy mode), or digit keys `1`–`9` (multi-line colors).
 
-### Radial spawn & velocity
+### MIDI notes
 
-Each drum family spawns on its own ring from the center outward (kick near the middle, cymbals on the outer arc). **Velocity** controls motion speed and color brightness — not stroke thickness.
-
-Each drum type also has its own motion and stroke character:
-
-| Type | Look |
-|------|------|
-| Kick | Straight radial burst from center, heavy strokes |
-| Snare | Sharp zig-zag angles |
-| Tom | Bouncy paths with extra energy off the walls |
-| Hat | Tiny jittery scratches, thin strokes |
-| Cymbal | Expanding spiral arc on the outer ring |
+MIDI voices use the **same curvy motion** (and tempo, when enabled) as the `C` key and digit keys `1`–`9`. Colors come from the **Multi-line keys** palette — note number maps to keys 1–9. Each note spawns on a ring from **2%** (lowest) to **90%** (highest) of the canvas radius. Velocity controls speed and brightness.
