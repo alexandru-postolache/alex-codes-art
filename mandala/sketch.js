@@ -77,15 +77,6 @@ let params = {
     k7: { r: 255, g: 100, b: 180 },
     k8: { r: 230, g: 230, b: 250 },
     k9: { r: 255, g: 245, b: 180 }
-  },
-
-  midiDrumColors: {
-    kick: { r: 255, g: 80, b: 60 },
-    snare: { r: 90, g: 180, b: 255 },
-    tom: { r: 120, g: 255, b: 140 },
-    hat: { r: 255, g: 245, b: 140 },
-    cymbal: { r: 210, g: 120, b: 255 },
-    other: { r: 255, g: 200, b: 110 }
   }
 };
 
@@ -128,12 +119,12 @@ function setup() {
   motionFolder.addInput(params, 'smoothing', { min: 0.05, max: 0.5, step: 0.01 });
   motionFolder.addInput(params, 'thicknessMax', { min: 1, max: 20, step: 0.5 });
   motionFolder.addInput(params, 'curvyEnabled', {
-    label: 'Curvy (C + keys 1–9)'
+    label: 'Draw with keyboard (C + 1–9)'
   });
-  motionFolder.addInput(params, 'curvyBaseSpeed', { min: 0.5, max: 12, step: 0.1 });
-  motionFolder.addInput(params, 'curvySpeedVariation', { min: 0, max: 10, step: 0.1 });
-  motionFolder.addInput(params, 'curvyPulseRate', { min: 0.2, max: 6, step: 0.1 });
-  motionFolder.addInput(params, 'curvyTurnRate', { min: 0.2, max: 8, step: 0.1 });
+  motionFolder.addInput(params, 'curvyBaseSpeed', { label: 'Auto-draw base speed', min: 0.5, max: 12, step: 0.1 });
+  motionFolder.addInput(params, 'curvySpeedVariation', { label: 'Auto-draw speed variation', min: 0, max: 10, step: 0.1 });
+  motionFolder.addInput(params, 'curvyPulseRate', { label: 'Auto-draw pulse rate', min: 0.2, max: 6, step: 0.1 });
+  motionFolder.addInput(params, 'curvyTurnRate', { label: 'Auto-draw turn rate', min: 0.2, max: 8, step: 0.1 });
 
   tempoFolder.addInput(params, 'tempoEnabled');
   tempoFolder.addInput(params, 'tempo', { min: 40, max: 220, step: 1 });
@@ -144,7 +135,7 @@ function setup() {
   midiFolder.addInput(params, 'midiEnabled');
   midiFolder.addInput(params, 'midiMode', {
     label: 'Mode',
-    options: { Notes: 'notes', Drums: 'drums' }
+    options: { 'Auto-draw': 'notes', Drums: 'drums' }
   });
   midiFolder.addInput(params, 'midiKeyboardEnabled', {
     label: 'Keyboard drum pad (QWERTY)'
@@ -152,22 +143,6 @@ function setup() {
   midiFolder.addInput(params, 'midiPatternHoldMs', { min: 120, max: 1200, step: 10 });
   midiFolder.addInput(params, 'midiDebugHud');
   midiFolder.addButton({ title: 'Connect MIDI' }).on('click', () => midiEngine.init());
-
-  const midiDrumsFolder = midiFolder.addFolder({ title: 'Drum colors', expanded: false });
-  const drumColorLabels = {
-    kick: 'Kick',
-    snare: 'Snare',
-    tom: 'Tom',
-    hat: 'Hi-hat',
-    cymbal: 'Cymbal',
-    other: 'Other'
-  };
-  for (let drumKey of Object.keys(params.midiDrumColors)) {
-    midiDrumsFolder.addInput(params.midiDrumColors, drumKey, {
-      label: drumColorLabels[drumKey],
-      view: 'color'
-    });
-  }
 
   trailFolder.addInput(params, 'fadeEnabled');
   trailFolder.addInput(params, 'fadeAmount', { min: 0, max: 100, step: 1 });

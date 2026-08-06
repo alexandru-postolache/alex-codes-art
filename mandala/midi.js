@@ -121,6 +121,22 @@ const midiEngine = {
     return this.params.multiLineColors[`k${key}`];
   },
 
+  drumPaletteKey(type) {
+    switch (type) {
+      case "kick": return 1;
+      case "snare": return 2;
+      case "tom": return 3;
+      case "hat": return 4;
+      case "cymbal": return 5;
+      default: return 6;
+    }
+  },
+
+  drumColor(type) {
+    let key = this.drumPaletteKey(type);
+    return this.params.multiLineColors[`k${key}`];
+  },
+
   getDrumProfile(note) {
     let type = "other";
     let radiusMin = 0.26;
@@ -151,7 +167,7 @@ const midiEngine = {
     return {
       type,
       label: type,
-      color: this.params.midiDrumColors[type],
+      color: this.drumColor(type),
       radiusMin,
       radiusMax
     };
@@ -307,7 +323,7 @@ const midiEngine = {
     let sourceText = this.lastSource || "-";
     let enabledText = this.params && this.params.midiEnabled ? "on" : "off";
     let keyboardText = this.params && this.params.midiKeyboardEnabled ? "on" : "off";
-    let modeText = this.params && this.params.midiMode === "drums" ? "drums" : "notes";
+    let modeText = this.params && this.params.midiMode === "drums" ? "drums" : "auto-draw";
     let hudHeight = this.params && this.params.midiKeyboardEnabled ? 148 : 112;
 
     push();
@@ -325,7 +341,7 @@ const midiEngine = {
       text("Keys: Z kick  X snare  ASDFG toms  QWE ride/hats  RTY cymbals", 20, 92);
       text("Hold Shift for accent (velocity 127)", 20, 110);
       if (this.isDrumMode()) {
-        text("Drums mode: color + spawn ring per drum family", 20, 128);
+        text("Drums mode: spawn ring per family, keys 1-6 colors", 20, 128);
       }
     }
     pop();

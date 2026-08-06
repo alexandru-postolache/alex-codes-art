@@ -39,13 +39,13 @@ Enable **MIDI** and **Keyboard drum pad (QWERTY)** in the Tweakpane MIDI folder 
 | Q / W / E | Crash / open hat / closed hat |
 | R / T / Y / U | Ride / china / splash / crash 2 |
 
-Hold **Shift** for accent hits (velocity 127). These keys do not overlap with mouse drawing, `C` (curvy mode), or digit keys `1`–`9` (multi-line colors).
+Hold **Shift** for accent hits (velocity 127). These keys do not overlap with mouse drawing, **Draw with keyboard** (`C` + `1`–`9`), or the auto-draw motion sliders.
 
 ### MIDI modes
 
 In Tweakpane → **MIDI** → **Mode**:
 
-- **Notes** (default) — curvy motion settings, multi-line key colors (note maps to keys 1–9), spawn radius 2%–90% by pitch.
-- **Drums** — same curvy motion, but General MIDI drum notes map to **drum families** with fixed colors and spawn rings (kick near center, cymbals on the outer arc). Customize colors under **Drum colors**.
+- **Auto-draw** (default) — auto-draw motion settings, multi-line key colors (note maps to keys 1–9), spawn radius 2%–90% by pitch.
+- **Drums** — same auto-draw motion, but General MIDI drum notes map to **drum families** with spawn rings (kick near center, cymbals on the outer arc). Colors use the multi-line palette: kick → key 1, snare → 2, tom → 3, hi-hat → 4, cymbal → 5, other → 6.
 
 Velocity controls speed and brightness in both modes.
