@@ -50,6 +50,7 @@ let params = {
   tempoSubdivisionChance: 0.35,
   tempoPauseChance: 0.15,
   midiEnabled: false,
+  midiMode: 'notes',
   midiKeyboardEnabled: true,
   midiPatternHoldMs: 320,
   midiDebugHud: true,
@@ -76,6 +77,15 @@ let params = {
     k7: { r: 255, g: 100, b: 180 },
     k8: { r: 230, g: 230, b: 250 },
     k9: { r: 255, g: 245, b: 180 }
+  },
+
+  midiDrumColors: {
+    kick: { r: 255, g: 80, b: 60 },
+    snare: { r: 90, g: 180, b: 255 },
+    tom: { r: 120, g: 255, b: 140 },
+    hat: { r: 255, g: 245, b: 140 },
+    cymbal: { r: 210, g: 120, b: 255 },
+    other: { r: 255, g: 200, b: 110 }
   }
 };
 
@@ -132,12 +142,32 @@ function setup() {
   tempoFolder.addInput(params, 'tempoPauseChance', { min: 0, max: 1, step: 0.05 });
 
   midiFolder.addInput(params, 'midiEnabled');
+  midiFolder.addInput(params, 'midiMode', {
+    label: 'Mode',
+    options: { Notes: 'notes', Drums: 'drums' }
+  });
   midiFolder.addInput(params, 'midiKeyboardEnabled', {
     label: 'Keyboard drum pad (QWERTY)'
   });
   midiFolder.addInput(params, 'midiPatternHoldMs', { min: 120, max: 1200, step: 10 });
   midiFolder.addInput(params, 'midiDebugHud');
   midiFolder.addButton({ title: 'Connect MIDI' }).on('click', () => midiEngine.init());
+
+  const midiDrumsFolder = midiFolder.addFolder({ title: 'Drum colors', expanded: false });
+  const drumColorLabels = {
+    kick: 'Kick',
+    snare: 'Snare',
+    tom: 'Tom',
+    hat: 'Hi-hat',
+    cymbal: 'Cymbal',
+    other: 'Other'
+  };
+  for (let drumKey of Object.keys(params.midiDrumColors)) {
+    midiDrumsFolder.addInput(params.midiDrumColors, drumKey, {
+      label: drumColorLabels[drumKey],
+      view: 'color'
+    });
+  }
 
   trailFolder.addInput(params, 'fadeEnabled');
   trailFolder.addInput(params, 'fadeAmount', { min: 0, max: 100, step: 1 });

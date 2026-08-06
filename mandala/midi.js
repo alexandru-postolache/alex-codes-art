@@ -30,6 +30,10 @@ const midiEngine = {
     this.refreshStatus();
   },
 
+  isDrumMode() {
+    return !!(this.params && this.params.midiMode === "drums");
+  },
+
   init() {
     if (!navigator.requestMIDIAccess) {
       this.status = "Web MIDI unavailable";
@@ -117,6 +121,55 @@ const midiEngine = {
     return this.params.multiLineColors[`k${key}`];
   },
 
+  getDrumProfile(note) {
+    let type = "other";
+    let radiusMin = 0.26;
+    let radiusMax = 0.42;
+
+    if (note === 35 || note === 36) {
+      type = "kick";
+      radiusMin = 0.02;
+      radiusMax = 0.09;
+    } else if (note === 38 || note === 40) {
+      type = "snare";
+      radiusMin = 0.14;
+      radiusMax = 0.24;
+    } else if ([41, 43, 45, 47, 48, 50].includes(note)) {
+      type = "tom";
+      radiusMin = 0.22;
+      radiusMax = 0.36;
+    } else if ([42, 44, 46].includes(note)) {
+      type = "hat";
+      radiusMin = 0.34;
+      radiusMax = 0.48;
+    } else if ([49, 51, 52, 55, 57, 59].includes(note)) {
+      type = "cymbal";
+      radiusMin = 0.52;
+      radiusMax = 0.72;
+    }
+
+    return {
+      type,
+      label: type,
+      color: this.params.midiDrumColors[type],
+      radiusMin,
+      radiusMax
+    };
+  },
+
+  resolveVoiceStyle(note) {
+    if (this.isDrumMode()) {
+      return this.getDrumProfile(note);
+    }
+
+    return {
+      type: "note",
+      label: "note",
+      color: this.noteColor(note),
+      radiusFrac: this.noteRadiusFrac(note)
+    };
+  },
+
   colorWithVelocity(color, vNorm) {
     let brightness = lerp(0.32, 1, vNorm);
     return {
@@ -126,10 +179,13 @@ const midiEngine = {
     };
   },
 
-  radialSpawnPosition(note, spawnAngle, context) {
+  radialSpawnPosition(voice, context) {
     let half = min(context.width, context.height) / 2;
-    let r = half * this.noteRadiusFrac(note);
-    return createVector(cos(spawnAngle) * r, sin(spawnAngle) * r);
+    let radiusFrac = voice.radiusFrac !== undefined
+      ? voice.radiusFrac
+      : random(voice.radiusMin, voice.radiusMax);
+    let r = half * radiusFrac;
+    return createVector(cos(voice.spawnAngle) * r, sin(voice.spawnAngle) * r);
   },
 
   ensureVoiceLineStates(context) {
@@ -139,7 +195,7 @@ const midiEngine = {
       if (voice.lineState) continue;
 
       voice.lineState = context.createCurvyLineState();
-      let spawnPos = this.radialSpawnPosition(voice.note, voice.spawnAngle, context);
+      let spawnPos = this.radialSpawnPosition(voice, context);
       voice.lineState.curvyPos.set(spawnPos);
       voice.lineState.prev.set(spawnPos);
       voice.lineState.current.set(spawnPos);
@@ -149,6 +205,7 @@ const midiEngine = {
   spawnVoice(note, velocity) {
     let vNorm = this.velocityNorm(velocity);
     let holdMs = this.params.midiPatternHoldMs * (0.75 + 0.6 * vNorm);
+    let style = this.resolveVoiceStyle(note);
     let now = millis();
     let spawnAngle = (note * 41 + this.nextVoiceId * 17) % 360;
 
@@ -158,7 +215,12 @@ const midiEngine = {
       velocity,
       vNorm,
       spawnAngle,
-      color: this.noteColor(note),
+      drumType: style.type,
+      drumLabel: style.label,
+      color: style.color,
+      radiusFrac: style.radiusFrac,
+      radiusMin: style.radiusMin,
+      radiusMax: style.radiusMax,
       lineState: null,
       justStarted: true,
       startMs: now,
@@ -245,7 +307,8 @@ const midiEngine = {
     let sourceText = this.lastSource || "-";
     let enabledText = this.params && this.params.midiEnabled ? "on" : "off";
     let keyboardText = this.params && this.params.midiKeyboardEnabled ? "on" : "off";
-    let hudHeight = this.params && this.params.midiKeyboardEnabled ? 130 : 94;
+    let modeText = this.params && this.params.midiMode === "drums" ? "drums" : "notes";
+    let hudHeight = this.params && this.params.midiKeyboardEnabled ? 148 : 112;
 
     push();
     noStroke();
@@ -255,12 +318,15 @@ const midiEngine = {
     textSize(12);
     textAlign(LEFT, TOP);
     text(`MIDI: ${this.status}`, 20, 20);
-    text(`Enabled: ${enabledText}  Inputs: ${this.inputCount}  Keys: ${keyboardText}`, 20, 38);
+    text(`Enabled: ${enabledText}  Mode: ${modeText}  Keys: ${keyboardText}`, 20, 38);
     text(`Last note: ${noteText}  vel: ${velText}  src: ${sourceText}`, 20, 56);
     text(`Active voices: ${this.voices.length}`, 20, 74);
     if (this.params && this.params.midiKeyboardEnabled) {
       text("Keys: Z kick  X snare  ASDFG toms  QWE ride/hats  RTY cymbals", 20, 92);
       text("Hold Shift for accent (velocity 127)", 20, 110);
+      if (this.isDrumMode()) {
+        text("Drums mode: color + spawn ring per drum family", 20, 128);
+      }
     }
     pop();
   }
