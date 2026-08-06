@@ -50,6 +50,7 @@ let params = {
   tempoSubdivisionChance: 0.35,
   tempoPauseChance: 0.15,
   midiEnabled: false,
+  midiKeyboardEnabled: true,
   midiPatternHoldMs: 320,
   midiDebugHud: true,
   fadeEnabled: true,
@@ -131,6 +132,9 @@ function setup() {
   tempoFolder.addInput(params, 'tempoPauseChance', { min: 0, max: 1, step: 0.05 });
 
   midiFolder.addInput(params, 'midiEnabled');
+  midiFolder.addInput(params, 'midiKeyboardEnabled', {
+    label: 'Keyboard drum pad (QWERTY)'
+  });
   midiFolder.addInput(params, 'midiPatternHoldMs', { min: 120, max: 1200, step: 10 });
   midiFolder.addInput(params, 'midiDebugHud');
   midiFolder.addButton({ title: 'Connect MIDI' }).on('click', () => midiEngine.init());
@@ -161,6 +165,7 @@ function setup() {
   pane.addButton({ title: 'Clear' }).on('click', clearMandala);
   pane.addButton({ title: 'Save' }).on('click', saveMandala);
 
+  midiEngine.setParams(params);
   updateSymmetry();
 }
 
@@ -326,7 +331,12 @@ function isPointerOverPane() {
 function keyPressed() {
   if (key === 'h') {
     pane.hidden = !pane.hidden;
+    return;
   }
+
+  if (isPointerOverPane()) return;
+
+  midiEngine.handleKeyboardPress(key, { shiftKey: keyIsDown(SHIFT) });
 }
 
 // --- Helpers ---

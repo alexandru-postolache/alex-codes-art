@@ -7,8 +7,27 @@ const midiEngine = {
   lastVelocity: 0,
   status: "idle",
 
+  // QWERTY drum-pad layout (General MIDI note numbers).
+  keyboardBindings: {
+    z: 36, // kick
+    x: 38, // snare
+    a: 43, // low tom
+    s: 40, // rim / alt snare
+    d: 45, // mid tom
+    f: 47, // high tom
+    g: 48, // floor tom
+    q: 49, // crash
+    w: 46, // open hi-hat
+    e: 42, // closed hi-hat
+    r: 51, // ride
+    t: 52, // china
+    y: 55, // splash
+    u: 57  // crash 2
+  },
+
   setParams(params) {
     this.params = params;
+    this.refreshStatus();
   },
 
   init() {
@@ -22,7 +41,6 @@ const midiEngine = {
         this.access = access;
         this.access.onstatechange = () => this.refreshInputs();
         this.refreshInputs();
-        this.status = "connected";
       })
       .catch((err) => {
         this.status = "midi error";
@@ -37,7 +55,7 @@ const midiEngine = {
       input.onmidimessage = (event) => this.handleMessage(event);
       this.inputCount++;
     }
-    this.status = this.inputCount > 0 ? "listening" : "no inputs";
+    this.refreshStatus();
   },
 
   handleMessage(event) {
@@ -47,9 +65,39 @@ const midiEngine = {
     let command = status & 0xf0;
     if (command !== 0x90 || velocity === 0) return;
 
+    this.noteOn(note, velocity, "hardware");
+  },
+
+  handleKeyboardPress(key, modifiers = {}) {
+    if (!this.params || !this.params.midiEnabled || !this.params.midiKeyboardEnabled) {
+      return false;
+    }
+
+    let note = this.keyboardBindings[key.toLowerCase()];
+    if (note === undefined) return false;
+
+    let velocity = modifiers.shiftKey ? 127 : floor(random(88, 112));
+    this.noteOn(note, velocity, "keyboard");
+    return true;
+  },
+
+  noteOn(note, velocity, source) {
     this.lastNote = note;
     this.lastVelocity = velocity;
+    this.lastSource = source;
     this.spawnVoice(note, velocity);
+    this.refreshStatus();
+  },
+
+  refreshStatus() {
+    let parts = [];
+    if (this.inputCount > 0) parts.push("listening");
+    if (this.params && this.params.midiKeyboardEnabled) parts.push("keyboard");
+    if (parts.length === 0) {
+      this.status = this.access ? "no inputs" : "idle";
+      return;
+    }
+    this.status = parts.join(" + ");
   },
 
   getVoiceStyle(note, vNorm) {
@@ -233,19 +281,26 @@ const midiEngine = {
   drawDebugHud() {
     let noteText = this.lastNote === null ? "-" : this.lastNote;
     let velText = this.lastNote === null ? "-" : this.lastVelocity;
+    let sourceText = this.lastSource || "-";
     let enabledText = this.params && this.params.midiEnabled ? "on" : "off";
+    let keyboardText = this.params && this.params.midiKeyboardEnabled ? "on" : "off";
+    let hudHeight = this.params && this.params.midiKeyboardEnabled ? 130 : 94;
 
     push();
     noStroke();
     fill(0, 150);
-    rect(12, 12, 290, 94, 8);
+    rect(12, 12, 320, hudHeight, 8);
     fill(255);
     textSize(12);
     textAlign(LEFT, TOP);
     text(`MIDI: ${this.status}`, 20, 20);
-    text(`Enabled: ${enabledText}  Inputs: ${this.inputCount}`, 20, 38);
-    text(`Last note: ${noteText}  vel: ${velText}`, 20, 56);
+    text(`Enabled: ${enabledText}  Inputs: ${this.inputCount}  Keys: ${keyboardText}`, 20, 38);
+    text(`Last note: ${noteText}  vel: ${velText}  src: ${sourceText}`, 20, 56);
     text(`Active voices: ${this.voices.length}`, 20, 74);
+    if (this.params && this.params.midiKeyboardEnabled) {
+      text("Keys: Z kick  X snare  ASDFG toms  QWE ride/hats  RTY cymbals", 20, 92);
+      text("Hold Shift for accent (velocity 127)", 20, 110);
+    }
     pop();
   }
 };
