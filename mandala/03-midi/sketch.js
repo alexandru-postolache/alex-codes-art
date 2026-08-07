@@ -50,6 +50,8 @@ let params = {
   tempoSubdivisionChance: 0.35,
   tempoPauseChance: 0.15,
   midiEnabled: false,
+  midiMode: 'notes',
+  midiKeyboardEnabled: true,
   midiPatternHoldMs: 320,
   midiDebugHud: true,
   fadeEnabled: true,
@@ -100,6 +102,7 @@ function setup() {
   // --- Tweakpane ---
   pane = new Tweakpane.Pane({ title: 'Mandala — MIDI' });
   paneContainer = pane.element;
+  paneContainer.classList.add('mandala-pane');
 
   const motionFolder = pane.addFolder({ title: 'Motion', expanded: true });
   const tempoFolder = pane.addFolder({ title: 'Tempo', expanded: false });
@@ -117,12 +120,12 @@ function setup() {
   motionFolder.addInput(params, 'smoothing', { min: 0.05, max: 0.5, step: 0.01 });
   motionFolder.addInput(params, 'thicknessMax', { min: 1, max: 20, step: 0.5 });
   motionFolder.addInput(params, 'curvyEnabled', {
-    label: 'Curvy (C + keys 1–9)'
+    label: 'Draw with keyboard (C + 1–9)'
   });
-  motionFolder.addInput(params, 'curvyBaseSpeed', { min: 0.5, max: 12, step: 0.1 });
-  motionFolder.addInput(params, 'curvySpeedVariation', { min: 0, max: 10, step: 0.1 });
-  motionFolder.addInput(params, 'curvyPulseRate', { min: 0.2, max: 6, step: 0.1 });
-  motionFolder.addInput(params, 'curvyTurnRate', { min: 0.2, max: 8, step: 0.1 });
+  motionFolder.addInput(params, 'curvyBaseSpeed', { label: 'Auto-draw base speed', min: 0.5, max: 12, step: 0.1 });
+  motionFolder.addInput(params, 'curvySpeedVariation', { label: 'Auto-draw speed variation', min: 0, max: 10, step: 0.1 });
+  motionFolder.addInput(params, 'curvyPulseRate', { label: 'Auto-draw pulse rate', min: 0.2, max: 6, step: 0.1 });
+  motionFolder.addInput(params, 'curvyTurnRate', { label: 'Auto-draw turn rate', min: 0.2, max: 8, step: 0.1 });
 
   tempoFolder.addInput(params, 'tempoEnabled');
   tempoFolder.addInput(params, 'tempo', { min: 40, max: 220, step: 1 });
@@ -131,6 +134,13 @@ function setup() {
   tempoFolder.addInput(params, 'tempoPauseChance', { min: 0, max: 1, step: 0.05 });
 
   midiFolder.addInput(params, 'midiEnabled');
+  midiFolder.addInput(params, 'midiMode', {
+    label: 'Mode',
+    options: { 'Auto-draw': 'notes', Drums: 'drums' }
+  });
+  midiFolder.addInput(params, 'midiKeyboardEnabled', {
+    label: 'Keyboard drum pad (QWERTY)'
+  });
   midiFolder.addInput(params, 'midiPatternHoldMs', { min: 120, max: 1200, step: 10 });
   midiFolder.addInput(params, 'midiDebugHud');
   midiFolder.addButton({ title: 'Connect MIDI' }).on('click', () => midiEngine.init());
@@ -161,6 +171,7 @@ function setup() {
   pane.addButton({ title: 'Clear' }).on('click', clearMandala);
   pane.addButton({ title: 'Save' }).on('click', saveMandala);
 
+  midiEngine.setParams(params);
   updateSymmetry();
 }
 
@@ -208,6 +219,7 @@ function appendStrokeForLine(lineState, active, justStarted, getTarget, colorOve
 
 function draw() {
   midiEngine.setParams(params);
+  midiEngine.ensureVoiceLineStates({ width, height, createCurvyLineState });
   updateBeatState();
   midiEngine.updateVisuals();
 
@@ -259,7 +271,9 @@ function draw() {
     mouseX,
     mouseY,
     width,
-    height
+    height,
+    getCurvyTarget,
+    createCurvyLineState
   });
 
   for (let segment of midiSegments) {
@@ -326,7 +340,12 @@ function isPointerOverPane() {
 function keyPressed() {
   if (key === 'h') {
     pane.hidden = !pane.hidden;
+    return;
   }
+
+  if (isPointerOverPane()) return;
+
+  midiEngine.handleKeyboardPress(key, { shiftKey: keyIsDown(SHIFT) });
 }
 
 // --- Helpers ---
@@ -356,20 +375,26 @@ function trimTempoLineStatesForFrame(curvyCActive, heldDigits) {
   }
 }
 
-function getCurvyTarget(state, justStarted) {
+function getCurvyTarget(state, justStarted, spawnPos, useTempo) {
+  let tempoActive = useTempo === undefined ? params.tempoEnabled : useTempo;
+
   if (justStarted) {
-    state.curvyPos.set(mouseX - width / 2, mouseY - height / 2);
+    if (spawnPos) {
+      state.curvyPos.set(spawnPos);
+    } else {
+      state.curvyPos.set(mouseX - width / 2, mouseY - height / 2);
+    }
     state.prev = state.curvyPos.copy();
     state.current = state.curvyPos.copy();
     state.curvyAngle = random(360);
     state.beatHeading = state.curvyAngle;
     state.curvyTime = random(1000);
-    if (params.tempoEnabled) {
+    if (tempoActive) {
       pickNextBeatSegment(state, true);
     }
   }
 
-  if (params.tempoEnabled) {
+  if (tempoActive) {
     return getTempoCurvyTarget(state);
   }
 

@@ -1,20 +1,22 @@
-# Mandala Maker Part 3: Web MIDI & Tempo-Driven Motion — A p5.js Tutorial
+# Mandala Maker Part 3: Web MIDI, Auto-Draw & Tempo — A p5.js Tutorial
 
-Hello and welcome back to another exciting tutorial about creative coding and generative art! In [part 1](https://github.com/alexandru-postolache/alex-codes-art/tree/main/mandala/01-basic-sketch) we built a symmetrical mandala with smoothing, speed-based thickness, and [Tweakpane](https://tweakpane.github.io/docs/?ref=alexcodesart.com). In [part 2](https://github.com/alexandru-postolache/alex-codes-art/tree/main/mandala/02-fade-keys) we added fading trails, curvy motion with Perlin noise, and parallel colored lines on keys `1`–`9`.
+Hello and welcome back to another exciting tutorial about creative coding and generative art! In [part 1](https://github.com/alexandru-postolache/alex-codes-art/tree/main/mandala/01-basic-sketch) we built a symmetrical mandala with smoothing, speed-based thickness, and [Tweakpane](https://tweakpane.github.io/docs/?ref=alexcodesart.com). In [part 2](https://github.com/alexandru-postolache/alex-codes-art/tree/main/mandala/02-fade-keys) we added fading trails, draw-with-keyboard auto-draw motion, and parallel colored lines on keys `1`–`9`.
 
-Today we're finishing the series with two big ideas:
+Today we're finishing the series with three big ideas:
 
-1. Tempo-driven motion — curvy strokes that breathe with a BPM clock, including pauses and subdivisions.
-2. Web MIDI — connect a drum pad or keyboard and every note spawns its own wandering voice into the mandala.
+1. **Tempo-driven motion** — auto-draw strokes on `C` and digit keys that breathe with a BPM clock, including pauses and subdivisions.
+2. **Web MIDI** — connect a drum pad or keyboard and every note spawns its own wandering voice into the mandala.
+3. **Two MIDI modes** — **Auto-draw** maps pitch to color and spawn radius, while **Drums** maps General MIDI drum families to fixed rings on the mandala.
 
-This tutorial is perfect if you've followed parts 1 and 2, or you're comfortable with `createGraphics()` and want to explore browser MIDI and rhythm in visual art.
+This tutorial is perfect if you've followed parts 1 and 2, or you're comfortable with `createGraphics()` and want to explore browser MIDI in visual art.
 
 By the end of this article, you will:
 
-- drive curvy lines from a tempo clock with beat phases, pauses, and subdivisions
-- map BPM to segment speed and heading changes with `updateBeatState()` and `getTempoCurvyTarget()`
+- drive auto-draw lines from a tempo clock with beat phases, pauses, and subdivisions
 - connect hardware through the [Web MIDI API](https://developer.mozilla.org/en-US/docs/Web/API/Web_MIDI_API?ref=alexcodesart.com) with `navigator.requestMIDIAccess()`
-- spawn polyphonic drawing voices from note-on messages, each with its own color and motion style
+- simulate drum hits from the QWERTY keyboard when no pad is plugged in
+- spawn polyphonic MIDI voices that reuse the same auto-draw motion as keys `1`–`9`
+- switch between pitch-based and drum-family MIDI mapping
 - keep MIDI logic separate in a `midiEngine` module so the sketch stays readable
 
 Before you start this tutorial, consider signing up to get future articles like this sent straight to your inbox.
@@ -35,22 +37,35 @@ Let's dive in.
 
 ## What We're Adding (Part 2 Recap + Delta)
 
-If you open `mandala/03-midi/` next to `02-fade-keys/`, the symmetry math, trail fading, curvy keys, and `appendStrokeForLine()` pipeline are all still there. We're still in center coordinates, still mirroring wedges, still replaying segment history when fade is on.
+If you open `mandala/03-midi/` next to `02-fade-keys/`, the symmetry math, trail fading, draw-with-keyboard lines, and `appendStrokeForLine()` pipeline are all still there. We're still in center coordinates, still mirroring wedges, still replaying segment history when fade is on.
 
 What's new in this chapter:
 
-- A Tempo folder in Tweakpane — BPM, impact, subdivision chance, and pause chance.
-- Beat-aware curvy motion — when tempo is enabled, wandering lines follow beat segments instead of free noise.
-- `midi.js` — a small `midiEngine` object that listens for MIDI note-ons and returns drawing segments each frame.
-- Drum-style voice mapping — kick, snare, tom, hi-hat, and cymbal notes each get their own speed, turn behavior, and color.
+- A **Tempo** folder in Tweakpane — BPM, impact, subdivision chance, and pause chance.
+- Beat-aware auto-draw motion — when tempo is enabled, lines on `C` and keys `1`–`9` follow beat segments instead of free noise.
+- **`midi.js`** — a small `midiEngine` object that listens for MIDI note-ons and returns drawing segments each frame.
+- **MIDI Auto-draw mode** — pitch maps to multi-line key colors and a spawn radius from 2% to 90%.
+- **MIDI Drums mode** — kick, snare, tom, hi-hat, and cymbal notes each spawn on their own ring, using keys `1`–`6` from the multi-line palette.
+- **Keyboard drum pad** — try MIDI without hardware using mapped QWERTY keys.
+- **Full-viewport layout** — the canvas fills the screen and the control panel stays fixed without a page scrollbar.
 
 That's the high-level picture. Let's break it down step by step.
 
 ---
 
-## Tempo: Beats That Steer Curvy Motion
+## Draw With Keyboard & Auto-Draw Motion
 
-In part 2, curvy lines wandered using `noise()` and a sine pulse — organic, but not tied to rhythm. Part 3 adds an optional tempo clock so motion can feel musical: fast bursts on the beat, gentle coasts between them, occasional rests.
+In part 2 we called this "curvy mode." In the final sketch the Motion folder label is **Draw with keyboard (C + 1–9)**, and the speed sliders are grouped as **Auto-draw** settings — same idea, clearer name.
+
+Hold **`C`** (when enabled) or digit keys **`1`**–**`9`** and each line wanders using `noise()`, a sine pulse, and soft edge bouncing via `getCurvyTarget()`. The multi-line palette in Tweakpane still assigns a color per digit key.
+
+MIDI voices reuse that same motion path — they call `getCurvyTarget()` with `useTempo` set to `false`, so pad hits always use the free noise wander even when tempo is on for keyboard lines. Nice separation!
+
+---
+
+## Tempo: Beats That Steer Keyboard Auto-Draw
+
+In part 2, auto-draw lines wandered every frame with Perlin noise — organic, but not tied to rhythm. Part 3 adds an optional tempo clock so motion on `C` and digit keys can feel musical: fast bursts on the beat, gentle coasts between them, occasional rests.
 
 We track beat timing with a few globals:
 
@@ -78,7 +93,7 @@ Here's what happens inside `updateBeatState()`:
 - `beatPhase` becomes a 0–1 value between the last beat and the next — handy if you extend the sketch with visual pulses later.
 - Subdivisions split a beat into 2 or 4 smaller events when `tempoSubdivisionChance` rolls in your favor.
 
-When a beat (or sub-beat) fires, `triggerBeatModulation()` walks every active line in `tempoLineStates` — the main curvy line on `C`, plus any digit-key lines currently held — and either pauses them or picks a new beat segment:
+When a beat (or sub-beat) fires, `triggerBeatModulation()` walks every active line in `tempoLineStates` — the main line on `C`, plus any digit-key lines currently held — and either pauses them or picks a new beat segment:
 
 ```
 function triggerBeatModulation(segmentMs) {
@@ -104,38 +119,7 @@ function triggerBeatModulation(segmentMs) {
 
 Concept: instead of turning every frame with noise, we plan short motion segments aligned to the clock. Pauses are simply "don't move until `pauseUntilMs`." Subdivisions add extra heading and speed changes mid-beat for syncopated scribbles.
 
-`pickNextBeatSegment()` chooses a new heading and speed pair for the current beat window:
-
-```
-function pickNextBeatSegment(state, isFirstSegment) {
-  let impact = params.tempoImpact;
-
-  if (isFirstSegment) {
-    state.beatHeading = state.curvyAngle;
-  } else {
-    let dirSign = beatIndex % 2 === 0 ? 1 : -1;
-    let turnAmount = random(45, 165) * (0.35 + impact);
-    state.beatHeading += dirSign * turnAmount;
-  }
-
-  let speedBoost = 1 + random(0.6, 1.8) * impact;
-  state.beatStartSpeed =
-    (params.curvyBaseSpeed + params.curvySpeedVariation) * speedBoost;
-
-  let nearStopChance = constrain(0.2 + 0.45 * impact, 0.2, 0.9);
-  if (random() < nearStopChance) {
-    state.beatEndSpeed = random(0, 0.25 * params.curvyBaseSpeed);
-  } else {
-    state.beatEndSpeed = random(0.2, 0.6) * params.curvyBaseSpeed;
-  }
-}
-```
-
-- `tempoImpact` scales how aggressively headings swing and speeds jump.
-- `beatStartSpeed` and `beatEndSpeed` define a burst that eases out over the segment — like a drum stroke that decays.
-- Alternating turn direction by `beatIndex` keeps patterns from spinning in one direction forever.
-
-During drawing, `getCurvyTarget()` checks `params.tempoEnabled`. When it's on, we delegate to `getTempoCurvyTarget()`:
+During drawing, `getCurvyTarget()` checks `params.tempoEnabled` for keyboard lines. When it's on, we delegate to `getTempoCurvyTarget()`:
 
 ```
 function getTempoCurvyTarget(state) {
@@ -157,11 +141,11 @@ function getTempoCurvyTarget(state) {
 }
 ```
 
-The eased speed curve (`1 - pow(segmentPhase, 1.8)`) means lines launch quickly at the beat and settle toward the end speed — a visual echo of accent and decay. Turn tempo off in the panel and you're back to the free noise wander from part 2. Nice!
+The eased speed curve (`1 - pow(segmentPhase, 1.8)`) means lines launch quickly at the beat and settle toward the end speed — a visual echo of accent and decay. Turn tempo off in the panel and you're back to the free noise wander from part 2. Great work so far!
 
 ---
 
-## Web MIDI: Drum Pads Become Drawing Voices
+## Web MIDI: Pads, Keys, and the `midiEngine`
 
 Visual creative coding and algorithmic music share the same idea: events in, patterns out. Web MIDI lets the browser receive those events directly from a controller — no extra server, no plugin.
 
@@ -169,7 +153,7 @@ We keep MIDI logic in `midi.js` as a plain object called `midiEngine`. That keep
 
 ### Connecting
 
-In Tweakpane, open the MIDI folder and click Connect MIDI. That calls:
+In Tweakpane, open the MIDI folder and click **Connect MIDI**. That calls:
 
 ```
 init() {
@@ -183,7 +167,6 @@ init() {
       this.access = access;
       this.access.onstatechange = () => this.refreshInputs();
       this.refreshInputs();
-      this.status = "connected";
     })
     .catch((err) => {
       this.status = "midi error";
@@ -194,9 +177,23 @@ init() {
 
 - `navigator.requestMIDIAccess()` asks the browser for permission — you'll get a prompt the first time.
 - `refreshInputs()` attaches an `onmidimessage` handler to every connected input.
-- Toggle `midiEnabled` when you're ready to actually spawn voices from incoming notes.
+- Toggle **midiEnabled** when you're ready to actually spawn voices from incoming notes.
 
 Don't worry if you've never touched MIDI before — we're only listening for note-on messages (status byte `0x90`), which is what most pads send when you hit a drum or key.
+
+### Keyboard drum pad (no hardware needed)
+
+Enable **Keyboard drum pad (QWERTY)** and you can trigger the same note-ons from the computer keyboard:
+
+| Key | Drum |
+|-----|------|
+| Z | Kick |
+| X | Snare |
+| A / S / D / F / G | Toms |
+| Q / W / E | Crash / open hat / closed hat |
+| R / T / Y / U | Ride / china / splash / crash 2 |
+
+Hold **Shift** for accent hits (velocity 127). These keys don't overlap with **Draw with keyboard** (`C` + `1`–`9`).
 
 ### Spawning a voice
 
@@ -204,52 +201,73 @@ When a note arrives, `handleMessage()` filters for note-on with velocity greater
 
 ```
 spawnVoice(note, velocity) {
-  let vNorm = constrain(velocity / 127, 0, 1);
+  let vNorm = this.velocityNorm(velocity);
   let holdMs = this.params.midiPatternHoldMs * (0.75 + 0.6 * vNorm);
-  let style = this.getVoiceStyle(note, vNorm);
+  let style = this.resolveVoiceStyle(note);
   let now = millis();
+  let spawnAngle = (note * 41 + this.nextVoiceId * 17) % 360;
 
   this.voices.push({
     id: this.nextVoiceId++,
     note,
     velocity,
-    type: style.type,
+    vNorm,
+    spawnAngle,
     color: style.color,
-    heading: random(360) + style.headingKick,
-    startSpeed: style.startSpeed,
-    endSpeed: style.endSpeed,
-    turnRate: style.turnRate,
+    radiusFrac: style.radiusFrac,
+    radiusMin: style.radiusMin,
+    radiusMax: style.radiusMax,
+    lineState: null,
+    justStarted: true,
     startMs: now,
-    untilMs: now + holdMs,
-    pos: null,
-    prev: null,
-    current: null
+    untilMs: now + holdMs
   });
 }
 ```
 
-Each voice is a short-lived curvy line:
+Each voice is a short-lived auto-draw line:
 
 - Harder hits (`velocity` closer to 127) last longer via `holdMs`.
-- `getVoiceStyle()` maps General MIDI drum notes to motion personalities — kicks push straight with gentle wobble, snares zig-zag with sine turns, hi-hats jitter fast, cymbals sweep wide.
-- Colors are baked per drum family so a live performance reads like a layered palette.
+- **Velocity** scales motion speed and color brightness — not stroke thickness.
+- Colors always come from the **Multi-line keys (1–9)** palette in Tweakpane.
 
-For example, a kick on notes 35 or 36:
+### Two MIDI modes
+
+In the MIDI folder, **Mode** switches between:
+
+**Auto-draw** (`notes`) — melodic / pitch-based mapping:
+
+- Color: note number maps to keys `1`–`9` in the multi-line palette.
+- Spawn radius: linear map from **2%** (lowest notes) to **90%** (highest notes) of the canvas radius.
+
+**Drums** (`drums`) — General MIDI drum kit mapping:
+
+| Family | Example notes | Spawn ring | Color key |
+|--------|---------------|------------|-----------|
+| Kick | 35, 36 | 2–9% (center) | 1 |
+| Snare | 38, 40 | 14–24% | 2 |
+| Tom | 41, 43, 45, 47, 48, 50 | 22–36% | 3 |
+| Hi-hat | 42, 44, 46 | 34–48% | 4 |
+| Cymbal | 49, 51, 52, 55, 57, 59 | 52–72% (outer) | 5 |
+| Other | everything else | 26–42% | 6 |
+
+`resolveVoiceStyle()` picks the right profile:
 
 ```
-if (note === 35 || note === 36) {
+resolveVoiceStyle(note) {
+  if (this.isDrumMode()) {
+    return this.getDrumProfile(note);
+  }
+
   return {
-    type: "kick",
-    startSpeed: 8 + 10 * vNorm,
-    endSpeed: 1.2 + 0.8 * vNorm,
-    turnRate: 0.15,
-    headingKick: random(-20, 20),
-    color: { r: 255, g: 80, b: 60 }
+    type: "note",
+    color: this.noteColor(note),
+    radiusFrac: this.noteRadiusFrac(note)
   };
 }
 ```
 
-Other notes fall through to snare, tom, hat, cymbal, or a warm default — so even a melodic keyboard produces something readable on screen.
+Both modes share the same wandering motion — only color and spawn position differ. That's the magic of generative art: one motion system, many mapping rules.
 
 ### From voices to mandala segments
 
@@ -258,12 +276,10 @@ Each frame in `draw()`, after mouse and keyboard lines update, we ask the engine
 ```
 let midiSegments = midiEngine.getSegments({
   params,
-  current: mouseCurrent,
-  prev: mousePrev,
-  mouseX,
-  mouseY,
   width,
-  height
+  height,
+  getCurvyTarget,
+  createCurvyLineState
 });
 
 for (let segment of midiSegments) {
@@ -278,11 +294,35 @@ for (let segment of midiSegments) {
 }
 ```
 
-Inside `getSegments()`, every active voice steps forward with its own heading rules, bounces off canvas edges, and emits line segments through the same thickness pipeline as everything else. Voices expire when `millis()` passes `untilMs`, so polyphony stays manageable — hit ten pads quickly and you get ten ribbons weaving through the same symmetry.
+Inside `getSegments()`, every active voice:
 
-New voices anchor near the cursor (with a small random offset) so your performance has a focal point, but each path diverges immediately based on its drum type.
+1. Spawns on its ring at a fixed angle derived from the note.
+2. Advances through `getCurvyTarget()` with tempo disabled.
+3. Scales movement by velocity for softer or harder hits.
+4. Emits line segments through the same thickness pipeline as everything else.
 
-Enable `midiDebugHud` to see connection status, last note, velocity, and active voice count in the corner while you jam.
+Voices expire when `millis()` passes `untilMs`, so polyphony stays manageable — hit ten pads quickly and you get ten ribbons weaving through the same symmetry.
+
+Enable **midiDebugHud** to see connection status, mode, last note, velocity, and active voice count in the corner while you jam.
+
+---
+
+## Layout: Full-Screen Canvas & Tweakpane
+
+The canvas uses `createCanvas(windowWidth, windowHeight)` and stays fixed to the viewport. The control panel gets a `mandala-pane` class so it caps at screen height and scrolls internally without showing a page scrollbar:
+
+```
+.mandala-pane {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+```
+
+Press **`h`** to hide or show the panel when you want a clean stage for recording or performing.
 
 ---
 
@@ -290,20 +330,18 @@ Enable `midiDebugHud` to see connection status, last note, velocity, and active 
 
 We keep Motion, Trail & Fade, Colors, and Multi-line keys from earlier parts, and add:
 
-- Tempo — `tempoEnabled`, `tempo` (40–220 BPM), `tempoImpact`, `tempoSubdivisionChance`, `tempoPauseChance`
-- MIDI — `midiEnabled`, `midiPatternHoldMs`, `midiDebugHud`, and the Connect MIDI button
+- **Tempo** — `tempoEnabled`, `tempo` (40–220 BPM), `tempoImpact`, `tempoSubdivisionChance`, `tempoPauseChance`
+- **MIDI** — `midiEnabled`, `midiMode` (Auto-draw / Drums), `midiKeyboardEnabled`, `midiPatternHoldMs`, `midiDebugHud`, and the Connect MIDI button
 
-Press `h` to hide or show the panel when you want a clean stage for recording or performing.
-
-Great work so far — the sketch still uses one `params` object; Tweakpane binds straight into it, and the MIDI engine reads the same settings each frame.
+Almost there! The sketch still uses one `params` object; Tweakpane binds straight into it, and the MIDI engine reads the same settings each frame.
 
 ---
 
 ## Why This Matters for Creative Coding
 
-You're not drawing mirrored wedges by hand, and you're not placing every MIDI hit manually either. You designed symmetry, fade rules, tempo curves, and drum-to-color mappings — then you perform through mouse, keys, and pads while the system renders.
+You're not drawing mirrored wedges by hand, and you're not placing every MIDI hit manually either. You designed symmetry, fade rules, tempo curves, color mappings, and spawn rings — then you perform through mouse, keys, and pads while the system renders.
 
-Small changes to BPM, impact, or hold time produce very different visual grooves from the same controller. That's the same mindset as generative art and live-coded music: describe the rules, play the instrument, let the output surprise you.
+Small changes to BPM, auto-draw speed, MIDI mode, or hold time produce very different visual grooves from the same controller. That's the same mindset as generative art and live-coded music: describe the rules, play the instrument, let the output surprise you.
 
 ---
 
@@ -311,11 +349,11 @@ Small changes to BPM, impact, or hold time produce very different visual grooves
 
 You can make this mandala your own by:
 
-- Matching `tempo` to a track you're playing along with, then raising `tempoImpact` for wilder beat accents
-- Lowering `tempoPauseChance` for nonstop motion or cranking it for sparse, call-and-response strokes
+- Matching `tempo` to a track you're playing along with, then raising `tempoImpact` for wilder beat accents on keyboard lines
+- Switching MIDI mode mid-jam — Auto-draw for melodic keyboards, Drums for a pad kit
 - Adjusting `midiPatternHoldMs` so ghost notes flicker and heavy hits leave long trails
+- Tuning keys `1`–`6` in the multi-line palette to build a custom drum color scheme
 - Layering mouse drawing, digit keys, and MIDI voices at once — then tuning fade amount so older layers breathe behind newer hits
-- Mapping your pad's note layout in `getVoiceStyle()` to custom colors for your favorite kit pieces
 
 You might be surprised how quickly a simple 8-fold symmetry turns a drum practice session into a glowing, rhythmic painting.
 
@@ -351,7 +389,7 @@ No spam. Unsubscribe anytime.
 
 ## Next tutorial
 
-That wraps our three-part mandala series — from a first symmetrical sketch to fading trails, curvy keys, tempo, and live MIDI. If this chapter got you curious about making music with code too, Strudel is a wonderful next stop: browser-based live coding with the same "small rules, big output" spirit.
+That wraps our three-part mandala series — from a first symmetrical sketch to fading trails, draw-with-keyboard auto-draw, tempo, and live MIDI. If this chapter got you curious about making music with code too, Strudel is a wonderful next stop: browser-based live coding with the same "small rules, big output" spirit.
 
 [Making Music with Code: A Beginner's Guide to StrudelLearn live coding in the browser — patterns, drums, and grooves you can hear and tweak in real time.Alex Codes ArtAlex Postolache](https://alexcodesart.com/making-music-with-code-a-beginners-guide-to-strudel/)
 
