@@ -6,7 +6,7 @@ Today we're finishing the series with three big ideas:
 
 1. **Tempo-driven motion** — auto-draw strokes on `C` and digit keys that breathe with a BPM clock, including pauses and subdivisions.
 2. **Web MIDI** — connect a drum pad or keyboard and every note spawns its own wandering voice into the mandala.
-3. **Two MIDI modes** — **Auto-draw** maps pitch to color and spawn radius, while **Drums** maps General MIDI drum families to fixed rings on the mandala.
+3. **Two MIDI modes** — **Piano** keeps drawing while a key is held, while **Drums** uses timed voices with family spawn rings.
 
 This tutorial is perfect if you've followed parts 1 and 2, or you're comfortable with `createGraphics()` and want to explore browser MIDI in visual art.
 
@@ -44,8 +44,8 @@ What's new in this chapter:
 - A **Tempo** folder in Tweakpane — BPM, impact, subdivision chance, and pause chance.
 - Beat-aware auto-draw motion — when tempo is enabled, lines on `C` and keys `1`–`9` follow beat segments instead of free noise.
 - **`midi.js`** — a small `midiEngine` object that listens for MIDI note-ons and returns drawing segments each frame.
-- **MIDI Auto-draw mode** — pitch maps to multi-line key colors and a spawn radius from 2% to 90%.
-- **MIDI Drums mode** — kick, snare, tom, hi-hat, and cymbal notes each spawn on their own ring, using keys `1`–`6` from the multi-line palette.
+- **MIDI Piano mode** — pitch maps to multi-line key colors and a spawn radius from 2% to 90%; lines last while the note is held.
+- **MIDI Drums mode** — kick, snare, tom, hi-hat, and cymbal notes each spawn on their own ring, using keys `1`–`6` from the multi-line palette, with length set by **Drums pattern hold MS**.
 - **Keyboard drum pad** — try MIDI without hardware using mapped QWERTY keys.
 - **Full-viewport layout** — the canvas fills the screen and the control panel stays fixed without a page scrollbar.
 
@@ -179,7 +179,7 @@ init() {
 - `refreshInputs()` attaches an `onmidimessage` handler to every connected input.
 - Toggle **midiEnabled** when you're ready to actually spawn voices from incoming notes.
 
-Don't worry if you've never touched MIDI before — we're only listening for note-on messages (status byte `0x90`), which is what most pads send when you hit a drum or key.
+Don't worry if you've never touched MIDI before — we listen for note-on messages (status byte `0x90`) to start a voice, and note-off messages (`0x80`, or note-on with velocity `0`) to end piano voices.
 
 ### Keyboard drum pad (no hardware needed)
 
@@ -197,37 +197,34 @@ Hold **Shift** for accent hits (velocity 127). These keys don't overlap with **D
 
 ### Spawning a voice
 
-When a note arrives, `handleMessage()` filters for note-on with velocity greater than zero, then calls `spawnVoice()`:
+When a note arrives, `handleMessage()` filters for note-on with velocity greater than zero, then calls `spawnVoice()`. Note-off calls `noteOff()` in **Piano** mode:
 
 ```
 spawnVoice(note, velocity) {
   let vNorm = this.velocityNorm(velocity);
-  let holdMs = this.params.midiPatternHoldMs * (0.75 + 0.6 * vNorm);
   let style = this.resolveVoiceStyle(note);
   let now = millis();
-  let spawnAngle = (note * 41 + this.nextVoiceId * 17) % 360;
+  let holdUntilNoteOff = this.isPianoMode();
+  let untilMs = null;
+
+  if (this.isDrumMode()) {
+    let holdMs = this.params.midiPatternHoldMs * (0.75 + 0.6 * vNorm);
+    untilMs = now + holdMs;
+  }
 
   this.voices.push({
-    id: this.nextVoiceId++,
-    note,
-    velocity,
-    vNorm,
-    spawnAngle,
-    color: style.color,
-    radiusFrac: style.radiusFrac,
-    radiusMin: style.radiusMin,
-    radiusMax: style.radiusMax,
-    lineState: null,
-    justStarted: true,
-    startMs: now,
-    untilMs: now + holdMs
+    // ...
+    holdUntilNoteOff,
+    held: holdUntilNoteOff,
+    untilMs
   });
 }
 ```
 
-Each voice is a short-lived auto-draw line:
+Each voice is an auto-draw line:
 
-- Harder hits (`velocity` closer to 127) last longer via `holdMs`.
+- **Piano** — the line keeps going until you release the key (`noteOff()` sets `held` to `false`).
+- **Drums** — harder hits (`velocity` closer to 127) last longer via `midiPatternHoldMs`.
 - **Velocity** scales motion speed and color brightness — not stroke thickness.
 - Colors always come from the **Multi-line keys (1–9)** palette in Tweakpane.
 
@@ -235,10 +232,11 @@ Each voice is a short-lived auto-draw line:
 
 In the MIDI folder, **Mode** switches between:
 
-**Auto-draw** (`notes`) — melodic / pitch-based mapping:
+**Piano** (`piano`) — melodic / pitch-based mapping:
 
 - Color: note number maps to keys `1`–`9` in the multi-line palette.
 - Spawn radius: linear map from **2%** (lowest notes) to **90%** (highest notes) of the canvas radius.
+- Duration: while the MIDI key is held — no pattern hold timer.
 
 **Drums** (`drums`) — General MIDI drum kit mapping:
 
@@ -331,7 +329,7 @@ Press **`h`** to hide or show the panel when you want a clean stage for recordin
 We keep Motion, Trail & Fade, Colors, and Multi-line keys from earlier parts, and add:
 
 - **Tempo** — `tempoEnabled`, `tempo` (40–220 BPM), `tempoImpact`, `tempoSubdivisionChance`, `tempoPauseChance`
-- **MIDI** — `midiEnabled`, `midiMode` (Auto-draw / Drums), `midiKeyboardEnabled`, `midiPatternHoldMs`, `midiDebugHud`, and the Connect MIDI button
+- **MIDI** — `midiEnabled`, `midiMode` (Piano / Drums), `midiKeyboardEnabled`, `midiPatternHoldMs` (Drums pattern hold MS, drums only), `midiDebugHud`, and the Connect MIDI button
 
 Almost there! The sketch still uses one `params` object; Tweakpane binds straight into it, and the MIDI engine reads the same settings each frame.
 
@@ -350,8 +348,8 @@ Small changes to BPM, auto-draw speed, MIDI mode, or hold time produce very diff
 You can make this mandala your own by:
 
 - Matching `tempo` to a track you're playing along with, then raising `tempoImpact` for wilder beat accents on keyboard lines
-- Switching MIDI mode mid-jam — Auto-draw for melodic keyboards, Drums for a pad kit
-- Adjusting `midiPatternHoldMs` so ghost notes flicker and heavy hits leave long trails
+- Switching MIDI mode mid-jam — Piano for held melodic lines, Drums for a pad kit
+- Adjusting **Drums pattern hold MS** so ghost notes flicker and heavy hits leave long trails
 - Tuning keys `1`–`6` in the multi-line palette to build a custom drum color scheme
 - Layering mouse drawing, digit keys, and MIDI voices at once — then tuning fade amount so older layers breathe behind newer hits
 

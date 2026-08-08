@@ -7,7 +7,7 @@ The final step in the mandala tutorial series. Adds **tempo-driven auto-draw mot
 - Drives keyboard auto-draw lines from a BPM clock with beat phases, pauses, and subdivisions
 - Connects hardware through the Web MIDI API (`navigator.requestMIDIAccess()`)
 - Simulates a drum pad from the QWERTY keyboard when no controller is connected
-- Two MIDI modes: **Auto-draw** (pitch-based colors and radius) and **Drums** (GM drum families with family spawn rings)
+- Two MIDI modes: **Piano** (hold-to-draw by note duration) and **Drums** (timed voices with **Drums pattern hold MS**)
 - Keeps MIDI logic in a separate `midi.js` module
 - Full-viewport canvas with a fixed, scroll-safe Tweakpane panel
 

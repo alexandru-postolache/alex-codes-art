@@ -50,7 +50,7 @@ let params = {
   tempoSubdivisionChance: 0.35,
   tempoPauseChance: 0.15,
   midiEnabled: false,
-  midiMode: 'notes',
+  midiMode: 'piano',
   midiKeyboardEnabled: true,
   midiPatternHoldMs: 320,
   midiDebugHud: false,
@@ -136,12 +136,20 @@ function setup() {
   midiFolder.addInput(params, 'midiEnabled');
   midiFolder.addInput(params, 'midiMode', {
     label: 'Mode',
-    options: { 'Auto-draw': 'notes', Drums: 'drums' }
+    options: { Piano: 'piano', Drums: 'drums' }
+  }).on('change', (ev) => {
+    drumsPatternHoldInput.hidden = ev.value !== 'drums';
   });
   midiFolder.addInput(params, 'midiKeyboardEnabled', {
     label: 'Keyboard drum pad (QWERTY)'
   });
-  midiFolder.addInput(params, 'midiPatternHoldMs', { min: 120, max: 1200, step: 10 });
+  const drumsPatternHoldInput = midiFolder.addInput(params, 'midiPatternHoldMs', {
+    label: 'Drums pattern hold MS',
+    min: 120,
+    max: 1200,
+    step: 10
+  });
+  drumsPatternHoldInput.hidden = params.midiMode !== 'drums';
   midiFolder.addInput(params, 'midiDebugHud');
   midiFolder.addButton({ title: 'Connect MIDI' }).on('click', () => midiEngine.init());
 
@@ -346,6 +354,12 @@ function keyPressed() {
   if (isPointerOverPane()) return;
 
   midiEngine.handleKeyboardPress(key, { shiftKey: keyIsDown(SHIFT) });
+}
+
+function keyReleased() {
+  if (isPointerOverPane()) return;
+
+  midiEngine.handleKeyboardRelease(key);
 }
 
 // --- Helpers ---

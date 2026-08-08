@@ -45,7 +45,7 @@ Hold **Shift** for accent hits (velocity 127). These keys do not overlap with mo
 
 In Tweakpane → **MIDI** → **Mode**:
 
-- **Auto-draw** (default) — auto-draw motion settings, multi-line key colors (note maps to keys 1–9), spawn radius 2%–90% by pitch.
-- **Drums** — same auto-draw motion, but General MIDI drum notes map to **drum families** with spawn rings (kick near center, cymbals on the outer arc). Colors use the multi-line palette: kick → key 1, snare → 2, tom → 3, hi-hat → 4, cymbal → 5, other → 6.
+- **Piano** (default) — auto-draw motion while a key is held; colors from the multi-line palette (note maps to keys 1–9); spawn radius 2%–90% by pitch.
+- **Drums** — same auto-draw motion with timed voices; GM drum notes map to **drum families** with spawn rings. Adjust **Drums pattern hold MS** for voice length. Colors: kick → key 1, snare → 2, tom → 3, hi-hat → 4, cymbal → 5, other → 6.
 
 Velocity controls speed and brightness in both modes.

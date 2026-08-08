@@ -34,6 +34,10 @@ const midiEngine = {
     return !!(this.params && this.params.midiMode === "drums");
   },
 
+  isPianoMode() {
+    return !!(this.params && this.params.midiMode === "piano");
+  },
+
   init() {
     if (!navigator.requestMIDIAccess) {
       this.status = "Web MIDI unavailable";
@@ -67,9 +71,15 @@ const midiEngine = {
 
     let [status, note, velocity] = event.data;
     let command = status & 0xf0;
-    if (command !== 0x90 || velocity === 0) return;
 
-    this.noteOn(note, velocity, "hardware");
+    if (command === 0x90 && velocity > 0) {
+      this.noteOn(note, velocity, "hardware");
+      return;
+    }
+
+    if (command === 0x80 || (command === 0x90 && velocity === 0)) {
+      this.noteOff(note, "hardware");
+    }
   },
 
   handleKeyboardPress(key, modifiers = {}) {
@@ -85,12 +95,49 @@ const midiEngine = {
     return true;
   },
 
+  handleKeyboardRelease(key) {
+    if (!this.params || !this.params.midiEnabled || !this.params.midiKeyboardEnabled) {
+      return false;
+    }
+
+    let note = this.keyboardBindings[key.toLowerCase()];
+    if (note === undefined) return false;
+
+    if (this.isPianoMode()) {
+      this.noteOff(note, "keyboard");
+    }
+
+    return true;
+  },
+
   noteOn(note, velocity, source) {
     this.lastNote = note;
     this.lastVelocity = velocity;
     this.lastSource = source;
+
+    if (this.isPianoMode()) {
+      this.endVoicesForNote(note);
+    }
+
     this.spawnVoice(note, velocity);
     this.refreshStatus();
+  },
+
+  noteOff(note, source) {
+    if (!this.isPianoMode()) return;
+
+    this.lastNote = note;
+    this.lastSource = source;
+    this.endVoicesForNote(note);
+    this.refreshStatus();
+  },
+
+  endVoicesForNote(note) {
+    for (let voice of this.voices) {
+      if (voice.note === note && voice.holdUntilNoteOff) {
+        voice.held = false;
+      }
+    }
   },
 
   refreshStatus() {
@@ -179,8 +226,8 @@ const midiEngine = {
     }
 
     return {
-      type: "note",
-      label: "note",
+      type: "piano",
+      label: "piano",
       color: this.noteColor(note),
       radiusFrac: this.noteRadiusFrac(note)
     };
@@ -220,10 +267,16 @@ const midiEngine = {
 
   spawnVoice(note, velocity) {
     let vNorm = this.velocityNorm(velocity);
-    let holdMs = this.params.midiPatternHoldMs * (0.75 + 0.6 * vNorm);
     let style = this.resolveVoiceStyle(note);
     let now = millis();
     let spawnAngle = (note * 41 + this.nextVoiceId * 17) % 360;
+    let holdUntilNoteOff = this.isPianoMode();
+    let untilMs = null;
+
+    if (this.isDrumMode()) {
+      let holdMs = this.params.midiPatternHoldMs * (0.75 + 0.6 * vNorm);
+      untilMs = now + holdMs;
+    }
 
     this.voices.push({
       id: this.nextVoiceId++,
@@ -237,10 +290,12 @@ const midiEngine = {
       radiusFrac: style.radiusFrac,
       radiusMin: style.radiusMin,
       radiusMax: style.radiusMax,
+      holdUntilNoteOff,
+      held: holdUntilNoteOff,
       lineState: null,
       justStarted: true,
       startMs: now,
-      untilMs: now + holdMs
+      untilMs
     });
   },
 
@@ -264,7 +319,12 @@ const midiEngine = {
 
   pruneExpiredVoices() {
     let now = millis();
-    this.voices = this.voices.filter((voice) => now <= voice.untilMs);
+    this.voices = this.voices.filter((voice) => {
+      if (voice.holdUntilNoteOff) {
+        return voice.held;
+      }
+      return now <= voice.untilMs;
+    });
   },
 
   getSegments(context) {
@@ -323,7 +383,7 @@ const midiEngine = {
     let sourceText = this.lastSource || "-";
     let enabledText = this.params && this.params.midiEnabled ? "on" : "off";
     let keyboardText = this.params && this.params.midiKeyboardEnabled ? "on" : "off";
-    let modeText = this.params && this.params.midiMode === "drums" ? "drums" : "auto-draw";
+    let modeText = this.isDrumMode() ? "drums" : "piano";
     let hudHeight = this.params && this.params.midiKeyboardEnabled ? 148 : 112;
 
     push();
@@ -342,6 +402,8 @@ const midiEngine = {
       text("Hold Shift for accent (velocity 127)", 20, 110);
       if (this.isDrumMode()) {
         text("Drums mode: spawn ring per family, keys 1-6 colors", 20, 128);
+      } else {
+        text("Piano mode: line lasts while key is held", 20, 128);
       }
     }
     pop();
