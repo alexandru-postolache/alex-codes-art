@@ -24,6 +24,8 @@ canvas {
   top: 8px;
   right: 8px;
   z-index: 1000;
+  width: 256px;
+  max-width: 256px;
   max-height: calc(100vh - 16px);
   max-height: calc(100dvh - 16px);
   overflow-y: auto;

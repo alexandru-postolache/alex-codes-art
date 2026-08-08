@@ -100,7 +100,7 @@ function setup() {
   curvyStateC = createCurvyLineState();
 
   // --- Tweakpane ---
-  pane = new Tweakpane.Pane({ title: 'Mandala Controls' });
+  pane = new Tweakpane.Pane({ title: 'Mandala Controls', width: 256 });
   paneContainer = pane.element;
   paneContainer.classList.add('mandala-pane');
 

@@ -100,7 +100,7 @@ function setup() {
   curvyStateC = createCurvyLineState();
 
   // --- Tweakpane ---
-  pane = new Tweakpane.Pane({ title: 'Mandala — MIDI' });
+  pane = new Tweakpane.Pane({ title: 'Mandala — MIDI', width: 256 });
   paneContainer = pane.element;
   paneContainer.classList.add('mandala-pane');
 
