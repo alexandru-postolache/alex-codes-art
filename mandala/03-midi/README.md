@@ -1,12 +1,11 @@
 # Mandala Maker — Part 3
 
-The final step in the mandala tutorial series. Adds **tempo-driven auto-draw motion**, **Web MIDI**, and **keyboard drum-pad simulation** so pads and keys can spawn polyphonic drawing voices into the mandala.
+The final step in the mandala tutorial series. Adds **tempo-driven auto-draw motion** and **Web MIDI** so pads and keyboards can spawn polyphonic drawing voices into the mandala.
 
 ## What it does
 
 - Drives keyboard auto-draw lines from a BPM clock with beat phases, pauses, and subdivisions
 - Connects hardware through the Web MIDI API (`navigator.requestMIDIAccess()`)
-- Simulates a drum pad from the QWERTY keyboard when no controller is connected
 - Two MIDI modes: **Piano** (hold-to-draw by note duration) and **Drums** (timed voices with **Drums pattern hold MS**)
 - Keeps MIDI logic in a separate `midi.js` module
 - Full-viewport canvas with a fixed, scroll-safe Tweakpane panel
@@ -19,7 +18,7 @@ python3 -m http.server 8081
 
 Open http://localhost:8081/mandala/03-midi/index.html.
 
-Connect a MIDI controller in a browser that supports Web MIDI (Chrome recommended), or use the on-screen keyboard map (Z/X snare-kick, etc.).
+Connect a MIDI controller in a browser that supports Web MIDI (Chrome recommended).
 
 ## Blog tutorial
 

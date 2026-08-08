@@ -9,23 +9,6 @@ const midiEngine = {
   status: "idle",
   nextPianoColorKey: 1,
 
-  keyboardBindings: {
-    z: 36,
-    x: 38,
-    a: 43,
-    s: 40,
-    d: 45,
-    f: 47,
-    g: 48,
-    q: 49,
-    w: 46,
-    e: 42,
-    r: 51,
-    t: 52,
-    y: 55,
-    u: 57
-  },
-
   setParams(params) {
     this.params = params;
     this.refreshStatus();
@@ -83,34 +66,6 @@ const midiEngine = {
     }
   },
 
-  handleKeyboardPress(key, modifiers = {}) {
-    if (!this.params || !this.params.midiEnabled || !this.params.midiKeyboardEnabled) {
-      return false;
-    }
-
-    let note = this.keyboardBindings[key.toLowerCase()];
-    if (note === undefined) return false;
-
-    let velocity = modifiers.shiftKey ? 127 : floor(random(88, 112));
-    this.noteOn(note, velocity, "keyboard");
-    return true;
-  },
-
-  handleKeyboardRelease(key) {
-    if (!this.params || !this.params.midiEnabled || !this.params.midiKeyboardEnabled) {
-      return false;
-    }
-
-    let note = this.keyboardBindings[key.toLowerCase()];
-    if (note === undefined) return false;
-
-    if (this.isPianoMode()) {
-      this.noteOff(note, "keyboard");
-    }
-
-    return true;
-  },
-
   noteOn(note, velocity, source) {
     this.lastNote = note;
     this.lastVelocity = velocity;
@@ -142,14 +97,15 @@ const midiEngine = {
   },
 
   refreshStatus() {
-    let parts = [];
-    if (this.inputCount > 0) parts.push("listening");
-    if (this.params && this.params.midiKeyboardEnabled) parts.push("keyboard");
-    if (parts.length === 0) {
-      this.status = this.access ? "no inputs" : "idle";
+    if (!this.access) {
+      this.status = "idle";
       return;
     }
-    this.status = parts.join(" + ");
+    if (this.inputCount > 0) {
+      this.status = "listening";
+      return;
+    }
+    this.status = "no inputs";
   },
 
   velocityNorm(velocity) {
@@ -389,30 +345,19 @@ const midiEngine = {
     let velText = this.lastNote === null ? "-" : this.lastVelocity;
     let sourceText = this.lastSource || "-";
     let enabledText = this.params && this.params.midiEnabled ? "on" : "off";
-    let keyboardText = this.params && this.params.midiKeyboardEnabled ? "on" : "off";
     let modeText = this.isDrumMode() ? "drums" : "piano";
-    let hudHeight = this.params && this.params.midiKeyboardEnabled ? 148 : 112;
 
     push();
     noStroke();
     fill(0, 150);
-    rect(12, 12, 320, hudHeight, 8);
+    rect(12, 12, 290, 94, 8);
     fill(255);
     textSize(12);
     textAlign(LEFT, TOP);
     text(`MIDI: ${this.status}`, 20, 20);
-    text(`Enabled: ${enabledText}  Mode: ${modeText}  Keys: ${keyboardText}`, 20, 38);
+    text(`Enabled: ${enabledText}  Mode: ${modeText}`, 20, 38);
     text(`Last note: ${noteText}  vel: ${velText}  src: ${sourceText}`, 20, 56);
     text(`Active voices: ${this.voices.length}`, 20, 74);
-    if (this.params && this.params.midiKeyboardEnabled) {
-      text("Keys: Z kick  X snare  ASDFG toms  QWE ride/hats  RTY cymbals", 20, 92);
-      text("Hold Shift for accent (velocity 127)", 20, 110);
-      if (this.isDrumMode()) {
-        text("Drums mode: spawn ring per family, keys 1-6 colors", 20, 128);
-      } else {
-        text("Piano mode: line lasts while key is held", 20, 128);
-      }
-    }
     pop();
   }
 };

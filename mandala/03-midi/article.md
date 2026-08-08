@@ -14,7 +14,6 @@ By the end of this article, you will:
 
 - drive auto-draw lines from a tempo clock with beat phases, pauses, and subdivisions
 - connect hardware through the [Web MIDI API](https://developer.mozilla.org/en-US/docs/Web/API/Web_MIDI_API?ref=alexcodesart.com) with `navigator.requestMIDIAccess()`
-- simulate drum hits from the QWERTY keyboard when no pad is plugged in
 - spawn polyphonic MIDI voices that reuse the same auto-draw motion as keys `1`–`9`
 - switch between pitch-based and drum-family MIDI mapping
 - keep MIDI logic separate in a `midiEngine` module so the sketch stays readable
@@ -46,7 +45,6 @@ What's new in this chapter:
 - **`midi.js`** — a small `midiEngine` object that listens for MIDI note-ons and returns drawing segments each frame.
 - **MIDI Piano mode** — each new stroke cycles through multi-line key colors `1`–`9`; spawn radius from 2% to 90% by pitch; lines last while the note is held.
 - **MIDI Drums mode** — kick, snare, tom, hi-hat, and cymbal notes each spawn on their own ring, using keys `1`–`6` from the multi-line palette, with length set by **Drums pattern hold MS**.
-- **Keyboard drum pad** — try MIDI without hardware using mapped QWERTY keys.
 - **Full-viewport layout** — the canvas fills the screen and the control panel stays fixed without a page scrollbar.
 
 That's the high-level picture. Let's break it down step by step.
@@ -180,20 +178,6 @@ init() {
 - Toggle **midiEnabled** when you're ready to actually spawn voices from incoming notes.
 
 Don't worry if you've never touched MIDI before — we listen for note-on messages (status byte `0x90`) to start a voice, and note-off messages (`0x80`, or note-on with velocity `0`) to end piano voices.
-
-### Keyboard drum pad (no hardware needed)
-
-Enable **Keyboard drum pad (QWERTY)** and you can trigger the same note-ons from the computer keyboard:
-
-| Key | Drum |
-|-----|------|
-| Z | Kick |
-| X | Snare |
-| A / S / D / F / G | Toms |
-| Q / W / E | Crash / open hat / closed hat |
-| R / T / Y / U | Ride / china / splash / crash 2 |
-
-Hold **Shift** for accent hits (velocity 127). These keys don't overlap with **Draw with keyboard** (`C` + `1`–`9`).
 
 ### Spawning a voice
 
@@ -329,7 +313,7 @@ Press **`h`** to hide or show the panel when you want a clean stage for recordin
 We keep Motion, Trail & Fade, Colors, and Multi-line keys from earlier parts, and add:
 
 - **Tempo** — `tempoEnabled`, `tempo` (40–220 BPM), `tempoImpact`, `tempoSubdivisionChance`, `tempoPauseChance`
-- **MIDI** — `midiEnabled`, `midiMode` (Piano / Drums), `midiKeyboardEnabled`, `midiPatternHoldMs` (Drums pattern hold MS, drums only), `midiDebugHud`, and the Connect MIDI button
+- **MIDI** — `midiEnabled`, `midiMode` (Piano / Drums), `midiPatternHoldMs` (Drums pattern hold MS, drums only), `midiDebugHud`, and the Connect MIDI button
 
 Almost there! The sketch still uses one `params` object; Tweakpane binds straight into it, and the MIDI engine reads the same settings each frame.
 

@@ -51,7 +51,6 @@ let params = {
   tempoPauseChance: 0.15,
   midiEnabled: false,
   midiMode: 'piano',
-  midiKeyboardEnabled: true,
   midiPatternHoldMs: 320,
   midiDebugHud: false,
   fadeEnabled: true,
@@ -100,7 +99,7 @@ function setup() {
   curvyStateC = createCurvyLineState();
 
   // --- Tweakpane ---
-  pane = new Tweakpane.Pane({ title: 'Mandala — MIDI', width: 256 });
+  pane = new Tweakpane.Pane({ title: 'Mandala Controls', width: 256 });
   paneContainer = pane.element;
   paneContainer.classList.add('mandala-pane');
 
@@ -139,9 +138,6 @@ function setup() {
     options: { Piano: 'piano', Drums: 'drums' }
   }).on('change', (ev) => {
     drumsPatternHoldInput.hidden = ev.value !== 'drums';
-  });
-  midiFolder.addInput(params, 'midiKeyboardEnabled', {
-    label: 'Keyboard drum pad (QWERTY)'
   });
   const drumsPatternHoldInput = midiFolder.addInput(params, 'midiPatternHoldMs', {
     label: 'Drums pattern hold MS',
@@ -348,18 +344,7 @@ function isPointerOverPane() {
 function keyPressed() {
   if (key === 'h') {
     pane.hidden = !pane.hidden;
-    return;
   }
-
-  if (isPointerOverPane()) return;
-
-  midiEngine.handleKeyboardPress(key, { shiftKey: keyIsDown(SHIFT) });
-}
-
-function keyReleased() {
-  if (isPointerOverPane()) return;
-
-  midiEngine.handleKeyboardRelease(key);
 }
 
 // --- Helpers ---
@@ -378,7 +363,7 @@ function clearMandala() {
 }
 
 function saveMandala() {
-  saveCanvas('MandalaMIDI', 'png');
+  saveCanvas('MandalaFadeGlow', 'png');
 }
 
 function trimTempoLineStatesForFrame(curvyCActive, heldDigits) {

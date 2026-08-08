@@ -27,20 +27,6 @@ Open any iteration, for example:
 
 Libraries load from jsDelivr (p5.js, Tweakpane) — no local copies needed in the tutorial folders.
 
-## Keyboard MIDI simulation (main folder)
-
-Enable **MIDI** and **Keyboard drum pad (QWERTY)** in the Tweakpane MIDI folder to trigger drum voices without hardware:
-
-| Key | Drum |
-|-----|------|
-| Z | Kick |
-| X | Snare |
-| A / S / D / F / G | Toms |
-| Q / W / E | Crash / open hat / closed hat |
-| R / T / Y / U | Ride / china / splash / crash 2 |
-
-Hold **Shift** for accent hits (velocity 127). These keys do not overlap with mouse drawing, **Draw with keyboard** (`C` + `1`–`9`), or the auto-draw motion sliders.
-
 ### MIDI modes
 
 In Tweakpane → **MIDI** → **Mode**:

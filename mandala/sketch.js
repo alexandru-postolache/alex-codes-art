@@ -51,7 +51,6 @@ let params = {
   tempoPauseChance: 0.15,
   midiEnabled: false,
   midiMode: 'piano',
-  midiKeyboardEnabled: true,
   midiPatternHoldMs: 320,
   midiDebugHud: false,
   fadeEnabled: true,
@@ -139,9 +138,6 @@ function setup() {
     options: { Piano: 'piano', Drums: 'drums' }
   }).on('change', (ev) => {
     drumsPatternHoldInput.hidden = ev.value !== 'drums';
-  });
-  midiFolder.addInput(params, 'midiKeyboardEnabled', {
-    label: 'Keyboard drum pad (QWERTY)'
   });
   const drumsPatternHoldInput = midiFolder.addInput(params, 'midiPatternHoldMs', {
     label: 'Drums pattern hold MS',
@@ -348,18 +344,7 @@ function isPointerOverPane() {
 function keyPressed() {
   if (key === 'h') {
     pane.hidden = !pane.hidden;
-    return;
   }
-
-  if (isPointerOverPane()) return;
-
-  midiEngine.handleKeyboardPress(key, { shiftKey: keyIsDown(SHIFT) });
-}
-
-function keyReleased() {
-  if (isPointerOverPane()) return;
-
-  midiEngine.handleKeyboardRelease(key);
 }
 
 // --- Helpers ---
