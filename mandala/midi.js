@@ -7,6 +7,7 @@ const midiEngine = {
   lastVelocity: 0,
   lastSource: null,
   status: "idle",
+  nextPianoColorKey: 1,
 
   keyboardBindings: {
     z: 36,
@@ -163,6 +164,12 @@ const midiEngine = {
     return constrain(floor(map(note, 0, 127, 1, 9)), 1, 9);
   },
 
+  nextPianoColor() {
+    let key = this.nextPianoColorKey;
+    this.nextPianoColorKey = key >= 9 ? 1 : key + 1;
+    return this.params.multiLineColors[`k${key}`];
+  },
+
   noteColor(note) {
     let key = this.notePaletteKey(note);
     return this.params.multiLineColors[`k${key}`];
@@ -228,7 +235,7 @@ const midiEngine = {
     return {
       type: "piano",
       label: "piano",
-      color: this.noteColor(note),
+      color: this.nextPianoColor(),
       radiusFrac: this.noteRadiusFrac(note)
     };
   },

@@ -44,7 +44,7 @@ What's new in this chapter:
 - A **Tempo** folder in Tweakpane — BPM, impact, subdivision chance, and pause chance.
 - Beat-aware auto-draw motion — when tempo is enabled, lines on `C` and keys `1`–`9` follow beat segments instead of free noise.
 - **`midi.js`** — a small `midiEngine` object that listens for MIDI note-ons and returns drawing segments each frame.
-- **MIDI Piano mode** — pitch maps to multi-line key colors and a spawn radius from 2% to 90%; lines last while the note is held.
+- **MIDI Piano mode** — each new stroke cycles through multi-line key colors `1`–`9`; spawn radius from 2% to 90% by pitch; lines last while the note is held.
 - **MIDI Drums mode** — kick, snare, tom, hi-hat, and cymbal notes each spawn on their own ring, using keys `1`–`6` from the multi-line palette, with length set by **Drums pattern hold MS**.
 - **Keyboard drum pad** — try MIDI without hardware using mapped QWERTY keys.
 - **Full-viewport layout** — the canvas fills the screen and the control panel stays fixed without a page scrollbar.
@@ -234,7 +234,7 @@ In the MIDI folder, **Mode** switches between:
 
 **Piano** (`piano`) — melodic / pitch-based mapping:
 
-- Color: note number maps to keys `1`–`9` in the multi-line palette.
+- Color: each new stroke cycles through keys `1`–`9` in the multi-line palette (in order).
 - Spawn radius: linear map from **2%** (lowest notes) to **90%** (highest notes) of the canvas radius.
 - Duration: while the MIDI key is held — no pattern hold timer.
 
@@ -259,7 +259,7 @@ resolveVoiceStyle(note) {
 
   return {
     type: "note",
-    color: this.noteColor(note),
+    color: this.nextPianoColor(),
     radiusFrac: this.noteRadiusFrac(note)
   };
 }
