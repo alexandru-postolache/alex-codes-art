@@ -53,7 +53,7 @@ let params = {
   midiMode: 'notes',
   midiKeyboardEnabled: true,
   midiPatternHoldMs: 320,
-  midiDebugHud: true,
+  midiDebugHud: false,
   fadeEnabled: true,
   fadeAmount: 100,
   maxTrailSegments: 6000,
