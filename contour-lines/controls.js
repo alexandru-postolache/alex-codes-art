@@ -3,6 +3,7 @@ import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpan
 const PARAM_DEFAULTS = window.contourParamDefaults;
 
 const PARAM_SCHEMA = {
+  fieldPreset: { type: 'string' },
   noiseScale: { type: 'number', min: 0.001, max: 0.05 },
   noiseSeed: { type: 'int', min: 0, max: 999999 },
   noiseDetail: { type: 'int', min: 1, max: 8 },
@@ -67,6 +68,12 @@ function parseParamValue(key, rawValue) {
       return String(rawValue);
     }
     if (key === 'colorPalette') {
+      return null;
+    }
+    if (key === 'fieldPreset' && window.contourFieldPresets?.includes(String(rawValue))) {
+      return String(rawValue);
+    }
+    if (key === 'fieldPreset') {
       return null;
     }
     return String(rawValue);
@@ -224,6 +231,11 @@ function randomizeParamValue(key, schema) {
     return palettes[Math.floor(Math.random() * palettes.length)];
   }
 
+  if (key === 'fieldPreset') {
+    const presets = window.contourFieldPresets ?? ['perlin'];
+    return presets[Math.floor(Math.random() * presets.length)];
+  }
+
   if (schema.type === 'int') {
     return randomInt(schema.min, schema.max);
   }
@@ -268,6 +280,15 @@ updateThresholds();
 pane = new Pane({ title: 'Contour Lines', expanded: true });
 
 const noiseFolder = pane.addFolder({ title: 'Noise', expanded: true });
+noiseFolder.addBinding(params, 'fieldPreset', {
+  label: 'preset',
+  options: {
+    Perlin: 'perlin',
+    Linear: 'linear',
+    Radial: 'radial',
+    Angular: 'angular',
+  },
+});
 noiseFolder.addBinding(params, 'noiseScale', { min: 0.001, max: 0.05, step: 0.001 });
 noiseFolder.addBinding(params, 'noiseSeed', { label: 'seed', min: 0, max: 999999, step: 1 });
 noiseFolder.addBinding(params, 'noiseDetail', { label: 'detail (lod)', min: 1, max: 8, step: 1 });
