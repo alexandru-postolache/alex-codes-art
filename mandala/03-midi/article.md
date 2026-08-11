@@ -321,9 +321,23 @@ Almost there! The sketch still uses one `params` object; Tweakpane binds straigh
 
 ## Why This Matters for Creative Coding
 
-You're not drawing mirrored wedges by hand, and you're not placing every MIDI hit manually either. You designed symmetry, fade rules, tempo curves, color mappings, and spawn rings — then you perform through mouse, keys, and pads while the system renders.
+If you've followed all three parts, you've built something bigger than a drawing app — you've built a **performance instrument**.
 
-Small changes to BPM, auto-draw speed, MIDI mode, or hold time produce very different visual grooves from the same controller. That's the same mindset as generative art and live-coded music: describe the rules, play the instrument, let the output surprise you.
+We didn't mirror every wedge by hand. We didn't place every MIDI hit one pixel at a time. Instead, we described rules: symmetry, fading trails, tempo curves, color keys, spawn rings, and how velocity maps to speed and brightness. Then we **played** the sketch — with the mouse, with `C` and digit keys, with a pad or keyboard — and let the system render the result.
+
+That's a huge shift in how we think about creative coding. You're not just writing code — you're designing a system that draws for you while you perform.
+
+Along the way, you learned how to:
+
+- keep a growing sketch readable by moving MIDI into its own `midiEngine` module
+- reuse one motion path (`getCurvyTarget()`) for keyboard lines and MIDI voices
+- layer **time** on top of motion with a BPM clock, pauses, and subdivisions
+- treat each note as its own polyphonic voice with pitch-based or drum-family styling
+- tune small parameters — BPM, auto-draw speed, MIDI mode, hold time — and watch the whole groove change
+
+The magic of generative art truly shines here. Every run can look different, but the **style** stays yours because the rules stay put. Small textual changes to those rules — or small twists on the sliders — create very different visual grooves from the same controller.
+
+Visual creative coding and live-coded music really are the same idea applied to different outputs: describe the rules, play the instrument, and let the output surprise you.
 
 ---
 
