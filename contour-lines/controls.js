@@ -29,6 +29,7 @@ const params = window.contourParams;
 let thresholdValues = [];
 let urlSyncTimer = null;
 let pane = null;
+let paneContainer = null;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -180,6 +181,13 @@ function isTypingTarget(target) {
   return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
 }
 
+function setPaneHidden(hidden) {
+  pane.hidden = hidden;
+  if (paneContainer) {
+    paneContainer.classList.toggle('is-hidden', hidden);
+  }
+}
+
 function toggleAnimationPause() {
   params.speed = params.speed > 0 ? 0 : 0.1;
 
@@ -277,7 +285,17 @@ function saveSketchPng() {
 loadParamsFromUrl();
 updateThresholds();
 
-pane = new Pane({ title: 'Contour Lines', expanded: true });
+paneContainer = document.createElement('div');
+paneContainer.className = 'contour-pane';
+document.body.appendChild(paneContainer);
+paneContainer.addEventListener('wheel', (event) => {
+  event.stopPropagation();
+}, { passive: true });
+paneContainer.addEventListener('touchmove', (event) => {
+  event.stopPropagation();
+}, { passive: true });
+
+pane = new Pane({ container: paneContainer, title: 'Contour Lines', expanded: true });
 
 const noiseFolder = pane.addFolder({ title: 'Noise', expanded: true });
 noiseFolder.addBinding(params, 'fieldPreset', {
@@ -353,7 +371,7 @@ window.addEventListener('keydown', (event) => {
   }
 
   if (event.key === 'h' || event.key === 'H') {
-    pane.hidden = !pane.hidden;
+    setPaneHidden(!pane.hidden);
     return;
   }
 

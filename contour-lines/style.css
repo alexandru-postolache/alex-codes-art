@@ -13,6 +13,30 @@ main {
   z-index: 0;
 }
 
+.contour-pane {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  max-height: calc(100vh - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+
+.contour-pane.is-hidden {
+  display: none;
+}
+
+.contour-pane .tp-dfwv {
+  position: relative;
+  top: auto;
+  right: auto;
+}
+
 .keyboard-hints {
   position: fixed;
   left: 12px;
