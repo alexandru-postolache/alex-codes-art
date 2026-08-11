@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Contour Vector — demo</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <section class="preview">
+        <div id="svg-host" aria-label="SVG preview"></div>
+      </section>
+      <aside class="panel">
+        <h1>Contour Vector</h1>
+        <p class="lede">Platform-neutral vector output for SVG, Figma, and other tools.</p>
+        <div id="pane-host"></div>
+        <div class="actions">
+          <button id="regenerate" type="button">Regenerate</button>
+          <button id="download-svg" type="button">Download SVG</button>
+        </div>
+      </aside>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/tweakpane@3.1.0/dist/tweakpane.min.js"></script>
+    <script type="module" src="demo.js"></script>
+  </body>
+</html>
