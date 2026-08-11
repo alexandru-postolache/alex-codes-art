@@ -18,13 +18,15 @@ main {
   top: 8px;
   right: 8px;
   z-index: 10;
+  width: 256px;
+  max-width: 256px;
   max-height: calc(100vh - 16px);
   max-height: calc(100dvh - 16px);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  scrollbar-gutter: stable;
+  box-sizing: border-box;
 }
 
 .contour-pane.is-hidden {
@@ -35,6 +37,8 @@ main {
   position: relative;
   top: auto;
   right: auto;
+  width: 256px;
+  max-width: 256px;
 }
 
 .keyboard-hints {
