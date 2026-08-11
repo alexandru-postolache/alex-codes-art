@@ -283,6 +283,9 @@ function saveSketchPng() {
 }
 
 loadParamsFromUrl();
+if (!window.contourFieldPresets.includes(params.fieldPreset)) {
+  params.fieldPreset = 'perlin';
+}
 updateThresholds();
 
 paneContainer = document.createElement('div');
@@ -304,7 +307,6 @@ noiseFolder.addBinding(params, 'fieldPreset', {
     Perlin: 'perlin',
     Linear: 'linear',
     Radial: 'radial',
-    Angular: 'angular',
   },
 });
 noiseFolder.addBinding(params, 'noiseScale', { min: 0.001, max: 0.05, step: 0.001 });

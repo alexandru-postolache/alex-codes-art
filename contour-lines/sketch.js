@@ -261,33 +261,6 @@ function sampleRadialField(px, py, noiseScale, params, canvasWidth, canvasHeight
   return 0.5 + 0.5 * Math.sin(distance * frequency + phase + animPhase);
 }
 
-function getAngularArmCount(params) {
-  const seed = Math.floor(params.noiseSeed ?? 0);
-  return 2 + Math.floor(seedHash(seed, 4) * 14);
-}
-
-function sampleAngularField(px, py, noiseScale, params, canvasWidth, canvasHeight, animPhase) {
-  const center = getPresetCenter(params, canvasWidth, canvasHeight);
-  const dx = px - center.x;
-  const dy = py - center.y;
-  const distance = Math.sqrt(dx * dx + dy * dy);
-  const angle = Math.atan2(dy, dx);
-  const phase = getPresetPhase(params);
-  const arms = getAngularArmCount(params);
-  const spiralFreq = noiseScale * 2;
-  let value = 0.5 + 0.5 * Math.sin(arms * angle + spiralFreq * distance + phase + animPhase);
-
-  const softenRadius = Math.min(canvasWidth, canvasHeight) * 0.06;
-  if (distance < softenRadius) {
-    const radialValue = 0.5 + 0.5 * Math.sin(spiralFreq * distance + phase + animPhase);
-    const t = distance / softenRadius;
-    const blend = t * t * (3 - 2 * t);
-    value = radialValue * (1 - blend) + value * blend;
-  }
-
-  return value;
-}
-
 function sampleStructuredDistortion(gx, gy, params, noiseScale) {
   const detail = Math.max(1, Math.round(params.noiseDetail ?? 4));
   if (detail <= 1) {
@@ -309,8 +282,6 @@ function sampleBaseField(px, py, gx, gy, noiseScale, params, canvasWidth, canvas
       return sampleLinearField(px, py, noiseScale, params, animPhase);
     case 'radial':
       return sampleRadialField(px, py, noiseScale, params, canvasWidth, canvasHeight, animPhase);
-    case 'angular':
-      return sampleAngularField(px, py, noiseScale, params, canvasWidth, canvasHeight, animPhase);
     case 'perlin':
     default:
       return samplePerlinField(gx, gy, noiseScale, params);
@@ -322,11 +293,7 @@ function sampleFieldValue(px, py, gx, gy, noiseScale, params, canvasWidth, canva
   let value = sampleBaseField(px, py, gx, gy, noiseScale, params, canvasWidth, canvasHeight);
 
   if (preset !== 'perlin') {
-    let distortion = sampleStructuredDistortion(gx, gy, params, noiseScale);
-    if (preset === 'angular') {
-      distortion *= 0.45;
-    }
-    value += distortion;
+    value += sampleStructuredDistortion(gx, gy, params, noiseScale);
   }
 
   return constrain(value, 0, 1);

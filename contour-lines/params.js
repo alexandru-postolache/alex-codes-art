@@ -43,7 +43,7 @@
   window.contourThresholdValues = computeThresholdValues(window.contourParams);
   window.computeContourThresholdValues = computeThresholdValues;
 
-  window.contourFieldPresets = ['perlin', 'linear', 'radial', 'angular'];
+  window.contourFieldPresets = ['perlin', 'linear', 'radial'];
 
   window.contourColorPalettes = [
     'tints',
