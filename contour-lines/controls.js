@@ -1,4 +1,4 @@
-const { Pane } = Tweakpane;
+import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js';
 
 const PARAM_DEFAULTS = window.contourParamDefaults;
 
@@ -31,7 +31,7 @@ let urlSyncTimer = null;
 let pane = null;
 let paneContainer = null;
 
-function clamp(value, min, max) {
+function clampParam(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
@@ -89,7 +89,7 @@ function parseParamValue(key, rawValue) {
     if (Number.isNaN(value)) {
       return null;
     }
-    return clamp(value, schema.min, schema.max);
+    return clampParam(value, schema.min, schema.max);
   }
 
   const value = Number(rawValue);
@@ -97,7 +97,7 @@ function parseParamValue(key, rawValue) {
     return null;
   }
 
-  return clamp(value, schema.min, schema.max);
+  return clampParam(value, schema.min, schema.max);
 }
 
 function loadParamsFromUrl() {
@@ -285,7 +285,7 @@ if (!window.contourFieldPresets.includes(params.fieldPreset)) {
 }
 updateThresholds();
 
-pane = new Pane({ title: 'Contour Lines', expanded: true, width: 256 });
+pane = new Pane({ title: 'Contour Lines', expanded: true });
 paneContainer = pane.element;
 paneContainer.classList.add('contour-pane');
 

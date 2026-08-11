@@ -32,6 +32,12 @@ main {
   -ms-overflow-style: none;
 }
 
+.contour-pane.tp-dfwv {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+}
+
 .contour-pane::-webkit-scrollbar {
   display: none;
   width: 0;
