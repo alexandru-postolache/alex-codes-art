@@ -204,6 +204,7 @@ function randomizeSeed() {
 
 const PRESERVED_ON_RANDOMIZE = new Set([
   'cols',
+  'fieldPreset',
   'mouseInfluence',
   'mouseStrength',
   'mouseRadius',
