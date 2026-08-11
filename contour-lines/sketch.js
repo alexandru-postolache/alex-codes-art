@@ -255,10 +255,10 @@ function sampleRadialField(px, py, noiseScale, params, canvasWidth, canvasHeight
   const center = getPresetCenter(params, canvasWidth, canvasHeight);
   const dx = px - center.x;
   const dy = py - center.y;
-  const distance = Math.sqrt(dx * dx + dy * dy);
+  const radius = Math.sqrt(dx * dx + dy * dy);
   const phase = getPresetPhase(params);
   const frequency = noiseScale * 2;
-  return 0.5 + 0.5 * Math.sin(distance * frequency + phase + animPhase);
+  return 0.5 + 0.5 * Math.sin(radius * frequency + phase + animPhase);
 }
 
 function sampleStructuredDistortion(gx, gy, params, noiseScale) {

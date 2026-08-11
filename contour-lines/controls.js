@@ -1,4 +1,4 @@
-import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js';
+const { Pane } = Tweakpane;
 
 const PARAM_DEFAULTS = window.contourParamDefaults;
 
@@ -29,6 +29,7 @@ const params = window.contourParams;
 let thresholdValues = [];
 let urlSyncTimer = null;
 let pane = null;
+let paneContainer = null;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -182,9 +183,6 @@ function isTypingTarget(target) {
 
 function setPaneHidden(hidden) {
   pane.hidden = hidden;
-  if (paneContainer) {
-    paneContainer.classList.toggle('is-hidden', hidden);
-  }
 }
 
 function toggleAnimationPause() {
@@ -287,17 +285,9 @@ if (!window.contourFieldPresets.includes(params.fieldPreset)) {
 }
 updateThresholds();
 
-paneContainer = document.createElement('div');
-paneContainer.className = 'contour-pane';
-document.body.appendChild(paneContainer);
-paneContainer.addEventListener('wheel', (event) => {
-  event.stopPropagation();
-}, { passive: true });
-paneContainer.addEventListener('touchmove', (event) => {
-  event.stopPropagation();
-}, { passive: true });
-
-pane = new Pane({ container: paneContainer, title: 'Contour Lines', expanded: true });
+pane = new Pane({ title: 'Contour Lines', expanded: true, width: 256 });
+paneContainer = pane.element;
+paneContainer.classList.add('contour-pane');
 
 const noiseFolder = pane.addFolder({ title: 'Noise', expanded: true });
 noiseFolder.addBinding(params, 'fieldPreset', {

@@ -7,19 +7,35 @@ html, body {
 }
 canvas {
   display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
 }
 main {
-  position: relative;
-  z-index: 0;
+  width: 100%;
+  height: 100%;
 }
 
-.tp-dfwv {
+.contour-pane {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 1000;
+  width: 256px;
+  max-width: 256px;
   max-height: calc(100vh - 16px);
   max-height: calc(100dvh - 16px);
-  overflow-x: hidden;
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.contour-pane::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .keyboard-hints {
