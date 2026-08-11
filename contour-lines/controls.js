@@ -29,7 +29,6 @@ const params = window.contourParams;
 let thresholdValues = [];
 let urlSyncTimer = null;
 let pane = null;
-let paneContainer = null;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
