@@ -2,18 +2,26 @@
  * Stitch marching-squares segments into continuous polylines for SVG / vector tools.
  */
 
-function pointKey(point, precision = 3) {
+function pointKey(point, precision = 4) {
   const scale = Math.pow(10, precision);
   return `${Math.round(point.x * scale)},${Math.round(point.y * scale)}`;
 }
 
-function pointsEqual(a, b, epsilon = 1e-3) {
+function edgeKey(keyA, keyB) {
+  return keyA < keyB ? `${keyA}|${keyB}` : `${keyB}|${keyA}`;
+}
+
+function pointsEqual(a, b, epsilon = 1e-4) {
   return Math.abs(a.x - b.x) < epsilon && Math.abs(a.y - b.y) < epsilon;
 }
 
 function addEdgeToGraph(graph, a, b) {
   const keyA = pointKey(a);
   const keyB = pointKey(b);
+
+  if (keyA === keyB) {
+    return;
+  }
 
   if (!graph.has(keyA)) graph.set(keyA, { point: a, neighbors: new Map() });
   if (!graph.has(keyB)) graph.set(keyB, { point: b, neighbors: new Map() });
@@ -37,19 +45,18 @@ function buildSegmentGraph(segments) {
   return graph;
 }
 
-function walkPath(startKey, graph, visitedEdges) {
-  const points = [graph.get(startKey).point];
-  let currentKey = startKey;
+function extendPathFromEnd(pathKeys, graph, visitedEdges) {
+  let currentKey = pathKeys[pathKeys.length - 1];
 
   while (true) {
     const node = graph.get(currentKey);
     let nextKey = null;
 
-    for (const [neighborKey] of node.neighbors) {
-      const edgeKey = currentKey < neighborKey ? `${currentKey}|${neighborKey}` : `${neighborKey}|${currentKey}`;
-      if (!visitedEdges.has(edgeKey)) {
+    for (const neighborKey of node.neighbors.keys()) {
+      const edge = edgeKey(currentKey, neighborKey);
+      if (!visitedEdges.has(edge)) {
         nextKey = neighborKey;
-        visitedEdges.add(edgeKey);
+        visitedEdges.add(edge);
         break;
       }
     }
@@ -58,16 +65,65 @@ function walkPath(startKey, graph, visitedEdges) {
       break;
     }
 
-    points.push(graph.get(nextKey).point);
+    pathKeys.push(nextKey);
     currentKey = nextKey;
 
-    if (nextKey === startKey) {
+    if (nextKey === pathKeys[0]) {
       break;
     }
   }
+}
 
-  const closed = points.length > 2 && pointsEqual(points[0], points[points.length - 1]);
+function extendPathFromStart(pathKeys, graph, visitedEdges) {
+  let currentKey = pathKeys[0];
+
+  while (true) {
+    const node = graph.get(currentKey);
+    let previousKey = null;
+
+    for (const neighborKey of node.neighbors.keys()) {
+      const edge = edgeKey(currentKey, neighborKey);
+      if (!visitedEdges.has(edge)) {
+        previousKey = neighborKey;
+        visitedEdges.add(edge);
+        break;
+      }
+    }
+
+    if (!previousKey) {
+      break;
+    }
+
+    pathKeys.unshift(previousKey);
+    currentKey = previousKey;
+
+    if (previousKey === pathKeys[pathKeys.length - 1]) {
+      break;
+    }
+  }
+}
+
+function keysToPath(pathKeys, graph) {
+  const points = pathKeys.map((key) => graph.get(key).point);
+  const closed =
+    points.length > 2 &&
+    pointKey(points[0]) === pointKey(points[points.length - 1]);
   return { points, closed };
+}
+
+function collectUnvisitedEdges(graph, visitedEdges) {
+  const edges = [];
+
+  for (const [keyA, node] of graph) {
+    for (const keyB of node.neighbors.keys()) {
+      const edge = edgeKey(keyA, keyB);
+      if (!visitedEdges.has(edge)) {
+        edges.push({ keyA, keyB, edge });
+      }
+    }
+  }
+
+  return edges;
 }
 
 /**
@@ -79,20 +135,22 @@ export function stitchSegmentsToPaths(segments) {
   const visitedEdges = new Set();
   const paths = [];
 
-  for (const startKey of graph.keys()) {
-    const node = graph.get(startKey);
-    for (const neighborKey of node.neighbors.keys()) {
-      const edgeKey = startKey < neighborKey ? `${startKey}|${neighborKey}` : `${neighborKey}|${startKey}`;
-      if (visitedEdges.has(edgeKey)) {
-        continue;
-      }
+  let unvisited = collectUnvisitedEdges(graph, visitedEdges);
 
-      visitedEdges.add(edgeKey);
-      const path = walkPath(startKey, graph, visitedEdges);
-      if (path.points.length >= 2) {
-        paths.push(path);
-      }
+  while (unvisited.length > 0) {
+    const { keyA, keyB, edge } = unvisited[0];
+    visitedEdges.add(edge);
+
+    const pathKeys = [keyA, keyB];
+    extendPathFromEnd(pathKeys, graph, visitedEdges);
+    extendPathFromStart(pathKeys, graph, visitedEdges);
+
+    const path = keysToPath(pathKeys, graph);
+    if (path.points.length >= 2) {
+      paths.push(path);
     }
+
+    unvisited = collectUnvisitedEdges(graph, visitedEdges);
   }
 
   return paths;

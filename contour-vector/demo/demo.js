@@ -2,7 +2,9 @@ import {
   generateContourScene,
   exportSvg,
   downloadSvg,
+  computeThresholdValues,
 } from '../core/index.js';
+import { resolveSceneColors } from './palette-p5.js';
 
 const DEFAULT_PARAMS = {
   fieldPreset: 'perlin',
@@ -32,11 +34,19 @@ const downloadButton = document.getElementById('download-svg');
 let scene = null;
 
 function renderScene() {
+  const thresholds = computeThresholdValues(params);
+  const palette = resolveSceneColors(params, params.contourCount);
+
   scene = generateContourScene({
     width: previewSize.width,
     height: previewSize.height,
-    params,
+    params: {
+      ...params,
+      backgroundColor: palette.backgroundColor,
+    },
     time: 0,
+    colors: palette.colors,
+    thresholds,
   });
 
   const svg = exportSvg(scene, { pretty: true });
@@ -103,3 +113,8 @@ downloadButton.addEventListener('click', () => {
 });
 
 renderScene();
+
+window.onP5Ready = () => {
+  renderScene();
+  pane.refresh();
+};

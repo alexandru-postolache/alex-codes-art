@@ -47,7 +47,10 @@ Adapters translate that scene for each platform:
 | `adapters/figma.js` | Vector network payloads for `figma.createVector()` |
 | future: `sketch.js`, `penpot.js`, `framer.js` | same scene, different API |
 
-## Paper.js — when to use it
+## Dependencies
+
+- **Demo only:** [p5.js](https://p5js.org) + `lib/p5.colorGenerator.js` (your 1-file palette library) for color matching with `contour-lines/`
+- **Core / Figma:** no p5 — uses built-in hex fallback in `core/palette.js`, or pass pre-resolved `colors` into `generateContourScene()`
 
 **Not in core.** The marching-squares pipeline already produces points; SVG and Figma only need polylines.
 

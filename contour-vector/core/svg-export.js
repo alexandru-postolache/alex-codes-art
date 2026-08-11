@@ -47,7 +47,7 @@ export function exportSvg(scene, options = {}) {
         continue;
       }
       lines.push(
-        `${indent}${indent}<path d="${d}" fill="none" stroke="${escapeXml(layer.color)}" stroke-width="${layer.strokeWidth}" stroke-linecap="round" stroke-linejoin="round" />`
+        `${indent}${indent}<path d="${d}" fill="none" stroke="${escapeXml(layer.color)}" stroke-width="${layer.strokeWidth}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />`
       );
     }
   }
