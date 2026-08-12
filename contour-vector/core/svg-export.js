@@ -1,3 +1,5 @@
+import { pathsToSegmentSvgD } from './segments.js';
+
 function escapeXml(value) {
   return String(value)
     .replace(/&/g, '&amp;')
@@ -6,54 +8,16 @@ function escapeXml(value) {
     .replace(/"/g, '&quot;');
 }
 
-function pointsToPathData(points, closed) {
-  if (points.length === 0) {
-    return '';
-  }
-
-  const commands = [`M ${points[0].x} ${points[0].y}`];
-  for (let i = 1; i < points.length; i++) {
-    commands.push(`L ${points[i].x} ${points[i].y}`);
-  }
-  if (closed) {
-    commands.push('Z');
-  }
-  return commands.join(' ');
-}
-
-function beziersToPathData(beziers, closed) {
-  if (beziers.length === 0) {
-    return '';
-  }
-
-  const commands = [`M ${beziers[0].p0.x} ${beziers[0].p0.y}`];
-  for (const segment of beziers) {
-    commands.push(
-      `C ${segment.cp1.x} ${segment.cp1.y} ${segment.cp2.x} ${segment.cp2.y} ${segment.p1.x} ${segment.p1.y}`
-    );
-  }
-  if (closed) {
-    commands.push('Z');
-  }
-  return commands.join(' ');
-}
-
-function pathToSvgD(path) {
-  if (path.beziers?.length) {
-    return beziersToPathData(path.beziers, path.closed);
-  }
-  return pointsToPathData(path.points, path.closed);
-}
-
 /**
  * Serialize a ContourVectorScene to an SVG string.
  *
  * @param {import('./generate.js').ContourVectorScene} scene
  * @param {Object} [options]
  * @param {boolean} [options.pretty=false]
+ * @param {boolean} [options.mergePaths=true] - one path element per contour level
  */
 export function exportSvg(scene, options = {}) {
-  const { pretty = false } = options;
+  const { pretty = false, mergePaths = true } = options;
   const nl = pretty ? '\n' : '';
   const indent = pretty ? '  ' : '';
 
@@ -65,8 +29,19 @@ export function exportSvg(scene, options = {}) {
   ];
 
   for (const layer of scene.contours) {
+    if (mergePaths) {
+      const d = pathsToSegmentSvgD(layer.paths);
+      if (!d) {
+        continue;
+      }
+      lines.push(
+        `${indent}${indent}<path d="${d}" fill="none" stroke="${escapeXml(layer.color)}" stroke-width="${layer.strokeWidth}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />`
+      );
+      continue;
+    }
+
     for (const path of layer.paths) {
-      const d = pathToSvgD(path);
+      const d = pathsToSegmentSvgD([path]);
       if (!d) {
         continue;
       }

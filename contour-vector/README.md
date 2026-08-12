@@ -12,7 +12,9 @@ contour-vector/
     generate.js         # params → ContourVectorScene
     svg-export.js       # scene → SVG string
     marching-squares.js
-    path-stitch.js      # segments → continuous polylines
+    segments.js          # same algorithm as canvas LINES mode
+    path-stitch.js       # optional, not used by default
+    path-smooth.js       # optional, not used by default
     field.js            # noise presets + scalar field
     palette.js          # hex palettes without p5
   adapters/
