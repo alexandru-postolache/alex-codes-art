@@ -40,7 +40,7 @@ import { getPaletteColors } from './palette.js';
  * @param {string[]} [options.colors] - optional pre-resolved hex colors per contour
  * @param {number[]} [options.thresholds] - optional pre-resolved thresholds
  * @param {boolean} [options.smooth=true] - apply Catmull-Rom curve smoothing
- * @param {number} [options.smoothTension=1] - curve tension (1 = default)
+ * @param {number} [options.smoothTension=0.65] - curve tension (lower = less overshoot)
  */
 export function generateContourScene({
   width,
