@@ -118,8 +118,10 @@ export function sampleFieldValue({
   return clamp(value, 0, 1);
 }
 
-function samplePerlinField(gx, gy, noiseScale, time, noise) {
-  return noise.noise3D(gx * noiseScale, gy * noiseScale, time);
+function samplePerlinField(gx, gy, noiseScale, params, time, noise) {
+  const detail = Math.max(1, Math.round(params.noiseDetail ?? 4));
+  const falloff = clamp(params.noiseFalloff ?? 0.5, 0, 1);
+  return sampleFbm(noise, gx, gy, time, detail, falloff, noiseScale);
 }
 
 function sampleLinearField(px, py, noiseScale, params, animPhase) {
@@ -174,7 +176,7 @@ function sampleBaseField({
       return sampleRadialField(px, py, noiseScale, params, canvasWidth, canvasHeight, animPhase);
     case 'perlin':
     default:
-      return samplePerlinField(gx, gy, noiseScale, time, noise);
+      return samplePerlinField(gx, gy, noiseScale, params, time, noise);
   }
 }
 
