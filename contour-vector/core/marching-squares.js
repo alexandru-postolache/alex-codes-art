@@ -33,48 +33,54 @@ function edgePoint(edge, x, y, cellWidth, cellHeight, v1, v2, threshold, interpo
 }
 
 function getEdges(caseIndex, x, y, tl, tr, br, bl, threshold, cellWidth, cellHeight, interpolate = true) {
+  const top = () => edgePoint('top', x, y, cellWidth, cellHeight, tl, tr, threshold, interpolate);
+  const right = () => edgePoint('right', x, y, cellWidth, cellHeight, tr, br, threshold, interpolate);
+  const bottom = () => edgePoint('bottom', x, y, cellWidth, cellHeight, bl, br, threshold, interpolate);
+  const left = () => edgePoint('left', x, y, cellWidth, cellHeight, tl, bl, threshold, interpolate);
+
   const edges = [];
   switch (caseIndex) {
     case 1:
     case 14:
-      edges.push(edgePoint('left', x, y, cellWidth, cellHeight, tl, bl, threshold, interpolate));
-      edges.push(edgePoint('top', x, y, cellWidth, cellHeight, tl, tr, threshold, interpolate));
+      edges.push(left(), top());
       break;
     case 2:
     case 13:
-      edges.push(edgePoint('top', x, y, cellWidth, cellHeight, tl, tr, threshold, interpolate));
-      edges.push(edgePoint('right', x, y, cellWidth, cellHeight, tr, br, threshold, interpolate));
+      edges.push(top(), right());
       break;
     case 3:
     case 12:
-      edges.push(edgePoint('left', x, y, cellWidth, cellHeight, tl, bl, threshold, interpolate));
-      edges.push(edgePoint('right', x, y, cellWidth, cellHeight, tr, br, threshold, interpolate));
+      edges.push(left(), right());
       break;
     case 4:
     case 11:
-      edges.push(edgePoint('right', x, y, cellWidth, cellHeight, tr, br, threshold, interpolate));
-      edges.push(edgePoint('bottom', x, y, cellWidth, cellHeight, bl, br, threshold, interpolate));
+      edges.push(right(), bottom());
       break;
     case 6:
     case 9:
-      edges.push(edgePoint('top', x, y, cellWidth, cellHeight, tl, tr, threshold, interpolate));
-      edges.push(edgePoint('bottom', x, y, cellWidth, cellHeight, bl, br, threshold, interpolate));
+      edges.push(top(), bottom());
       break;
     case 7:
     case 8:
-      edges.push(edgePoint('left', x, y, cellWidth, cellHeight, tl, bl, threshold, interpolate));
-      edges.push(edgePoint('bottom', x, y, cellWidth, cellHeight, bl, br, threshold, interpolate));
-      break;
-    case 10:
-      edges.push(edgePoint('top', x, y, cellWidth, cellHeight, tr, br, threshold, interpolate));
-      edges.push(edgePoint('left', x, y, cellWidth, cellHeight, bl, br, threshold, interpolate));
+      edges.push(left(), bottom());
       break;
     case 5:
-      edges.push(edgePoint('left', x, y, cellWidth, cellHeight, tl, bl, threshold, interpolate));
-      edges.push(edgePoint('top', x, y, cellWidth, cellHeight, tr, br, threshold, interpolate));
-      edges.push(edgePoint('right', x, y, cellWidth, cellHeight, br, bl, threshold, interpolate));
-      edges.push(edgePoint('bottom', x, y, cellWidth, cellHeight, tl, bl, threshold, interpolate));
+    case 10: {
+      // Resolve ambiguous saddle cells consistently using the asymptotic decider.
+      const connectAlongCorners = tl * br - tr * bl >= 0;
+      if (caseIndex === 5) {
+        if (connectAlongCorners) {
+          edges.push(left(), top(), right(), bottom());
+        } else {
+          edges.push(top(), right(), bottom(), left());
+        }
+      } else if (connectAlongCorners) {
+        edges.push(top(), right(), bottom(), left());
+      } else {
+        edges.push(left(), top(), right(), bottom());
+      }
       break;
+    }
   }
   return edges;
 }
