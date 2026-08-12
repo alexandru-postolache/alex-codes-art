@@ -4,6 +4,7 @@ export { getGridDimensions, computeThresholdValues, getStrokeWeight } from './gr
 export { buildFieldGrid, sampleFieldValue, getCornerValue } from './field.js';
 export { collectContourSegments, getContourSegmentsForCell } from './marching-squares.js';
 export { stitchSegmentsToPaths } from './path-stitch.js';
+export { smoothPathToBeziers, smoothPaths } from './path-smooth.js';
 export { getPaletteColors } from './palette.js';
 export { generateContourScene } from './generate.js';
 export { exportSvg, downloadSvg } from './svg-export.js';

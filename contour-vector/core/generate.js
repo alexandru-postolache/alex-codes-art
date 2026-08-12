@@ -1,6 +1,7 @@
 import { buildFieldGrid } from './field.js';
 import { collectContourSegments } from './marching-squares.js';
 import { stitchSegmentsToPaths } from './path-stitch.js';
+import { smoothPaths } from './path-smooth.js';
 import { computeThresholdValues, getGridDimensions, getStrokeWeight } from './grid.js';
 import { getPaletteColors } from './palette.js';
 
@@ -8,6 +9,7 @@ import { getPaletteColors } from './palette.js';
  * @typedef {Object} ContourVectorPath
  * @property {Array<{x:number,y:number}>} points
  * @property {boolean} closed
+ * @property {Array<{p0:{x:number,y:number}, cp1:{x:number,y:number}, cp2:{x:number,y:number}, p1:{x:number,y:number}}>} [beziers]
  */
 
 /**
@@ -37,6 +39,8 @@ import { getPaletteColors } from './palette.js';
  * @param {{x:number,y:number,canvasWidth:number,canvasHeight:number}|null} [options.mouse=null]
  * @param {string[]} [options.colors] - optional pre-resolved hex colors per contour
  * @param {number[]} [options.thresholds] - optional pre-resolved thresholds
+ * @param {boolean} [options.smooth=true] - apply Catmull-Rom curve smoothing
+ * @param {number} [options.smoothTension=1] - curve tension (1 = default)
  */
 export function generateContourScene({
   width,
@@ -46,6 +50,8 @@ export function generateContourScene({
   mouse = null,
   colors = null,
   thresholds = null,
+  smooth = true,
+  smoothTension = 1,
 }) {
   const cols = Math.round(params.cols);
   const { rows, cellWidth, cellHeight } = getGridDimensions(cols, width, height);
@@ -68,7 +74,10 @@ export function generateContourScene({
 
   const contours = thresholdValues.map((threshold, index) => {
     const segments = collectContourSegments(grid, rows, cols, threshold, cellWidth, cellHeight);
-    const paths = stitchSegmentsToPaths(segments);
+    let paths = stitchSegmentsToPaths(segments);
+    if (smooth) {
+      paths = smoothPaths(paths, { tension: smoothTension });
+    }
 
     return {
       threshold,

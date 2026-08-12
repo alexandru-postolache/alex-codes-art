@@ -21,6 +21,30 @@ function pointsToPathData(points, closed) {
   return commands.join(' ');
 }
 
+function beziersToPathData(beziers, closed) {
+  if (beziers.length === 0) {
+    return '';
+  }
+
+  const commands = [`M ${beziers[0].p0.x} ${beziers[0].p0.y}`];
+  for (const segment of beziers) {
+    commands.push(
+      `C ${segment.cp1.x} ${segment.cp1.y} ${segment.cp2.x} ${segment.cp2.y} ${segment.p1.x} ${segment.p1.y}`
+    );
+  }
+  if (closed) {
+    commands.push('Z');
+  }
+  return commands.join(' ');
+}
+
+function pathToSvgD(path) {
+  if (path.beziers?.length) {
+    return beziersToPathData(path.beziers, path.closed);
+  }
+  return pointsToPathData(path.points, path.closed);
+}
+
 /**
  * Serialize a ContourVectorScene to an SVG string.
  *
@@ -42,7 +66,7 @@ export function exportSvg(scene, options = {}) {
 
   for (const layer of scene.contours) {
     for (const path of layer.paths) {
-      const d = pointsToPathData(path.points, path.closed);
+      const d = pathToSvgD(path);
       if (!d) {
         continue;
       }
