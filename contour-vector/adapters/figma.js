@@ -12,23 +12,33 @@ function hexToFigmaRgb(hex) {
   };
 }
 
-function segmentToVectorNetwork(path) {
-  const [a, b] = path.points;
-  return {
-    vertices: [
-      { x: a.x, y: a.y },
-      { x: b.x, y: b.y },
-    ],
-    segments: [
-      {
-        start: 0,
-        end: 1,
-        tangentStart: { x: 0, y: 0 },
-        tangentEnd: { x: 0, y: 0 },
-      },
-    ],
-    regions: [],
-  };
+function pathToVectorNetwork(path) {
+  const vertices = path.points.map((point) => ({ x: point.x, y: point.y }));
+  const segments = [];
+  const segmentCount = path.closed ? vertices.length : vertices.length - 1;
+
+  for (let index = 0; index < segmentCount; index++) {
+    const end = (index + 1) % vertices.length;
+    const bezier = path.beziers?.[index];
+    segments.push({
+      start: index,
+      end,
+      tangentStart: bezier
+        ? {
+            x: bezier.cp1.x - bezier.p0.x,
+            y: bezier.cp1.y - bezier.p0.y,
+          }
+        : { x: 0, y: 0 },
+      tangentEnd: bezier
+        ? {
+            x: bezier.cp2.x - bezier.p1.x,
+            y: bezier.cp2.y - bezier.p1.y,
+          }
+        : { x: 0, y: 0 },
+    });
+  }
+
+  return { vertices, segments, regions: [] };
 }
 
 /**
@@ -47,7 +57,7 @@ export function sceneToFigmaVectors(scene) {
 
       vectors.push({
         name: `contour-${layer.threshold.toFixed(3)}`,
-        vectorNetwork: segmentToVectorNetwork(path),
+        vectorNetwork: pathToVectorNetwork(path),
         stroke: {
           color: hexToFigmaRgb(layer.color),
           weight: layer.strokeWeight,

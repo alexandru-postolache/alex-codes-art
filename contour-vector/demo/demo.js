@@ -112,9 +112,11 @@ downloadButton.addEventListener('click', () => {
   downloadSvg(exportSvg(scene, { pretty: true }), `contour-vector-${Date.now()}.svg`);
 });
 
-renderScene();
-
 window.onP5Ready = () => {
   renderScene();
   pane.refresh();
 };
+
+if (window.p5Ready) {
+  window.onP5Ready();
+}

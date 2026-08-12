@@ -3,6 +3,7 @@ export { NoiseField, sampleFbm } from './noise.js';
 export { getGridDimensions, computeThresholdValues, getStrokeWeight } from './grid.js';
 export { buildFieldGrid, sampleFieldValue, getCornerValue } from './field.js';
 export { collectContourSegments, getContourSegmentsForCell } from './marching-squares.js';
+export { segmentsToPaths, pathsToSegmentSvgD } from './segments.js';
 export { stitchSegmentsToPaths } from './path-stitch.js';
 export { smoothPathToBeziers, smoothPaths } from './path-smooth.js';
 export { getPaletteColors } from './palette.js';

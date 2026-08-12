@@ -1,5 +1,3 @@
-import { pathsToSegmentSvgD } from './segments.js';
-
 function escapeXml(value) {
   return String(value)
     .replace(/&/g, '&amp;')
@@ -8,16 +6,43 @@ function escapeXml(value) {
     .replace(/"/g, '&quot;');
 }
 
+function pathToSvgD(path) {
+  if (path.beziers?.length) {
+    const first = path.beziers[0].p0;
+    const commands = [`M ${first.x} ${first.y}`];
+    for (const segment of path.beziers) {
+      commands.push(
+        `C ${segment.cp1.x} ${segment.cp1.y} ${segment.cp2.x} ${segment.cp2.y} ${segment.p1.x} ${segment.p1.y}`
+      );
+    }
+    if (path.closed) {
+      commands.push('Z');
+    }
+    return commands.join(' ');
+  }
+
+  if (!path.points?.length) {
+    return '';
+  }
+  const commands = [`M ${path.points[0].x} ${path.points[0].y}`];
+  for (let i = 1; i < path.points.length; i++) {
+    commands.push(`L ${path.points[i].x} ${path.points[i].y}`);
+  }
+  if (path.closed) {
+    commands.push('Z');
+  }
+  return commands.join(' ');
+}
+
 /**
  * Serialize a ContourVectorScene to an SVG string.
  *
  * @param {import('./generate.js').ContourVectorScene} scene
  * @param {Object} [options]
  * @param {boolean} [options.pretty=false]
- * @param {boolean} [options.mergePaths=true] - one path element per contour level
  */
 export function exportSvg(scene, options = {}) {
-  const { pretty = false, mergePaths = true } = options;
+  const { pretty = false } = options;
   const nl = pretty ? '\n' : '';
   const indent = pretty ? '  ' : '';
 
@@ -29,19 +54,8 @@ export function exportSvg(scene, options = {}) {
   ];
 
   for (const layer of scene.contours) {
-    if (mergePaths) {
-      const d = pathsToSegmentSvgD(layer.paths);
-      if (!d) {
-        continue;
-      }
-      lines.push(
-        `${indent}${indent}<path d="${d}" fill="none" stroke="${escapeXml(layer.color)}" stroke-width="${layer.strokeWidth}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />`
-      );
-      continue;
-    }
-
     for (const path of layer.paths) {
-      const d = pathsToSegmentSvgD([path]);
+      const d = pathToSvgD(path);
       if (!d) {
         continue;
       }

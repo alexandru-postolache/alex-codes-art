@@ -12,9 +12,9 @@ contour-vector/
     generate.js         # params → ContourVectorScene
     svg-export.js       # scene → SVG string
     marching-squares.js
-    segments.js          # same algorithm as canvas LINES mode
-    path-stitch.js       # optional, not used by default
-    path-smooth.js       # optional, not used by default
+    path-stitch.js       # segments → continuous topology
+    path-smooth.js       # local, chord-limited Bezier curves
+    segments.js          # optional raw segment export
     field.js            # noise presets + scalar field
     palette.js          # hex palettes without p5
   adapters/
@@ -24,7 +24,9 @@ contour-vector/
 
 ### Data model
 
-`generateContourScene()` returns:
+`generateContourScene()` runs marching squares with an asymptotic saddle
+decider, stitches each contour into continuous paths, then applies the same
+local Bezier smoothing rule to every path.
 
 ```js
 {
@@ -68,11 +70,11 @@ For a Figma plugin v1, skip Paper.js — fewer dependencies, smaller bundle, fas
 ## Demo
 
 ```bash
-cd contour-vector/demo
+cd contour-vector
 python3 -m http.server 8080
 ```
 
-Open `http://localhost:8080` — live SVG preview + download.
+Open `http://localhost:8080/demo/` — live SVG preview + download.
 
 ## Figma plugin path
 

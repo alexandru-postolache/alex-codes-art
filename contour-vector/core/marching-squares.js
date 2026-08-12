@@ -66,15 +66,12 @@ function getEdges(caseIndex, x, y, tl, tr, br, bl, threshold, cellWidth, cellHei
       break;
     case 5:
     case 10: {
-      // Resolve ambiguous saddle cells consistently using the asymptotic decider.
-      const connectAlongCorners = tl * br - tr * bl >= 0;
-      if (caseIndex === 5) {
-        if (connectAlongCorners) {
-          edges.push(left(), top(), right(), bottom());
-        } else {
-          edges.push(top(), right(), bottom(), left());
-        }
-      } else if (connectAlongCorners) {
+      // Resolve the bilinear saddle using values relative to this isovalue.
+      // Q's sign selects one of the two non-crossing edge pairings.
+      const q =
+        (tl - threshold) * (br - threshold) -
+        (tr - threshold) * (bl - threshold);
+      if (q >= 0) {
         edges.push(top(), right(), bottom(), left());
       } else {
         edges.push(left(), top(), right(), bottom());
