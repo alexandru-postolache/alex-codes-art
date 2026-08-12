@@ -14,43 +14,25 @@ function hexToFigmaRgb(hex) {
 
 function pathToVectorNetwork(path) {
   if (path.beziers?.length) {
-    const vertices = [{ x: path.beziers[0].p0.x, y: path.beziers[0].p0.y }];
-    const segments = [];
+    const vertices = path.closed
+      ? path.points.map((point) => ({ x: point.x, y: point.y }))
+      : [
+          { x: path.beziers[0].p0.x, y: path.beziers[0].p0.y },
+          ...path.beziers.map((bezier) => ({ x: bezier.p1.x, y: bezier.p1.y })),
+        ];
 
-    for (const bezier of path.beziers) {
-      vertices.push({ x: bezier.p1.x, y: bezier.p1.y });
-      const start = vertices.length - 2;
-      const end = vertices.length - 1;
-      segments.push({
-        start,
-        end,
-        tangentStart: {
-          x: bezier.cp1.x - bezier.p0.x,
-          y: bezier.cp1.y - bezier.p0.y,
-        },
-        tangentEnd: {
-          x: bezier.cp2.x - bezier.p1.x,
-          y: bezier.cp2.y - bezier.p1.y,
-        },
-      });
-    }
-
-    if (path.closed && vertices.length > 2) {
-      const last = path.beziers[path.beziers.length - 1];
-      const first = path.beziers[0];
-      segments.push({
-        start: vertices.length - 1,
-        end: 0,
-        tangentStart: {
-          x: last.cp1.x - last.p0.x,
-          y: last.cp1.y - last.p0.y,
-        },
-        tangentEnd: {
-          x: first.cp2.x - first.p1.x,
-          y: first.cp2.y - first.p1.y,
-        },
-      });
-    }
+    const segments = path.beziers.map((bezier, index) => ({
+      start: index,
+      end: path.closed ? (index + 1) % vertices.length : index + 1,
+      tangentStart: {
+        x: bezier.cp1.x - bezier.p0.x,
+        y: bezier.cp1.y - bezier.p0.y,
+      },
+      tangentEnd: {
+        x: bezier.cp2.x - bezier.p1.x,
+        y: bezier.cp2.y - bezier.p1.y,
+      },
+    }));
 
     return { vertices, segments, regions: [] };
   }
