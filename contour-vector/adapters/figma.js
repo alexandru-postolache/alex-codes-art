@@ -41,12 +41,52 @@ function pathToVectorNetwork(path) {
   return { vertices, segments, regions: [] };
 }
 
+function polygonsToVectorNetwork(polygons) {
+  const vertices = [];
+  const segments = [];
+  const regions = [];
+
+  for (const polygon of polygons) {
+    if (polygon.length < 3) {
+      continue;
+    }
+
+    const vertexOffset = vertices.length;
+    const segmentLoop = [];
+    for (const point of polygon) {
+      vertices.push({ x: point.x, y: point.y });
+    }
+    for (let i = 0; i < polygon.length; i++) {
+      segmentLoop.push(segments.length);
+      segments.push({
+        start: vertexOffset + i,
+        end: vertexOffset + ((i + 1) % polygon.length),
+        tangentStart: { x: 0, y: 0 },
+        tangentEnd: { x: 0, y: 0 },
+      });
+    }
+    regions.push({
+      windingRule: 'NONZERO',
+      loops: [segmentLoop],
+    });
+  }
+
+  return { vertices, segments, regions };
+}
+
 /**
  * Convert scene paths to Figma vector network payloads.
  *
  * @param {import('../core/generate.js').ContourVectorScene} scene
  */
 export function sceneToFigmaVectors(scene) {
+  const fills = (scene.fills ?? []).map((band) => ({
+    name: `fill-band-${band.index}`,
+    vectorNetwork: polygonsToVectorNetwork(band.polygons),
+    fill: {
+      color: hexToFigmaRgb(band.color),
+    },
+  }));
   const vectors = [];
 
   for (const layer of scene.contours) {
@@ -69,6 +109,7 @@ export function sceneToFigmaVectors(scene) {
   return {
     frame: { width: scene.width, height: scene.height },
     backgroundColor: hexToFigmaRgb(scene.backgroundColor),
+    fills,
     vectors,
   };
 }

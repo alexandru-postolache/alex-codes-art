@@ -12,6 +12,7 @@ contour-vector/
     generate.js         # params → ContourVectorScene
     svg-export.js       # scene → SVG string
     marching-squares.js
+    fill-bands.js       # scalar grid → vector band polygons
     path-stitch.js       # segments → continuous topology
     path-smooth.js       # local, chord-limited Bezier curves
     segments.js          # optional raw segment export
@@ -39,6 +40,9 @@ local Bezier smoothing rule to every path.
       strokeWidth: 3,
       paths: [{ points: [{x,y}, ...], closed: false }]
     }
+  ],
+  fills: [
+    { color: '#96000e', polygons: [[{x,y}, ...], ...] }
   ]
 }
 ```
@@ -83,9 +87,11 @@ Open `http://localhost:8080/demo/` — live SVG preview + download.
 3. Worker calls `generateContourScene()` → `sceneToFigmaVectors()`
 4. Create a frame + background rect + vector nodes per path
 
+Set `params.fillEnabled` to `true` to include editable vector fill-band
+polygons beneath the contour strokes in SVG and Figma output.
+
 ## What's not vector yet
 
-- **Fill bands** — still raster in `contour-lines/`. Vector fills need polygon clipping per band (phase 2).
 - **Image-based fields** — planned; would plug into `field.js` as another sampler.
 
 ## API quick start

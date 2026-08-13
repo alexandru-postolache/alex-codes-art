@@ -34,6 +34,21 @@ function pathToSvgD(path) {
   return commands.join(' ');
 }
 
+function polygonsToSvgD(polygons) {
+  const commands = [];
+  for (const polygon of polygons) {
+    if (polygon.length < 3) {
+      continue;
+    }
+    commands.push(`M ${polygon[0].x} ${polygon[0].y}`);
+    for (let i = 1; i < polygon.length; i++) {
+      commands.push(`L ${polygon[i].x} ${polygon[i].y}`);
+    }
+    commands.push('Z');
+  }
+  return commands.join(' ');
+}
+
 /**
  * Serialize a ContourVectorScene to an SVG string.
  *
@@ -50,9 +65,22 @@ export function exportSvg(scene, options = {}) {
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<svg xmlns="http://www.w3.org/2000/svg" width="${scene.width}" height="${scene.height}" viewBox="0 0 ${scene.width} ${scene.height}">`,
     `${indent}<rect width="100%" height="100%" fill="${escapeXml(scene.backgroundColor)}" />`,
-    `${indent}<g id="contours">`,
   ];
 
+  if (scene.fills?.length) {
+    lines.push(`${indent}<g id="fill-bands">`);
+    for (const band of scene.fills) {
+      const d = polygonsToSvgD(band.polygons);
+      if (d) {
+        lines.push(
+          `${indent}${indent}<path data-band="${band.index}" d="${d}" fill="${escapeXml(band.color)}" fill-rule="nonzero" />`
+        );
+      }
+    }
+    lines.push(`${indent}</g>`);
+  }
+
+  lines.push(`${indent}<g id="contours">`);
   for (const layer of scene.contours) {
     for (const path of layer.paths) {
       const d = pathToSvgD(path);

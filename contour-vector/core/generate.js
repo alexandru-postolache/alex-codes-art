@@ -2,6 +2,7 @@ import { buildFieldGrid } from './field.js';
 import { collectContourSegments } from './marching-squares.js';
 import { stitchSegmentsToPaths } from './path-stitch.js';
 import { smoothPaths } from './path-smooth.js';
+import { buildFillBands } from './fill-bands.js';
 import { computeThresholdValues, getGridDimensions, getStrokeWeight } from './grid.js';
 import { getPaletteColors } from './palette.js';
 
@@ -24,6 +25,7 @@ import { getPaletteColors } from './palette.js';
  * @property {number} width
  * @property {number} height
  * @property {string} backgroundColor
+ * @property {Array<{index:number,color:string,polygons:Array<Array<{x:number,y:number}>>}>} fills
  * @property {ContourVectorLayer[]} contours
  */
 
@@ -86,11 +88,23 @@ export function generateContourScene({
       paths,
     };
   });
+  const fills = params.fillEnabled
+    ? buildFillBands({
+        fieldGrid: grid,
+        rows,
+        cols,
+        cellWidth,
+        cellHeight,
+        thresholdValues,
+        colors: paletteColors,
+      })
+    : [];
 
   return {
     width,
     height,
     backgroundColor: params.backgroundColor,
+    fills,
     contours,
   };
 }

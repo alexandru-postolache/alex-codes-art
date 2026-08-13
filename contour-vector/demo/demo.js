@@ -19,6 +19,7 @@ const DEFAULT_PARAMS = {
   baseColor: '#96000e',
   backgroundColor: '#dfb2b6',
   colorPalette: 'tints',
+  fillEnabled: false,
   strokeWeightMin: 1,
   strokeWeightMax: 5,
 };
@@ -90,6 +91,7 @@ colorFolder.addInput(params, 'colorPalette', {
   },
 });
 colorFolder.addInput(params, 'backgroundColor');
+colorFolder.addInput(params, 'fillEnabled', { label: 'fill bands' });
 
 const strokeFolder = pane.addFolder({ title: 'Stroke', expanded: false });
 strokeFolder.addInput(params, 'strokeWeightMin', { label: 'inner weight', min: 0.5, max: 50, step: 0.5 });
