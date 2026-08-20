@@ -16,6 +16,8 @@
   --recording: #ff6b6b;
   --count-in: #ffd166;
   --success: #6ee7a0;
+  --tap-pad-idle: #1d2330;
+  --tap-pad-active: #2a3140;
 }
 
 @media (prefers-color-scheme: light) {
@@ -30,6 +32,8 @@
     --recording: #dc2626;
     --count-in: #d97706;
     --success: #059669;
+    --tap-pad-idle: #eef2ff;
+    --tap-pad-active: #dbeafe;
   }
 }
 
@@ -40,12 +44,13 @@ body {
   font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
+  touch-action: manipulation;
 }
 
 body {
   display: flex;
   justify-content: center;
-  padding: 2rem 1rem 3rem;
+  padding: 1.25rem 1rem 2.5rem;
 }
 
 .app {
@@ -59,7 +64,7 @@ body {
 }
 
 .subtitle {
-  margin: 0 0 1.5rem;
+  margin: 0 0 1.25rem;
   color: var(--muted);
   line-height: 1.5;
 }
@@ -68,8 +73,58 @@ body {
   margin-bottom: 1rem;
 }
 
+.track-selector {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.track-tab {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0.65rem 0.5rem;
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  transition: border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.track-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.track-tab.is-active {
+  border-color: var(--track-color, var(--accent));
+  box-shadow: inset 0 0 0 1px var(--track-color, var(--accent));
+}
+
+.track-tab.has-data .track-tab-state {
+  color: var(--track-color, var(--success));
+}
+
+.track-tab-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.track-tab-state {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 .controls-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
@@ -83,6 +138,8 @@ body {
   font-weight: 600;
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .btn:disabled {
@@ -109,6 +166,57 @@ body {
   border-color: var(--accent);
 }
 
+.tap-pad {
+  width: 100%;
+  min-height: 148px;
+  margin-bottom: 1rem;
+  border: 2px dashed var(--border);
+  border-radius: 20px;
+  background: var(--tap-pad-idle);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
+}
+
+.tap-pad:not(:disabled):hover {
+  border-color: var(--accent);
+}
+
+.tap-pad:not(:disabled):active,
+.tap-pad.is-hit {
+  background: var(--tap-pad-active);
+  border-color: var(--recording);
+  transform: scale(0.985);
+}
+
+.tap-pad:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.tap-pad-label {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.tap-pad-hint {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.mobile-only {
+  display: none;
+}
+
 .status {
   min-height: 3rem;
   padding: 0.85rem 1rem;
@@ -129,7 +237,8 @@ body {
   color: var(--recording);
 }
 
-.status[data-state="done"] {
+.status[data-state="done"],
+.status[data-state="playing"] {
   border-color: var(--success);
   color: var(--success);
 }
@@ -171,4 +280,41 @@ kbd {
   border-radius: 6px;
   background: var(--bg);
   font: 0.85em ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@media (max-width: 640px) {
+  body {
+    padding-top: 0.75rem;
+  }
+
+  .track-selector {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .controls-row .btn {
+    flex: 1 1 calc(50% - 0.375rem);
+    text-align: center;
+  }
+
+  .tap-pad {
+    min-height: 180px;
+  }
+
+  .desktop-only {
+    display: none;
+  }
+
+  .mobile-only {
+    display: inline;
+  }
+
+  kbd {
+    display: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .tap-pad {
+    min-height: 190px;
+  }
 }
