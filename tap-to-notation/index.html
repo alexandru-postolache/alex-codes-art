@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Tap to Notation</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/tweakpane@3.1.0/dist/tweakpane.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.5/build/cjs/vexflow.js"></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <h1>Tap to Notation</h1>
+        <p class="subtitle">
+          Set a tempo, tap in rhythm on the pad or spacebar, and build layered
+          drum tracks with live sound and sheet music.
+        </p>
+      </header>
+
+      <div id="pane" class="pane"></div>
+
+      <div id="track-selector" class="track-selector" role="tablist" aria-label="Rhythm tracks"></div>
+
+      <div class="controls-row">
+        <button id="start-btn" class="btn btn-primary">Record</button>
+        <button id="play-btn" class="btn btn-secondary" disabled>Play</button>
+        <button id="clear-btn" class="btn btn-secondary" disabled>Clear all</button>
+      </div>
+
+      <button
+        id="tap-pad"
+        class="tap-pad"
+        type="button"
+        aria-label="Tap in rhythm during recording"
+        disabled
+      >
+        <span class="tap-pad-label">Tap pad</span>
+        <span class="tap-pad-hint desktop-only">or press Space</span>
+        <span class="tap-pad-hint mobile-only">tap here in rhythm</span>
+      </button>
+
+      <div id="status" class="status" aria-live="polite">
+        Choose a track, press <kbd>Record</kbd>, then tap during recording.
+      </div>
+
+      <div id="notation" class="notation" aria-label="Music notation output"></div>
+
+      <div class="hint">
+        <p>
+          <strong>How it works:</strong> 4/4 time · 2 bars · up to 4 drum tracks
+          · sixteenth-note quantization · 1-bar count-in with metronome
+        </p>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

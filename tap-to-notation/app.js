@@ -1,0 +1,582 @@
+/* global Tweakpane, Vex */
+
+const VF = Vex.Flow;
+
+const BEATS_PER_BAR = 4;
+const BARS = 2;
+const TOTAL_BEATS = BEATS_PER_BAR * BARS;
+const SIXTEENTHS_PER_BEAT = 4;
+const TOTAL_SIXTEENTHS = TOTAL_BEATS * SIXTEENTHS_PER_BEAT;
+
+const State = {
+  IDLE: 'idle',
+  COUNT_IN: 'count-in',
+  RECORDING: 'recording',
+  DONE: 'done',
+  PLAYING: 'playing',
+};
+
+const DURATION_PIECES = [
+  [12, 'hd'],
+  [8, 'h'],
+  [6, 'qd'],
+  [4, 'q'],
+  [3, '8d'],
+  [2, '8'],
+  [1, '16'],
+];
+
+const TRACK_DEFS = [
+  {
+    name: 'Kick',
+    noteKey: 'f/4',
+    color: '#6ea8ff',
+    sound: { type: 'kick' },
+  },
+  {
+    name: 'Snare',
+    noteKey: 'c/5',
+    color: '#ff8f6e',
+    sound: { type: 'snare' },
+  },
+  {
+    name: 'Hi-hat',
+    noteKey: 'a/5',
+    color: '#ffd166',
+    sound: { type: 'hihat' },
+  },
+  {
+    name: 'Clap',
+    noteKey: 'e/5',
+    color: '#6ee7a0',
+    sound: { type: 'clap' },
+  },
+];
+
+const settings = {
+  bpm: 100,
+};
+
+let state = State.IDLE;
+let audioContext = null;
+let scheduledTimers = [];
+let recordingStartTime = 0;
+let rawTaps = [];
+let activeTrackIndex = 0;
+let tracks = TRACK_DEFS.map(() => ({ quantizedTaps: [] }));
+let playbackTimers = [];
+
+const statusEl = document.getElementById('status');
+const notationEl = document.getElementById('notation');
+const trackSelectorEl = document.getElementById('track-selector');
+const startBtn = document.getElementById('start-btn');
+const playBtn = document.getElementById('play-btn');
+const clearBtn = document.getElementById('clear-btn');
+const tapPad = document.getElementById('tap-pad');
+
+function beatDuration() {
+  return 60 / settings.bpm;
+}
+
+function sixteenthDuration() {
+  return beatDuration() / SIXTEENTHS_PER_BEAT;
+}
+
+function hasAnyTrackData() {
+  return tracks.some((track) => track.quantizedTaps.length > 0);
+}
+
+function setStatus(message, nextState = state) {
+  state = nextState;
+  statusEl.textContent = message;
+  statusEl.dataset.state = nextState;
+}
+
+function updateControls() {
+  const isBusy = state === State.COUNT_IN || state === State.RECORDING || state === State.PLAYING;
+  const hasData = hasAnyTrackData();
+
+  startBtn.disabled = isBusy;
+  playBtn.disabled = isBusy || !hasData;
+  clearBtn.disabled = isBusy || !hasData;
+  tapPad.disabled = state !== State.RECORDING;
+
+  document.querySelectorAll('.track-tab').forEach((button, index) => {
+    button.disabled = isBusy;
+    button.classList.toggle('is-active', index === activeTrackIndex);
+    button.classList.toggle('has-data', tracks[index].quantizedTaps.length > 0);
+  });
+}
+
+function clearScheduledTimers() {
+  scheduledTimers.forEach(clearTimeout);
+  scheduledTimers = [];
+  playbackTimers.forEach(clearTimeout);
+  playbackTimers = [];
+}
+
+function ensureAudioContext() {
+  if (!audioContext) {
+    audioContext = new AudioContext();
+  }
+  if (audioContext.state === 'suspended') {
+    return audioContext.resume();
+  }
+  return Promise.resolve();
+}
+
+function playClick(time, accent = false) {
+  const osc = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+
+  osc.type = 'sine';
+  osc.frequency.value = accent ? 1200 : 820;
+  gain.gain.setValueAtTime(accent ? 0.18 : 0.11, time);
+  gain.gain.exponentialRampToValueAtTime(0.001, time + 0.06);
+
+  osc.connect(gain);
+  gain.connect(audioContext.destination);
+
+  osc.start(time);
+  osc.stop(time + 0.07);
+}
+
+function playDrumSound(trackIndex, time = audioContext.currentTime) {
+  const sound = TRACK_DEFS[trackIndex].sound;
+
+  if (sound.type === 'kick') {
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(150, time);
+    osc.frequency.exponentialRampToValueAtTime(42, time + 0.18);
+    gain.gain.setValueAtTime(0.9, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.35);
+    osc.connect(gain);
+    gain.connect(audioContext.destination);
+    osc.start(time);
+    osc.stop(time + 0.36);
+    return;
+  }
+
+  if (sound.type === 'snare') {
+    const bufferSize = Math.floor(audioContext.sampleRate * 0.18);
+    const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i += 1) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    }
+    const noise = audioContext.createBufferSource();
+    noise.buffer = buffer;
+    const filter = audioContext.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = 900;
+    const gain = audioContext.createGain();
+    gain.gain.setValueAtTime(0.55, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.18);
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(audioContext.destination);
+    noise.start(time);
+    noise.stop(time + 0.2);
+    return;
+  }
+
+  if (sound.type === 'hihat') {
+    const bufferSize = Math.floor(audioContext.sampleRate * 0.06);
+    const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i += 1) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+    }
+    const noise = audioContext.createBufferSource();
+    noise.buffer = buffer;
+    const filter = audioContext.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.value = 7000;
+    const gain = audioContext.createGain();
+    gain.gain.setValueAtTime(0.28, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(audioContext.destination);
+    noise.start(time);
+    noise.stop(time + 0.06);
+    return;
+  }
+
+  if (sound.type === 'clap') {
+    [0, 0.012, 0.024].forEach((offset) => {
+      const bufferSize = Math.floor(audioContext.sampleRate * 0.04);
+      const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i += 1) {
+        data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+      }
+      const noise = audioContext.createBufferSource();
+      noise.buffer = buffer;
+      const gain = audioContext.createGain();
+      gain.gain.setValueAtTime(0.25, time + offset);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + offset + 0.05);
+      noise.connect(gain);
+      gain.connect(audioContext.destination);
+      noise.start(time + offset);
+      noise.stop(time + offset + 0.06);
+    });
+  }
+}
+
+function scheduleClick(delayMs, accent = false) {
+  const timer = setTimeout(() => {
+    playClick(audioContext.currentTime, accent);
+  }, Math.max(0, delayMs));
+  scheduledTimers.push(timer);
+}
+
+function sixteenthsToDurations(length, isRest) {
+  const suffix = isRest ? 'r' : '';
+  const durations = [];
+  let remaining = length;
+
+  for (const [value, name] of DURATION_PIECES) {
+    while (remaining >= value) {
+      durations.push(`${name}${suffix}`);
+      remaining -= value;
+    }
+  }
+
+  return durations;
+}
+
+function quantizeTaps(taps, recordingStart) {
+  const sixteenthMs = sixteenthDuration() * 1000;
+  const indices = taps.map((tapTime) => {
+    const elapsed = tapTime - recordingStart;
+    const index = Math.round(elapsed / sixteenthMs);
+    return Math.max(0, Math.min(TOTAL_SIXTEENTHS - 1, index));
+  });
+
+  return [...new Set(indices)].sort((a, b) => a - b);
+}
+
+function buildTickablesForRange(tapIndices, rangeLength, noteKey) {
+  const tickables = [];
+  let cursor = 0;
+
+  while (cursor < rangeLength) {
+    const isTap = tapIndices.includes(cursor);
+
+    if (isTap) {
+      const nextTap = tapIndices.find((index) => index > cursor) ?? rangeLength;
+      const length = Math.max(1, nextTap - cursor);
+      sixteenthsToDurations(length, false).forEach((duration) => {
+        tickables.push(
+          new VF.StaveNote({
+            keys: [noteKey],
+            duration,
+            autoStem: true,
+          })
+        );
+      });
+      cursor = nextTap;
+    } else {
+      const nextTap = tapIndices.find((index) => index > cursor) ?? rangeLength;
+      const length = nextTap - cursor;
+      sixteenthsToDurations(length, true).forEach((duration) => {
+        tickables.push(
+          new VF.StaveNote({
+            keys: ['b/4'],
+            duration,
+          })
+        );
+      });
+      cursor = nextTap;
+    }
+  }
+
+  return tickables;
+}
+
+function buildMeasures(tapIndices, noteKey) {
+  const sixteenthsPerBar = BEATS_PER_BAR * SIXTEENTHS_PER_BEAT;
+  const measures = [];
+
+  for (let bar = 0; bar < BARS; bar += 1) {
+    const barStart = bar * sixteenthsPerBar;
+    const barEnd = barStart + sixteenthsPerBar;
+    const barTaps = tapIndices
+      .filter((index) => index >= barStart && index < barEnd)
+      .map((index) => index - barStart);
+
+    measures.push(buildTickablesForRange(barTaps, sixteenthsPerBar, noteKey));
+  }
+
+  return measures;
+}
+
+function renderNotation() {
+  notationEl.innerHTML = '';
+
+  const tracksWithData = tracks
+    .map((track, index) => ({ track, index, def: TRACK_DEFS[index] }))
+    .filter(({ track }) => track.quantizedTaps.length > 0);
+
+  if (tracksWithData.length === 0) {
+    notationEl.innerHTML =
+      '<p class="placeholder">Your quantized rhythms will appear here after recording.</p>';
+    return;
+  }
+
+  const measureWidth = 300;
+  const staveHeight = 92;
+  const width = 10 + measureWidth * BARS + 130;
+  const height = 36 + tracksWithData.length * staveHeight;
+
+  const renderer = new VF.Renderer(notationEl, VF.Renderer.Backends.SVG);
+  renderer.resize(width, height);
+  const context = renderer.getContext();
+  context.setFont('Arial', 10);
+
+  tracksWithData.forEach(({ track, index, def }, row) => {
+    const y = 24 + row * staveHeight;
+    const measures = buildMeasures(track.quantizedTaps, def.noteKey);
+    let x = 118;
+
+    context.save();
+    context.setFillStyle(def.color);
+    context.fillText(def.name, 12, y + 24);
+    context.restore();
+
+    measures.forEach((measureNotes, measureIndex) => {
+      const stave = new VF.Stave(x, y, measureWidth);
+
+      if (row === 0 && measureIndex === 0) {
+        stave.addClef('percussion').addTimeSignature('4/4');
+      }
+
+      stave.setContext(context).draw();
+
+      const voice = new VF.Voice({ numBeats: BEATS_PER_BAR, beatValue: 4 });
+      voice.setStrict(false);
+      voice.addTickables(measureNotes);
+
+      new VF.Formatter().joinVoices([voice]).format([voice], measureWidth - 18);
+      voice.draw(context, stave);
+
+      x += measureWidth;
+    });
+  });
+}
+
+function showPlaceholder() {
+  notationEl.innerHTML =
+    '<p class="placeholder">Your quantized rhythms will appear here after recording.</p>';
+}
+
+function resetSession() {
+  clearScheduledTimers();
+  tracks = TRACK_DEFS.map(() => ({ quantizedTaps: [] }));
+  rawTaps = [];
+  recordingStartTime = 0;
+  activeTrackIndex = 0;
+  setStatus('Choose a track, press Record, then tap during recording.', State.IDLE);
+  renderTrackSelector();
+  showPlaceholder();
+  updateControls();
+}
+
+function finishRecording() {
+  tracks[activeTrackIndex].quantizedTaps = quantizeTaps(rawTaps, recordingStartTime);
+  const trackName = TRACK_DEFS[activeTrackIndex].name;
+  const tapCount = tracks[activeTrackIndex].quantizedTaps.length;
+
+  setStatus(
+    tapCount
+      ? `${trackName} recorded — ${tapCount} tap${tapCount === 1 ? '' : 's'}. Record another track or press Play.`
+      : `${trackName} — no taps detected. Try recording again.`,
+    State.DONE
+  );
+
+  renderNotation();
+  renderTrackSelector();
+  updateControls();
+}
+
+async function startSession() {
+  if (state === State.COUNT_IN || state === State.RECORDING || state === State.PLAYING) {
+    return;
+  }
+
+  await ensureAudioContext();
+  clearScheduledTimers();
+
+  rawTaps = [];
+  updateControls();
+
+  const beatMs = beatDuration() * 1000;
+  const countInBeats = BEATS_PER_BAR;
+  const countInMs = countInBeats * beatMs;
+  const recordingMs = TOTAL_BEATS * beatMs;
+  const startOffset = 120;
+  const sessionStart = performance.now();
+  const trackName = TRACK_DEFS[activeTrackIndex].name;
+
+  setStatus(`Count-in for ${trackName}… get ready!`, State.COUNT_IN);
+
+  for (let i = 0; i < countInBeats; i += 1) {
+    scheduleClick(startOffset + i * beatMs, i === 0);
+  }
+
+  for (let i = 0; i < TOTAL_BEATS; i += 1) {
+    scheduleClick(startOffset + countInMs + i * beatMs, i % BEATS_PER_BAR === 0);
+  }
+
+  const recordTimer = setTimeout(() => {
+    recordingStartTime = sessionStart + startOffset + countInMs;
+    setStatus(`Recording ${trackName}! Tap the pad or press Space.`, State.RECORDING);
+    updateControls();
+  }, startOffset + countInMs);
+  scheduledTimers.push(recordTimer);
+
+  const endTimer = setTimeout(() => {
+    finishRecording();
+  }, startOffset + countInMs + recordingMs + 50);
+  scheduledTimers.push(endTimer);
+}
+
+function registerTap() {
+  if (state === State.IDLE || state === State.DONE) {
+    startSession();
+    return;
+  }
+
+  if (state !== State.RECORDING) {
+    return;
+  }
+
+  rawTaps.push(performance.now());
+  playDrumSound(activeTrackIndex);
+  tapPad.classList.add('is-hit');
+  setTimeout(() => tapPad.classList.remove('is-hit'), 90);
+}
+
+async function playAllTracks() {
+  if (state === State.PLAYING || !hasAnyTrackData()) {
+    return;
+  }
+
+  await ensureAudioContext();
+  clearScheduledTimers();
+
+  setStatus('Playing all tracks…', State.PLAYING);
+  updateControls();
+
+  const beatMs = beatDuration() * 1000;
+  const countInMs = BEATS_PER_BAR * beatMs;
+  const recordingMs = TOTAL_BEATS * beatMs;
+  const startOffset = 120;
+  const totalMs = startOffset + countInMs + recordingMs;
+
+  for (let i = 0; i < BEATS_PER_BAR; i += 1) {
+    scheduleClick(startOffset + i * beatMs, i === 0);
+  }
+
+  for (let i = 0; i < TOTAL_BEATS; i += 1) {
+    scheduleClick(startOffset + countInMs + i * beatMs, i % BEATS_PER_BAR === 0);
+  }
+
+  tracks.forEach((track, trackIndex) => {
+    track.quantizedTaps.forEach((sixteenthIndex) => {
+      const delayMs = startOffset + countInMs + sixteenthIndex * sixteenthDuration() * 1000;
+      const timer = setTimeout(() => {
+        playDrumSound(trackIndex);
+      }, delayMs);
+      playbackTimers.push(timer);
+    });
+  });
+
+  const finishTimer = setTimeout(() => {
+    setStatus('Playback finished. Record more tracks or play again.', State.DONE);
+    updateControls();
+  }, totalMs + 80);
+  playbackTimers.push(finishTimer);
+}
+
+function handleSpaceDown(event) {
+  if (event.code !== 'Space' || event.repeat) {
+    return;
+  }
+
+  event.preventDefault();
+  registerTap();
+}
+
+function renderTrackSelector() {
+  trackSelectorEl.innerHTML = '';
+
+  TRACK_DEFS.forEach((def, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'track-tab';
+    button.role = 'tab';
+    button.setAttribute('aria-selected', index === activeTrackIndex ? 'true' : 'false');
+    button.style.setProperty('--track-color', def.color);
+    button.innerHTML = `
+      <span class="track-tab-name">${def.name}</span>
+      <span class="track-tab-state">${tracks[index].quantizedTaps.length ? '●' : '○'}</span>
+    `;
+
+    button.addEventListener('click', () => {
+      if (state === State.COUNT_IN || state === State.RECORDING || state === State.PLAYING) {
+        return;
+      }
+      activeTrackIndex = index;
+      renderTrackSelector();
+      updateControls();
+    });
+
+    trackSelectorEl.appendChild(button);
+  });
+}
+
+function initPane() {
+  const pane = new Tweakpane.Pane({
+    container: document.getElementById('pane'),
+    title: 'Settings',
+  });
+
+  pane.addInput(settings, 'bpm', {
+    min: 60,
+    max: 180,
+    step: 1,
+    label: 'Tempo (BPM)',
+  });
+}
+
+function initTapPad() {
+  const handlePointerDown = (event) => {
+    event.preventDefault();
+    if (tapPad.disabled) {
+      return;
+    }
+    registerTap();
+  };
+
+  tapPad.addEventListener('pointerdown', handlePointerDown);
+  tapPad.addEventListener('contextmenu', (event) => event.preventDefault());
+}
+
+function init() {
+  initPane();
+  initTapPad();
+  renderTrackSelector();
+  showPlaceholder();
+  updateControls();
+
+  startBtn.addEventListener('click', startSession);
+  playBtn.addEventListener('click', playAllTracks);
+  clearBtn.addEventListener('click', resetSession);
+  window.addEventListener('keydown', handleSpaceDown);
+}
+
+init();
