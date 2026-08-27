@@ -16,6 +16,8 @@ const State = {
   PLAYING: 'playing',
 };
 
+const LATENCY_COMPENSATION_SIXTEENTHS = 0.45;
+
 const DURATION_PIECES = [
   [12, 'hd'],
   [8, 'h'],
@@ -250,8 +252,9 @@ function sixteenthsToDurations(length, isRest) {
 
 function quantizeTaps(taps, recordingStart) {
   const sixteenthMs = sixteenthDuration() * 1000;
+  const latencyMs = sixteenthMs * LATENCY_COMPENSATION_SIXTEENTHS;
   const indices = taps.map((tapTime) => {
-    const elapsed = tapTime - recordingStart;
+    const elapsed = tapTime - recordingStart - latencyMs;
     const index = Math.round(elapsed / sixteenthMs);
     return Math.max(0, Math.min(TOTAL_SIXTEENTHS - 1, index));
   });
@@ -259,16 +262,18 @@ function quantizeTaps(taps, recordingStart) {
   return [...new Set(indices)].sort((a, b) => a - b);
 }
 
-function buildTickablesForRange(tapIndices, rangeLength, noteKey) {
+function buildTickablesForRange(tapIndices, rangeLength, noteKey, rangeStart = 0) {
   const tickables = [];
   let cursor = 0;
 
   while (cursor < rangeLength) {
-    const isTap = tapIndices.includes(cursor);
+    const absoluteCursor = rangeStart + cursor;
+    const isTap = tapIndices.includes(absoluteCursor);
 
     if (isTap) {
-      const nextTap = tapIndices.find((index) => index > cursor) ?? rangeLength;
-      const length = Math.max(1, nextTap - cursor);
+      const nextTap =
+        tapIndices.find((index) => index > absoluteCursor) ?? rangeStart + rangeLength;
+      const length = Math.max(1, Math.min(nextTap - absoluteCursor, rangeLength - cursor));
       sixteenthsToDurations(length, false).forEach((duration) => {
         tickables.push(
           new VF.StaveNote({
@@ -278,10 +283,11 @@ function buildTickablesForRange(tapIndices, rangeLength, noteKey) {
           })
         );
       });
-      cursor = nextTap;
+      cursor += length;
     } else {
-      const nextTap = tapIndices.find((index) => index > cursor) ?? rangeLength;
-      const length = nextTap - cursor;
+      const nextTap =
+        tapIndices.find((index) => index > absoluteCursor) ?? rangeStart + rangeLength;
+      const length = Math.min(nextTap - absoluteCursor, rangeLength - cursor);
       sixteenthsToDurations(length, true).forEach((duration) => {
         tickables.push(
           new VF.StaveNote({
@@ -290,28 +296,11 @@ function buildTickablesForRange(tapIndices, rangeLength, noteKey) {
           })
         );
       });
-      cursor = nextTap;
+      cursor += length;
     }
   }
 
   return tickables;
-}
-
-function buildMeasures(tapIndices, noteKey) {
-  const sixteenthsPerBar = BEATS_PER_BAR * SIXTEENTHS_PER_BEAT;
-  const measures = [];
-
-  for (let bar = 0; bar < BARS; bar += 1) {
-    const barStart = bar * sixteenthsPerBar;
-    const barEnd = barStart + sixteenthsPerBar;
-    const barTaps = tapIndices
-      .filter((index) => index >= barStart && index < barEnd)
-      .map((index) => index - barStart);
-
-    measures.push(buildTickablesForRange(barTaps, sixteenthsPerBar, noteKey));
-  }
-
-  return measures;
 }
 
 function renderNotation() {
@@ -339,32 +328,32 @@ function renderNotation() {
 
   tracksWithData.forEach(({ track, index, def }, row) => {
     const y = 24 + row * staveHeight;
-    const measures = buildMeasures(track.quantizedTaps, def.noteKey);
-    let x = 118;
+    const tickables = buildTickablesForRange(
+      track.quantizedTaps,
+      TOTAL_SIXTEENTHS,
+      def.noteKey,
+      0
+    );
+    const staveWidth = measureWidth * BARS;
+    const stave = new VF.Stave(118, y, staveWidth);
+
+    if (row === 0) {
+      stave.addClef('percussion').addTimeSignature('4/4');
+    }
+
+    stave.setContext(context).draw();
+
+    const voice = new VF.Voice({ numBeats: TOTAL_BEATS, beatValue: 4 });
+    voice.setStrict(false);
+    voice.addTickables(tickables);
+
+    new VF.Formatter().joinVoices([voice]).format([voice], staveWidth - 18);
+    voice.draw(context, stave);
 
     context.save();
     context.setFillStyle(def.color);
     context.fillText(def.name, 12, y + 24);
     context.restore();
-
-    measures.forEach((measureNotes, measureIndex) => {
-      const stave = new VF.Stave(x, y, measureWidth);
-
-      if (row === 0 && measureIndex === 0) {
-        stave.addClef('percussion').addTimeSignature('4/4');
-      }
-
-      stave.setContext(context).draw();
-
-      const voice = new VF.Voice({ numBeats: BEATS_PER_BAR, beatValue: 4 });
-      voice.setStrict(false);
-      voice.addTickables(measureNotes);
-
-      new VF.Formatter().joinVoices([voice]).format([voice], measureWidth - 18);
-      voice.draw(context, stave);
-
-      x += measureWidth;
-    });
   });
 }
 
@@ -418,8 +407,9 @@ async function startSession() {
   const countInMs = countInBeats * beatMs;
   const recordingMs = TOTAL_BEATS * beatMs;
   const startOffset = 120;
-  const sessionStart = performance.now();
   const trackName = TRACK_DEFS[activeTrackIndex].name;
+
+  recordingStartTime = performance.now() + startOffset + countInMs;
 
   setStatus(`Count-in for ${trackName}… get ready!`, State.COUNT_IN);
 
@@ -432,7 +422,6 @@ async function startSession() {
   }
 
   const recordTimer = setTimeout(() => {
-    recordingStartTime = sessionStart + startOffset + countInMs;
     setStatus(`Recording ${trackName}! Tap the pad or press Space.`, State.RECORDING);
     updateControls();
   }, startOffset + countInMs);
