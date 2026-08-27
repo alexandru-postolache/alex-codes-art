@@ -3,10 +3,9 @@
 const VF = Vex.Flow;
 
 const BEATS_PER_BAR = 4;
-const BARS = 2;
-const TOTAL_BEATS = BEATS_PER_BAR * BARS;
 const SIXTEENTHS_PER_BEAT = 4;
-const TOTAL_SIXTEENTHS = TOTAL_BEATS * SIXTEENTHS_PER_BEAT;
+const MIN_BARS = 1;
+const MAX_BARS = 8;
 
 const State = {
   IDLE: 'idle',
@@ -15,6 +14,8 @@ const State = {
   DONE: 'done',
   PLAYING: 'playing',
 };
+
+const LATENCY_COMPENSATION_SIXTEENTHS = 0.45;
 
 const DURATION_PIECES = [
   [12, 'hd'],
@@ -55,7 +56,11 @@ const TRACK_DEFS = [
 
 const settings = {
   bpm: 100,
+  bars: 2,
 };
+
+let recordedBars = 2;
+let barsInput = null;
 
 let state = State.IDLE;
 let audioContext = null;
@@ -65,14 +70,30 @@ let rawTaps = [];
 let activeTrackIndex = 0;
 let tracks = TRACK_DEFS.map(() => ({ quantizedTaps: [] }));
 let playbackTimers = [];
+let playbackRaf = null;
+let notationLayout = null;
 
 const statusEl = document.getElementById('status');
 const notationEl = document.getElementById('notation');
+const notationCanvasEl = document.getElementById('notation-canvas');
+const playheadEl = document.getElementById('playhead');
 const trackSelectorEl = document.getElementById('track-selector');
 const startBtn = document.getElementById('start-btn');
 const playBtn = document.getElementById('play-btn');
 const clearBtn = document.getElementById('clear-btn');
 const tapPad = document.getElementById('tap-pad');
+
+function getBarCount() {
+  return hasAnyTrackData() ? recordedBars : settings.bars;
+}
+
+function getTotalBeats() {
+  return BEATS_PER_BAR * getBarCount();
+}
+
+function getTotalSixteenths() {
+  return getTotalBeats() * SIXTEENTHS_PER_BEAT;
+}
 
 function beatDuration() {
   return 60 / settings.bpm;
@@ -106,13 +127,93 @@ function updateControls() {
     button.classList.toggle('is-active', index === activeTrackIndex);
     button.classList.toggle('has-data', tracks[index].quantizedTaps.length > 0);
   });
+
+  if (barsInput) {
+    barsInput.disabled = isBusy || hasData;
+  }
 }
+
+const STAVE_X = 118;
+const NOTE_PADDING_LEFT = 62;
+const MEASURE_WIDTH = 300;
 
 function clearScheduledTimers() {
   scheduledTimers.forEach(clearTimeout);
   scheduledTimers = [];
   playbackTimers.forEach(clearTimeout);
   playbackTimers = [];
+  stopPlayheadAnimation();
+}
+
+function hidePlayhead() {
+  playheadEl.classList.remove('is-visible');
+}
+
+function syncPlayheadMetrics() {
+  if (!notationLayout) {
+    return;
+  }
+
+  const svg = notationCanvasEl.querySelector('svg');
+  if (!svg) {
+    return;
+  }
+
+  const notationRect = notationEl.getBoundingClientRect();
+  const svgRect = svg.getBoundingClientRect();
+  const scale = svgRect.width / notationLayout.svgWidth;
+
+  notationLayout.scale = scale;
+  notationLayout.svgOffsetLeft = svgRect.left - notationRect.left + notationEl.scrollLeft;
+  notationLayout.noteStartPx =
+    notationLayout.svgOffsetLeft + (STAVE_X + NOTE_PADDING_LEFT) * scale;
+  notationLayout.noteWidthPx = (notationLayout.staveWidth - 18) * scale;
+  notationLayout.topPx = svgRect.top - notationRect.top + notationEl.scrollTop + 8 * scale;
+  notationLayout.heightPx = notationLayout.contentHeight * scale;
+}
+
+function updatePlayhead(progress) {
+  if (!notationLayout || !notationLayout.noteWidthPx) {
+    return;
+  }
+
+  const clamped = Math.max(0, Math.min(1, progress));
+  playheadEl.style.left = `${notationLayout.noteStartPx + clamped * notationLayout.noteWidthPx}px`;
+  playheadEl.style.top = `${notationLayout.topPx}px`;
+  playheadEl.style.height = `${notationLayout.heightPx}px`;
+  playheadEl.classList.add('is-visible');
+}
+
+function stopPlayheadAnimation() {
+  if (playbackRaf) {
+    cancelAnimationFrame(playbackRaf);
+    playbackRaf = null;
+  }
+  hidePlayhead();
+}
+
+function startPlayheadAnimation(sessionStart, musicStartMs, musicDurationMs) {
+  stopPlayheadAnimation();
+  syncPlayheadMetrics();
+
+  const tick = () => {
+    if (state !== State.PLAYING) {
+      return;
+    }
+
+    const elapsed = performance.now() - sessionStart;
+
+    if (elapsed < musicStartMs) {
+      hidePlayhead();
+    } else {
+      const musicElapsed = elapsed - musicStartMs;
+      updatePlayhead(musicElapsed / musicDurationMs);
+    }
+
+    playbackRaf = requestAnimationFrame(tick);
+  };
+
+  playbackRaf = requestAnimationFrame(tick);
 }
 
 function ensureAudioContext() {
@@ -250,25 +351,28 @@ function sixteenthsToDurations(length, isRest) {
 
 function quantizeTaps(taps, recordingStart) {
   const sixteenthMs = sixteenthDuration() * 1000;
+  const latencyMs = sixteenthMs * LATENCY_COMPENSATION_SIXTEENTHS;
   const indices = taps.map((tapTime) => {
-    const elapsed = tapTime - recordingStart;
+    const elapsed = tapTime - recordingStart - latencyMs;
     const index = Math.round(elapsed / sixteenthMs);
-    return Math.max(0, Math.min(TOTAL_SIXTEENTHS - 1, index));
+    return Math.max(0, Math.min(getTotalSixteenths() - 1, index));
   });
 
   return [...new Set(indices)].sort((a, b) => a - b);
 }
 
-function buildTickablesForRange(tapIndices, rangeLength, noteKey) {
+function buildTickablesForRange(tapIndices, rangeLength, noteKey, rangeStart = 0) {
   const tickables = [];
   let cursor = 0;
 
   while (cursor < rangeLength) {
-    const isTap = tapIndices.includes(cursor);
+    const absoluteCursor = rangeStart + cursor;
+    const isTap = tapIndices.includes(absoluteCursor);
 
     if (isTap) {
-      const nextTap = tapIndices.find((index) => index > cursor) ?? rangeLength;
-      const length = Math.max(1, nextTap - cursor);
+      const nextTap =
+        tapIndices.find((index) => index > absoluteCursor) ?? rangeStart + rangeLength;
+      const length = Math.max(1, Math.min(nextTap - absoluteCursor, rangeLength - cursor));
       sixteenthsToDurations(length, false).forEach((duration) => {
         tickables.push(
           new VF.StaveNote({
@@ -278,10 +382,11 @@ function buildTickablesForRange(tapIndices, rangeLength, noteKey) {
           })
         );
       });
-      cursor = nextTap;
+      cursor += length;
     } else {
-      const nextTap = tapIndices.find((index) => index > cursor) ?? rangeLength;
-      const length = nextTap - cursor;
+      const nextTap =
+        tapIndices.find((index) => index > absoluteCursor) ?? rangeStart + rangeLength;
+      const length = Math.min(nextTap - absoluteCursor, rangeLength - cursor);
       sixteenthsToDurations(length, true).forEach((duration) => {
         tickables.push(
           new VF.StaveNote({
@@ -290,87 +395,84 @@ function buildTickablesForRange(tapIndices, rangeLength, noteKey) {
           })
         );
       });
-      cursor = nextTap;
+      cursor += length;
     }
   }
 
   return tickables;
 }
 
-function buildMeasures(tapIndices, noteKey) {
-  const sixteenthsPerBar = BEATS_PER_BAR * SIXTEENTHS_PER_BEAT;
-  const measures = [];
-
-  for (let bar = 0; bar < BARS; bar += 1) {
-    const barStart = bar * sixteenthsPerBar;
-    const barEnd = barStart + sixteenthsPerBar;
-    const barTaps = tapIndices
-      .filter((index) => index >= barStart && index < barEnd)
-      .map((index) => index - barStart);
-
-    measures.push(buildTickablesForRange(barTaps, sixteenthsPerBar, noteKey));
-  }
-
-  return measures;
-}
-
 function renderNotation() {
-  notationEl.innerHTML = '';
+  hidePlayhead();
+  notationLayout = null;
+  notationCanvasEl.innerHTML = '';
 
   const tracksWithData = tracks
     .map((track, index) => ({ track, index, def: TRACK_DEFS[index] }))
     .filter(({ track }) => track.quantizedTaps.length > 0);
 
   if (tracksWithData.length === 0) {
-    notationEl.innerHTML =
+    notationCanvasEl.innerHTML =
       '<p class="placeholder">Your quantized rhythms will appear here after recording.</p>';
     return;
   }
 
-  const measureWidth = 300;
+  const barCount = getBarCount();
+  const totalSixteenths = getTotalSixteenths();
+  const totalBeats = getTotalBeats();
   const staveHeight = 92;
-  const width = 10 + measureWidth * BARS + 130;
+  const staveWidth = MEASURE_WIDTH * barCount;
+  const width = 10 + staveWidth + 130;
   const height = 36 + tracksWithData.length * staveHeight;
 
-  const renderer = new VF.Renderer(notationEl, VF.Renderer.Backends.SVG);
+  notationLayout = {
+    svgWidth: width,
+    staveWidth,
+    contentHeight: tracksWithData.length * staveHeight,
+  };
+
+  const renderer = new VF.Renderer(notationCanvasEl, VF.Renderer.Backends.SVG);
   renderer.resize(width, height);
   const context = renderer.getContext();
   context.setFont('Arial', 10);
 
   tracksWithData.forEach(({ track, index, def }, row) => {
     const y = 24 + row * staveHeight;
-    const measures = buildMeasures(track.quantizedTaps, def.noteKey);
-    let x = 118;
+    const tickables = buildTickablesForRange(
+      track.quantizedTaps,
+      totalSixteenths,
+      def.noteKey,
+      0
+    );
+    const stave = new VF.Stave(STAVE_X, y, staveWidth);
+
+    if (row === 0) {
+      stave.addClef('percussion').addTimeSignature('4/4');
+    }
+
+    stave.setContext(context).draw();
+
+    const voice = new VF.Voice({ numBeats: totalBeats, beatValue: 4 });
+    voice.setStrict(false);
+    voice.addTickables(tickables);
+
+    new VF.Formatter().joinVoices([voice]).format([voice], staveWidth - 18);
+    voice.draw(context, stave);
 
     context.save();
     context.setFillStyle(def.color);
     context.fillText(def.name, 12, y + 24);
     context.restore();
-
-    measures.forEach((measureNotes, measureIndex) => {
-      const stave = new VF.Stave(x, y, measureWidth);
-
-      if (row === 0 && measureIndex === 0) {
-        stave.addClef('percussion').addTimeSignature('4/4');
-      }
-
-      stave.setContext(context).draw();
-
-      const voice = new VF.Voice({ numBeats: BEATS_PER_BAR, beatValue: 4 });
-      voice.setStrict(false);
-      voice.addTickables(measureNotes);
-
-      new VF.Formatter().joinVoices([voice]).format([voice], measureWidth - 18);
-      voice.draw(context, stave);
-
-      x += measureWidth;
-    });
   });
+
+  syncPlayheadMetrics();
 }
 
 function showPlaceholder() {
-  notationEl.innerHTML =
+  notationCanvasEl.innerHTML =
     '<p class="placeholder">Your quantized rhythms will appear here after recording.</p>';
+  hidePlayhead();
+  notationLayout = null;
 }
 
 function resetSession() {
@@ -378,6 +480,7 @@ function resetSession() {
   tracks = TRACK_DEFS.map(() => ({ quantizedTaps: [] }));
   rawTaps = [];
   recordingStartTime = 0;
+  recordedBars = settings.bars;
   activeTrackIndex = 0;
   setStatus('Choose a track, press Record, then tap during recording.', State.IDLE);
   renderTrackSelector();
@@ -410,30 +513,36 @@ async function startSession() {
   await ensureAudioContext();
   clearScheduledTimers();
 
+  if (!hasAnyTrackData()) {
+    recordedBars = settings.bars;
+  }
+
   rawTaps = [];
   updateControls();
 
   const beatMs = beatDuration() * 1000;
   const countInBeats = BEATS_PER_BAR;
   const countInMs = countInBeats * beatMs;
-  const recordingMs = TOTAL_BEATS * beatMs;
+  const barCount = getBarCount();
+  const totalBeats = getTotalBeats();
+  const recordingMs = totalBeats * beatMs;
   const startOffset = 120;
-  const sessionStart = performance.now();
   const trackName = TRACK_DEFS[activeTrackIndex].name;
 
-  setStatus(`Count-in for ${trackName}… get ready!`, State.COUNT_IN);
+  recordingStartTime = performance.now() + startOffset + countInMs;
+
+  setStatus(`Count-in for ${trackName} (${barCount} bars)… get ready!`, State.COUNT_IN);
 
   for (let i = 0; i < countInBeats; i += 1) {
     scheduleClick(startOffset + i * beatMs, i === 0);
   }
 
-  for (let i = 0; i < TOTAL_BEATS; i += 1) {
+  for (let i = 0; i < totalBeats; i += 1) {
     scheduleClick(startOffset + countInMs + i * beatMs, i % BEATS_PER_BAR === 0);
   }
 
   const recordTimer = setTimeout(() => {
-    recordingStartTime = sessionStart + startOffset + countInMs;
-    setStatus(`Recording ${trackName}! Tap the pad or press Space.`, State.RECORDING);
+    setStatus(`Recording ${trackName} (${barCount} bars)! Tap the pad or press Space.`, State.RECORDING);
     updateControls();
   }, startOffset + countInMs);
   scheduledTimers.push(recordTimer);
@@ -473,15 +582,20 @@ async function playAllTracks() {
 
   const beatMs = beatDuration() * 1000;
   const countInMs = BEATS_PER_BAR * beatMs;
-  const recordingMs = TOTAL_BEATS * beatMs;
+  const totalBeats = getTotalBeats();
+  const recordingMs = totalBeats * beatMs;
   const startOffset = 120;
   const totalMs = startOffset + countInMs + recordingMs;
+  const musicStartMs = startOffset + countInMs;
+  const playbackSessionStart = performance.now();
+
+  startPlayheadAnimation(playbackSessionStart, musicStartMs, recordingMs);
 
   for (let i = 0; i < BEATS_PER_BAR; i += 1) {
     scheduleClick(startOffset + i * beatMs, i === 0);
   }
 
-  for (let i = 0; i < TOTAL_BEATS; i += 1) {
+  for (let i = 0; i < totalBeats; i += 1) {
     scheduleClick(startOffset + countInMs + i * beatMs, i % BEATS_PER_BAR === 0);
   }
 
@@ -496,6 +610,7 @@ async function playAllTracks() {
   });
 
   const finishTimer = setTimeout(() => {
+    stopPlayheadAnimation();
     setStatus('Playback finished. Record more tracks or play again.', State.DONE);
     updateControls();
   }, totalMs + 80);
@@ -550,6 +665,13 @@ function initPane() {
     max: 180,
     step: 1,
     label: 'Tempo (BPM)',
+  });
+
+  barsInput = pane.addInput(settings, 'bars', {
+    min: MIN_BARS,
+    max: MAX_BARS,
+    step: 1,
+    label: 'Bars',
   });
 }
 

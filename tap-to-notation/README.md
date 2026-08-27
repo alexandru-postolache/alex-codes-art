@@ -5,7 +5,7 @@ A web app that turns taps into quantized rhythm notation — on desktop **or** m
 ## Features
 
 - Tempo slider (60–180 BPM)
-- 4/4 time signature, 2 bars per recording
+- 4/4 time signature, 1–8 bars per recording (selectable in Settings)
 - **Up to 4 drum tracks** (Kick, Snare, Hi-hat, Clap) with distinct sounds
 - **Mobile tap pad** — press the screen in rhythm during recording
 - **Desktop spacebar** input still supported
