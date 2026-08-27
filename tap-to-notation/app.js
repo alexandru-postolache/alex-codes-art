@@ -67,9 +67,13 @@ let rawTaps = [];
 let activeTrackIndex = 0;
 let tracks = TRACK_DEFS.map(() => ({ quantizedTaps: [] }));
 let playbackTimers = [];
+let playbackRaf = null;
+let notationLayout = null;
 
 const statusEl = document.getElementById('status');
 const notationEl = document.getElementById('notation');
+const notationCanvasEl = document.getElementById('notation-canvas');
+const playheadEl = document.getElementById('playhead');
 const trackSelectorEl = document.getElementById('track-selector');
 const startBtn = document.getElementById('start-btn');
 const playBtn = document.getElementById('play-btn');
@@ -110,11 +114,87 @@ function updateControls() {
   });
 }
 
+const STAVE_X = 118;
+const NOTE_PADDING_LEFT = 62;
+const MEASURE_WIDTH = 300;
+
 function clearScheduledTimers() {
   scheduledTimers.forEach(clearTimeout);
   scheduledTimers = [];
   playbackTimers.forEach(clearTimeout);
   playbackTimers = [];
+  stopPlayheadAnimation();
+}
+
+function hidePlayhead() {
+  playheadEl.classList.remove('is-visible');
+}
+
+function syncPlayheadMetrics() {
+  if (!notationLayout) {
+    return;
+  }
+
+  const svg = notationCanvasEl.querySelector('svg');
+  if (!svg) {
+    return;
+  }
+
+  const notationRect = notationEl.getBoundingClientRect();
+  const svgRect = svg.getBoundingClientRect();
+  const scale = svgRect.width / notationLayout.svgWidth;
+
+  notationLayout.scale = scale;
+  notationLayout.svgOffsetLeft = svgRect.left - notationRect.left + notationEl.scrollLeft;
+  notationLayout.noteStartPx =
+    notationLayout.svgOffsetLeft + (STAVE_X + NOTE_PADDING_LEFT) * scale;
+  notationLayout.noteWidthPx = (notationLayout.staveWidth - 18) * scale;
+  notationLayout.topPx = svgRect.top - notationRect.top + notationEl.scrollTop + 8 * scale;
+  notationLayout.heightPx = notationLayout.contentHeight * scale;
+}
+
+function updatePlayhead(progress) {
+  if (!notationLayout || !notationLayout.noteWidthPx) {
+    return;
+  }
+
+  const clamped = Math.max(0, Math.min(1, progress));
+  playheadEl.style.left = `${notationLayout.noteStartPx + clamped * notationLayout.noteWidthPx}px`;
+  playheadEl.style.top = `${notationLayout.topPx}px`;
+  playheadEl.style.height = `${notationLayout.heightPx}px`;
+  playheadEl.classList.add('is-visible');
+}
+
+function stopPlayheadAnimation() {
+  if (playbackRaf) {
+    cancelAnimationFrame(playbackRaf);
+    playbackRaf = null;
+  }
+  hidePlayhead();
+}
+
+function startPlayheadAnimation(sessionStart, musicStartMs, musicDurationMs) {
+  stopPlayheadAnimation();
+  syncPlayheadMetrics();
+
+  const tick = () => {
+    if (state !== State.PLAYING) {
+      return;
+    }
+
+    const elapsed = performance.now() - sessionStart;
+
+    if (elapsed < musicStartMs) {
+      hidePlayhead();
+    } else {
+      const musicElapsed = elapsed - musicStartMs;
+      updatePlayhead(musicElapsed / musicDurationMs);
+    }
+
+    playbackRaf = requestAnimationFrame(tick);
+  };
+
+  playbackRaf = requestAnimationFrame(tick);
 }
 
 function ensureAudioContext() {
@@ -304,24 +384,32 @@ function buildTickablesForRange(tapIndices, rangeLength, noteKey, rangeStart = 0
 }
 
 function renderNotation() {
-  notationEl.innerHTML = '';
+  hidePlayhead();
+  notationLayout = null;
+  notationCanvasEl.innerHTML = '';
 
   const tracksWithData = tracks
     .map((track, index) => ({ track, index, def: TRACK_DEFS[index] }))
     .filter(({ track }) => track.quantizedTaps.length > 0);
 
   if (tracksWithData.length === 0) {
-    notationEl.innerHTML =
+    notationCanvasEl.innerHTML =
       '<p class="placeholder">Your quantized rhythms will appear here after recording.</p>';
     return;
   }
 
-  const measureWidth = 300;
   const staveHeight = 92;
-  const width = 10 + measureWidth * BARS + 130;
+  const staveWidth = MEASURE_WIDTH * BARS;
+  const width = 10 + staveWidth + 130;
   const height = 36 + tracksWithData.length * staveHeight;
 
-  const renderer = new VF.Renderer(notationEl, VF.Renderer.Backends.SVG);
+  notationLayout = {
+    svgWidth: width,
+    staveWidth,
+    contentHeight: tracksWithData.length * staveHeight,
+  };
+
+  const renderer = new VF.Renderer(notationCanvasEl, VF.Renderer.Backends.SVG);
   renderer.resize(width, height);
   const context = renderer.getContext();
   context.setFont('Arial', 10);
@@ -334,8 +422,7 @@ function renderNotation() {
       def.noteKey,
       0
     );
-    const staveWidth = measureWidth * BARS;
-    const stave = new VF.Stave(118, y, staveWidth);
+    const stave = new VF.Stave(STAVE_X, y, staveWidth);
 
     if (row === 0) {
       stave.addClef('percussion').addTimeSignature('4/4');
@@ -355,11 +442,15 @@ function renderNotation() {
     context.fillText(def.name, 12, y + 24);
     context.restore();
   });
+
+  syncPlayheadMetrics();
 }
 
 function showPlaceholder() {
-  notationEl.innerHTML =
+  notationCanvasEl.innerHTML =
     '<p class="placeholder">Your quantized rhythms will appear here after recording.</p>';
+  hidePlayhead();
+  notationLayout = null;
 }
 
 function resetSession() {
@@ -465,6 +556,10 @@ async function playAllTracks() {
   const recordingMs = TOTAL_BEATS * beatMs;
   const startOffset = 120;
   const totalMs = startOffset + countInMs + recordingMs;
+  const musicStartMs = startOffset + countInMs;
+  const playbackSessionStart = performance.now();
+
+  startPlayheadAnimation(playbackSessionStart, musicStartMs, recordingMs);
 
   for (let i = 0; i < BEATS_PER_BAR; i += 1) {
     scheduleClick(startOffset + i * beatMs, i === 0);
@@ -485,6 +580,7 @@ async function playAllTracks() {
   });
 
   const finishTimer = setTimeout(() => {
+    stopPlayheadAnimation();
     setStatus('Playback finished. Record more tracks or play again.', State.DONE);
     updateControls();
   }, totalMs + 80);

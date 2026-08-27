@@ -244,6 +244,7 @@ body {
 }
 
 .notation {
+  position: relative;
   min-height: 220px;
   padding: 1rem;
   border: 1px solid var(--border);
@@ -252,9 +253,31 @@ body {
   overflow-x: auto;
 }
 
-.notation svg {
+.notation-canvas {
+  position: relative;
+  z-index: 1;
+}
+
+.notation-canvas svg {
   display: block;
   margin: 0 auto;
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--recording);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--recording) 70%, transparent);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 2;
+  transform: translateX(-1px);
+}
+
+.playhead.is-visible {
+  opacity: 1;
 }
 
 .notation .placeholder {
