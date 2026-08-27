@@ -3,10 +3,9 @@
 const VF = Vex.Flow;
 
 const BEATS_PER_BAR = 4;
-const BARS = 2;
-const TOTAL_BEATS = BEATS_PER_BAR * BARS;
 const SIXTEENTHS_PER_BEAT = 4;
-const TOTAL_SIXTEENTHS = TOTAL_BEATS * SIXTEENTHS_PER_BEAT;
+const MIN_BARS = 1;
+const MAX_BARS = 8;
 
 const State = {
   IDLE: 'idle',
@@ -57,7 +56,11 @@ const TRACK_DEFS = [
 
 const settings = {
   bpm: 100,
+  bars: 2,
 };
+
+let recordedBars = 2;
+let barsInput = null;
 
 let state = State.IDLE;
 let audioContext = null;
@@ -79,6 +82,18 @@ const startBtn = document.getElementById('start-btn');
 const playBtn = document.getElementById('play-btn');
 const clearBtn = document.getElementById('clear-btn');
 const tapPad = document.getElementById('tap-pad');
+
+function getBarCount() {
+  return hasAnyTrackData() ? recordedBars : settings.bars;
+}
+
+function getTotalBeats() {
+  return BEATS_PER_BAR * getBarCount();
+}
+
+function getTotalSixteenths() {
+  return getTotalBeats() * SIXTEENTHS_PER_BEAT;
+}
 
 function beatDuration() {
   return 60 / settings.bpm;
@@ -112,6 +127,10 @@ function updateControls() {
     button.classList.toggle('is-active', index === activeTrackIndex);
     button.classList.toggle('has-data', tracks[index].quantizedTaps.length > 0);
   });
+
+  if (barsInput) {
+    barsInput.disabled = isBusy || hasData;
+  }
 }
 
 const STAVE_X = 118;
@@ -336,7 +355,7 @@ function quantizeTaps(taps, recordingStart) {
   const indices = taps.map((tapTime) => {
     const elapsed = tapTime - recordingStart - latencyMs;
     const index = Math.round(elapsed / sixteenthMs);
-    return Math.max(0, Math.min(TOTAL_SIXTEENTHS - 1, index));
+    return Math.max(0, Math.min(getTotalSixteenths() - 1, index));
   });
 
   return [...new Set(indices)].sort((a, b) => a - b);
@@ -398,8 +417,11 @@ function renderNotation() {
     return;
   }
 
+  const barCount = getBarCount();
+  const totalSixteenths = getTotalSixteenths();
+  const totalBeats = getTotalBeats();
   const staveHeight = 92;
-  const staveWidth = MEASURE_WIDTH * BARS;
+  const staveWidth = MEASURE_WIDTH * barCount;
   const width = 10 + staveWidth + 130;
   const height = 36 + tracksWithData.length * staveHeight;
 
@@ -418,7 +440,7 @@ function renderNotation() {
     const y = 24 + row * staveHeight;
     const tickables = buildTickablesForRange(
       track.quantizedTaps,
-      TOTAL_SIXTEENTHS,
+      totalSixteenths,
       def.noteKey,
       0
     );
@@ -430,7 +452,7 @@ function renderNotation() {
 
     stave.setContext(context).draw();
 
-    const voice = new VF.Voice({ numBeats: TOTAL_BEATS, beatValue: 4 });
+    const voice = new VF.Voice({ numBeats: totalBeats, beatValue: 4 });
     voice.setStrict(false);
     voice.addTickables(tickables);
 
@@ -458,6 +480,7 @@ function resetSession() {
   tracks = TRACK_DEFS.map(() => ({ quantizedTaps: [] }));
   rawTaps = [];
   recordingStartTime = 0;
+  recordedBars = settings.bars;
   activeTrackIndex = 0;
   setStatus('Choose a track, press Record, then tap during recording.', State.IDLE);
   renderTrackSelector();
@@ -490,30 +513,36 @@ async function startSession() {
   await ensureAudioContext();
   clearScheduledTimers();
 
+  if (!hasAnyTrackData()) {
+    recordedBars = settings.bars;
+  }
+
   rawTaps = [];
   updateControls();
 
   const beatMs = beatDuration() * 1000;
   const countInBeats = BEATS_PER_BAR;
   const countInMs = countInBeats * beatMs;
-  const recordingMs = TOTAL_BEATS * beatMs;
+  const barCount = getBarCount();
+  const totalBeats = getTotalBeats();
+  const recordingMs = totalBeats * beatMs;
   const startOffset = 120;
   const trackName = TRACK_DEFS[activeTrackIndex].name;
 
   recordingStartTime = performance.now() + startOffset + countInMs;
 
-  setStatus(`Count-in for ${trackName}… get ready!`, State.COUNT_IN);
+  setStatus(`Count-in for ${trackName} (${barCount} bars)… get ready!`, State.COUNT_IN);
 
   for (let i = 0; i < countInBeats; i += 1) {
     scheduleClick(startOffset + i * beatMs, i === 0);
   }
 
-  for (let i = 0; i < TOTAL_BEATS; i += 1) {
+  for (let i = 0; i < totalBeats; i += 1) {
     scheduleClick(startOffset + countInMs + i * beatMs, i % BEATS_PER_BAR === 0);
   }
 
   const recordTimer = setTimeout(() => {
-    setStatus(`Recording ${trackName}! Tap the pad or press Space.`, State.RECORDING);
+    setStatus(`Recording ${trackName} (${barCount} bars)! Tap the pad or press Space.`, State.RECORDING);
     updateControls();
   }, startOffset + countInMs);
   scheduledTimers.push(recordTimer);
@@ -553,7 +582,8 @@ async function playAllTracks() {
 
   const beatMs = beatDuration() * 1000;
   const countInMs = BEATS_PER_BAR * beatMs;
-  const recordingMs = TOTAL_BEATS * beatMs;
+  const totalBeats = getTotalBeats();
+  const recordingMs = totalBeats * beatMs;
   const startOffset = 120;
   const totalMs = startOffset + countInMs + recordingMs;
   const musicStartMs = startOffset + countInMs;
@@ -565,7 +595,7 @@ async function playAllTracks() {
     scheduleClick(startOffset + i * beatMs, i === 0);
   }
 
-  for (let i = 0; i < TOTAL_BEATS; i += 1) {
+  for (let i = 0; i < totalBeats; i += 1) {
     scheduleClick(startOffset + countInMs + i * beatMs, i % BEATS_PER_BAR === 0);
   }
 
@@ -635,6 +665,13 @@ function initPane() {
     max: 180,
     step: 1,
     label: 'Tempo (BPM)',
+  });
+
+  barsInput = pane.addInput(settings, 'bars', {
+    min: MIN_BARS,
+    max: MAX_BARS,
+    step: 1,
+    label: 'Bars',
   });
 }
 
