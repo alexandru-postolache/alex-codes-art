@@ -9,7 +9,8 @@ Three bodies orbit each other under Newtonian gravity, integrated with Velocity 
 - **Presets** — Figure-8 (stable periodic orbit), Lagrange (equilateral triangle), or Random chaos
 - **Per body** — color, mass, speed, and launch angle
 - **Trails** — toggle, fade duration, and line weight
-- **Simulation** — pause, time scale, and reset
+- **Simulation** — pause, time scale, reset, and reset view
+- **Mouse** — scroll to zoom (toward cursor), drag to pan, Reset view button
 
 ## Run locally
 
