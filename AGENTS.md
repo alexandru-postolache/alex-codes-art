@@ -678,3 +678,5 @@ Non-obvious caveats:
 - A `404` for `/favicon.ico` in the console is harmless and expected.
 - These are **interactive canvas apps**; verify changes visually in the browser (there
   are no automated tests to run).
+- **Do not save walkthrough artifacts** (screenshots, screen recordings) to
+  `/opt/cursor/artifacts/` unless the user explicitly asks for them.
