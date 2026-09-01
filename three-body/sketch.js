@@ -1,10 +1,11 @@
 const G = 1;
-const SOFTENING = 0.12;
+const SOFTENING_CHAOTIC = 0.08;
+const SOFTENING_CATALOG = 0.05;
 const MIN_MASS = 0.5;
 const MAX_MASS = 8;
 const BODY_RADIUS_SCALE = 6;
-const SUBSTEPS = 8;
-const BASE_DT = 0.003;
+const SUBSTEPS = 12;
+const BASE_DT = 0.002;
 
 const DEFAULT_COLORS = ["#ff6b6b", "#4ecdc4", "#ffe66d"];
 
@@ -26,15 +27,27 @@ const PRESET_OPTIONS = {
 // Šuvakov & Dmitrašinović (PRL 2013) collinear symmetric family.
 // x1=-1, x2=+1, x3=0; v2=v1, v3=-2*v1; equal masses, G=1.
 const SUVAKOV_PRESETS = {
-  "Butterfly I": { vx: 0.306892759, vy: 0.125506783 },
-  "Butterfly II": { vx: 0.392955224, vy: 0.097579235 },
-  "Moth I": { vx: 0.464445237, vy: 0.396059973 },
-  "Yin-Yang I": { vx: 0.513938055, vy: 0.304736004 },
-  Dragonfly: { vx: 0.080584286, vy: 0.588836087 },
-  Bumblebee: { vx: 0.184278506, vy: 0.587188196 },
-  Goggles: { vx: 0.083300056, vy: 0.127889282 },
-  Yarn: { vx: 0.559064247, vy: 0.349191559 },
+  "Butterfly I": { vx: 0.306892758965492, vy: 0.125506782829762 },
+  "Butterfly II": { vx: 0.392955223941802, vy: 0.097579235208034 },
+  "Moth I": { vx: 0.464445237398184, vy: 0.396059973403921 },
+  "Yin-Yang I": { vx: 0.513938054919243, vy: 0.304736003875733 },
+  Dragonfly: { vx: 0.080584285736084, vy: 0.588836087036132 },
+  Bumblebee: { vx: 0.184278506469727, vy: 0.587188195800781 },
+  Goggles: { vx: 0.083300056457519, vy: 0.127889282226563 },
+  Yarn: { vx: 0.559064247131347, vy: 0.349191558837891 },
 };
+
+const FIGURE_EIGHT_BODIES = [
+  { x: 0.97000436, y: -0.24308753, vx: -0.466203685, vy: -0.43236573 },
+  { x: -0.97000436, y: 0.24308753, vx: -0.466203685, vy: -0.43236573 },
+  { x: 0, y: 0, vx: 0.93240737, vy: 0.86473146 },
+];
+
+const CATALOG_PRESETS = new Set([
+  "Figure-8",
+  "Lagrange",
+  ...Object.keys(SUVAKOV_PRESETS),
+]);
 
 const settings = {
   preset: "Figure-8",
@@ -43,9 +56,9 @@ const settings = {
   trails: true,
   trailWeight: 2,
   fadeDuration: 2.5,
-  body1: { color: "#ff6b6b", mass: 1, speed: 1, angle: 223 },
-  body2: { color: "#4ecdc4", mass: 1, speed: 1, angle: 223 },
-  body3: { color: "#ffe66d", mass: 1, speed: 1, angle: 43 },
+  body1: { color: "#ff6b6b", mass: 1, speed: 1, angle: 0 },
+  body2: { color: "#4ecdc4", mass: 1, speed: 1, angle: 0 },
+  body3: { color: "#ffe66d", mass: 1, speed: 1, angle: 0 },
 };
 
 let bodies = [];
@@ -174,6 +187,22 @@ function setupGui() {
   });
 }
 
+function getSoftening() {
+  if (settings.preset === "Random" || settings.preset === "Pythagorean") {
+    return SOFTENING_CHAOTIC;
+  }
+  return SOFTENING_CATALOG;
+}
+
+function isCatalogPreset(preset = settings.preset) {
+  return CATALOG_PRESETS.has(preset);
+}
+
+function lagrangeOrbitSpeed(mass, radius) {
+  const side = radius * sqrt(3);
+  return sqrt((G * mass) / side);
+}
+
 function setEqualMassDefaults() {
   settings.body1 = { color: DEFAULT_COLORS[0], mass: 1, speed: 1, angle: 0 };
   settings.body2 = { color: DEFAULT_COLORS[1], mass: 1, speed: 1, angle: 0 };
@@ -182,17 +211,17 @@ function setEqualMassDefaults() {
 
 function applyPreset(preset) {
   if (preset === "Figure-8") {
-    settings.body1 = { color: DEFAULT_COLORS[0], mass: 1, speed: 1, angle: 223 };
-    settings.body2 = { color: DEFAULT_COLORS[1], mass: 1, speed: 1, angle: 223 };
-    settings.body3 = { color: DEFAULT_COLORS[2], mass: 1, speed: 1, angle: 43 };
+    settings.body1 = { color: DEFAULT_COLORS[0], mass: 1, speed: 1, angle: 0 };
+    settings.body2 = { color: DEFAULT_COLORS[1], mass: 1, speed: 1, angle: 0 };
+    settings.body3 = { color: DEFAULT_COLORS[2], mass: 1, speed: 1, angle: 0 };
     pane.refresh();
     return;
   }
 
   if (preset === "Lagrange") {
-    settings.body1 = { color: DEFAULT_COLORS[0], mass: 1, speed: 1.15, angle: 0 };
-    settings.body2 = { color: DEFAULT_COLORS[1], mass: 1, speed: 1.15, angle: 120 };
-    settings.body3 = { color: DEFAULT_COLORS[2], mass: 1, speed: 1.15, angle: 240 };
+    settings.body1 = { color: DEFAULT_COLORS[0], mass: 1, speed: 1, angle: 0 };
+    settings.body2 = { color: DEFAULT_COLORS[1], mass: 1, speed: 1, angle: 120 };
+    settings.body3 = { color: DEFAULT_COLORS[2], mass: 1, speed: 1, angle: 240 };
     pane.refresh();
     return;
   }
@@ -329,6 +358,20 @@ function bodiesFromSuvakov(vx1, vy1) {
   );
 }
 
+function bodiesFromCatalog(states) {
+  return states.map((state, index) => {
+    const bodySettings = settings[`body${index + 1}`];
+    return createBody({
+      x: state.x,
+      y: state.y,
+      vx: state.vx,
+      vy: state.vy,
+      mass: bodySettings.mass,
+      color: bodySettings.color,
+    });
+  });
+}
+
 function createBodiesFromSettings() {
   const preset = settings.preset;
 
@@ -338,40 +381,17 @@ function createBodiesFromSettings() {
   }
 
   if (preset === "Figure-8") {
-    const figureEight = [
-      { x: 0.97000436, y: -0.24308753, speed: 0.635 },
-      { x: -0.97000436, y: 0.24308753, speed: 0.635 },
-      { x: 0, y: 0, speed: 1.27 },
-    ];
-
-    return figureEight.map((state, index) => {
-      const bodySettings = settings[`body${index + 1}`];
-      const velocity = velocityFromSpeedAngle(
-        state.speed,
-        bodySettings.speed,
-        bodySettings.angle
-      );
-
-      return createBody({
-        x: state.x,
-        y: state.y,
-        vx: velocity.vx,
-        vy: velocity.vy,
-        mass: bodySettings.mass,
-        color: bodySettings.color,
-      });
-    });
+    return bodiesFromCatalog(FIGURE_EIGHT_BODIES);
   }
 
   if (preset === "Lagrange") {
     const radius = 1.4;
-    const baseOrbitSpeed =
-      sqrt((G * settings.body1.mass * 3) / (radius * sqrt(3))) * 0.92;
+    const baseOrbitSpeed = lagrangeOrbitSpeed(settings.body1.mass, radius);
 
     const positions = [
-      { x: 0, y: -radius },
-      { x: radius * cos(PI / 6), y: radius * sin(PI / 6) },
-      { x: -radius * cos(PI / 6), y: radius * sin(PI / 6) },
+      { x: 0, y: -radius, angle: 0 },
+      { x: radius * cos(PI / 6), y: radius * sin(PI / 6), angle: 120 },
+      { x: -radius * cos(PI / 6), y: radius * sin(PI / 6), angle: 240 },
     ];
 
     return positions.map((pos, index) => {
@@ -431,6 +451,8 @@ function createBodiesFromSettings() {
 }
 
 function computeAccelerations(currentBodies) {
+  const softening = getSoftening();
+
   return currentBodies.map((body, i) => {
     let ax = 0;
     let ay = 0;
@@ -441,7 +463,7 @@ function computeAccelerations(currentBodies) {
       const other = currentBodies[j];
       const dx = other.x - body.x;
       const dy = other.y - body.y;
-      const distSq = dx * dx + dy * dy + SOFTENING * SOFTENING;
+      const distSq = dx * dx + dy * dy + softening * softening;
       const dist = sqrt(distSq);
       const accel = (G * other.mass) / distSq;
 
