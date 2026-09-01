@@ -1,8 +1,10 @@
 const G = 1;
-const SOFTENING = 12;
+const SOFTENING = 0.12;
 const MIN_MASS = 0.5;
 const MAX_MASS = 8;
 const BODY_RADIUS_SCALE = 6;
+const SUBSTEPS = 8;
+const BASE_DT = 0.003;
 
 const settings = {
   preset: "Figure-8",
@@ -19,6 +21,7 @@ const settings = {
 let bodies = [];
 let accelerations = [];
 let pane;
+let renderScale = 1;
 
 function setup() {
   createCanvas(window.innerWidth, window.innerHeight);
@@ -31,6 +34,10 @@ function setup() {
 function windowResized() {
   resizeCanvas(window.innerWidth, window.innerHeight);
   resetSimulation();
+}
+
+function getRenderScale() {
+  return min(width, height) * 0.18;
 }
 
 function setupGui() {
@@ -98,7 +105,6 @@ function setupGui() {
       label: "angle (deg)",
     });
   }
-
 }
 
 function applyPreset(preset) {
@@ -145,15 +151,14 @@ function randomHexColor() {
 }
 
 function resetSimulation() {
+  renderScale = getRenderScale();
   bodies = createBodiesFromSettings();
-  accelerations = bodies.map(() => createVector(0, 0));
   accelerations = computeAccelerations(bodies);
   clearTrailBuffer();
 }
 
 function createBodiesFromSettings() {
   const preset = settings.preset;
-  const scale = min(width, height) * 0.14;
 
   if (preset === "Figure-8") {
     const figureEight = [
@@ -165,10 +170,10 @@ function createBodiesFromSettings() {
     return figureEight.map((state, index) => {
       const bodySettings = settings[`body${index + 1}`];
       return {
-        x: width / 2 + state.x * scale,
-        y: height / 2 + state.y * scale,
-        vx: state.vx * scale * 0.35,
-        vy: state.vy * scale * 0.35,
+        x: state.x,
+        y: state.y,
+        vx: state.vx,
+        vy: state.vy,
         mass: bodySettings.mass,
         color: bodySettings.color,
       };
@@ -176,8 +181,9 @@ function createBodiesFromSettings() {
   }
 
   if (preset === "Lagrange") {
-    const radius = scale * 1.4;
-    const orbitSpeed = sqrt((G * settings.body1.mass * 3) / (radius * sqrt(3))) * 0.9;
+    const radius = 1.4;
+    const orbitSpeed =
+      sqrt((G * settings.body1.mass * 3) / (radius * sqrt(3))) * 0.92;
 
     const positions = [
       { x: 0, y: -radius },
@@ -193,8 +199,8 @@ function createBodiesFromSettings() {
       const speed = orbitSpeed * (bodySettings.speed / 1.15);
 
       return {
-        x: width / 2 + pos.x,
-        y: height / 2 + pos.y,
+        x: pos.x,
+        y: pos.y,
         vx: tangentX * speed,
         vy: tangentY * speed,
         mass: bodySettings.mass,
@@ -203,16 +209,17 @@ function createBodiesFromSettings() {
     });
   }
 
-  const spread = scale * 1.6;
+  const spread = 1.6;
   return [1, 2, 3].map((index) => {
     const bodySettings = settings[`body${index}`];
     const angle = radians(bodySettings.angle);
-    const speed = bodySettings.speed * scale * 0.12;
+    const speed = bodySettings.speed * 0.35;
     const positionAngle = random(TWO_PI);
+    const distance = random(spread * 0.35, spread);
 
     return {
-      x: width / 2 + cos(positionAngle) * random(spread * 0.35, spread),
-      y: height / 2 + sin(positionAngle) * random(spread * 0.35, spread),
+      x: cos(positionAngle) * distance,
+      y: sin(positionAngle) * distance,
       vx: cos(angle) * speed,
       vy: sin(angle) * speed,
       mass: bodySettings.mass,
@@ -234,10 +241,10 @@ function computeAccelerations(currentBodies) {
       const dy = other.y - body.y;
       const distSq = dx * dx + dy * dy + SOFTENING * SOFTENING;
       const dist = sqrt(distSq);
-      const force = (G * other.mass) / distSq;
+      const accel = (G * other.mass) / distSq;
 
-      ax += (dx / dist) * force;
-      ay += (dy / dist) * force;
+      ax += (dx / dist) * accel;
+      ay += (dy / dist) * accel;
     }
 
     return createVector(ax, ay);
@@ -260,6 +267,14 @@ function velocityVerletStep(dt) {
   accelerations = newAccelerations;
 }
 
+function toScreenX(simX) {
+  return width / 2 + simX * renderScale;
+}
+
+function toScreenY(simY) {
+  return height / 2 + simY * renderScale;
+}
+
 function clearTrailBuffer() {
   background(5, 10, 20);
 }
@@ -278,9 +293,8 @@ function draw() {
   }
 
   if (!settings.paused) {
-    const substeps = 4;
-    const dt = (settings.timeScale / 60) / substeps;
-    for (let step = 0; step < substeps; step++) {
+    const dt = BASE_DT * settings.timeScale;
+    for (let step = 0; step < SUBSTEPS; step++) {
       velocityVerletStep(dt);
     }
   }
@@ -290,20 +304,22 @@ function draw() {
 
 function drawBodies() {
   for (const body of bodies) {
+    const screenX = toScreenX(body.x);
+    const screenY = toScreenY(body.y);
     const radius = sqrt(body.mass) * BODY_RADIUS_SCALE;
 
     if (settings.trails) {
       noFill();
       stroke(body.color);
       strokeWeight(settings.trailWeight);
-      point(body.x, body.y);
+      point(screenX, screenY);
     }
 
     noStroke();
     fill(body.color);
-    circle(body.x, body.y, radius * 2);
+    circle(screenX, screenY, radius * 2);
 
     fill(255, 255, 255, 90);
-    circle(body.x - radius * 0.2, body.y - radius * 0.2, radius * 0.7);
+    circle(screenX - radius * 0.2, screenY - radius * 0.2, radius * 0.7);
   }
 }
