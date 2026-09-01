@@ -105,9 +105,11 @@ function preload() {
   glowShader = loadShader("shader.vert", "glow.frag");
 }
 
+const BLOOM_PASSES = 2;
+
 function setup() {
   createCanvas(window.innerWidth, window.innerHeight, WEBGL);
-  pixelDensity(1);
+  pixelDensity(2);
   createSceneBuffer();
   createBlurBuffers();
 
@@ -123,11 +125,14 @@ function createSceneBuffer() {
 }
 
 function createBlurBuffers() {
-  const scale = 0.5;
-  const bw = max(1, floor(width * scale));
-  const bh = max(1, floor(height * scale));
-  blurPing = createFramebuffer({ width: bw, height: bh, depth: false });
-  blurPong = createFramebuffer({ width: bw, height: bh, depth: false });
+  blurPing = createFramebuffer({
+    depth: false,
+    textureFiltering: LINEAR,
+  });
+  blurPong = createFramebuffer({
+    depth: false,
+    textureFiltering: LINEAR,
+  });
 }
 
 function windowResized() {
@@ -678,26 +683,31 @@ function renderSceneBuffer() {
 }
 
 function renderBloom() {
-  const radius = settings.glowRadius * 3;
+  const radius = settings.glowRadius * 1.25;
+  let source = sceneGfx;
 
-  blurPing.begin();
-  shader(blurShader);
-  blurShader.setUniform("u_texture", sceneGfx);
-  blurShader.setUniform("u_resolution", [blurPing.width, blurPing.height]);
-  blurShader.setUniform("u_direction", [1, 0]);
-  blurShader.setUniform("u_radius", radius);
-  noStroke();
-  plane(blurPing.width, blurPing.height);
-  blurPing.end();
+  for (let pass = 0; pass < BLOOM_PASSES; pass++) {
+    blurPing.begin();
+    shader(blurShader);
+    blurShader.setUniform("u_texture", source);
+    blurShader.setUniform("u_resolution", [blurPing.width, blurPing.height]);
+    blurShader.setUniform("u_direction", [1, 0]);
+    blurShader.setUniform("u_radius", radius);
+    noStroke();
+    plane(blurPing.width, blurPing.height);
+    blurPing.end();
 
-  blurPong.begin();
-  shader(blurShader);
-  blurShader.setUniform("u_texture", blurPing.color);
-  blurShader.setUniform("u_resolution", [blurPong.width, blurPong.height]);
-  blurShader.setUniform("u_direction", [0, 1]);
-  blurShader.setUniform("u_radius", radius);
-  plane(blurPong.width, blurPong.height);
-  blurPong.end();
+    blurPong.begin();
+    shader(blurShader);
+    blurShader.setUniform("u_texture", blurPing.color);
+    blurShader.setUniform("u_resolution", [blurPong.width, blurPong.height]);
+    blurShader.setUniform("u_direction", [0, 1]);
+    blurShader.setUniform("u_radius", radius);
+    plane(blurPong.width, blurPong.height);
+    blurPong.end();
+
+    source = blurPong.color;
+  }
 }
 
 function renderToScreen() {
