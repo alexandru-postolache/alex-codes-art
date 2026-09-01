@@ -1,11 +1,29 @@
 const G = 1;
 const SOFTENING_CHAOTIC = 0.08;
-const SOFTENING_CATALOG = 0.05;
+const SOFTENING_DEFAULT = 0.05;
 const MIN_MASS = 0.5;
 const MAX_MASS = 8;
 const BODY_RADIUS_SCALE = 6;
 const SUBSTEPS = 12;
 const BASE_DT = 0.002;
+
+// Per-preset softening tuned for stable periodic orbits with Velocity Verlet.
+// Šuvakov catalog orbits need different values — a single global softening
+// works for Figure-8 and Lagrange but not the collinear-symmetric family.
+const PRESET_PHYSICS = {
+  "Figure-8": { softening: 0.05, fadeDuration: 6.5 },
+  Lagrange: { softening: 0.05, fadeDuration: 4 },
+  "Butterfly I": { softening: 0.07, fadeDuration: 6.5 },
+  "Butterfly II": { softening: 0.025, fadeDuration: 7.5 },
+  "Moth I": { softening: 0.01, fadeDuration: 15 },
+  "Yin-Yang I": { softening: 0.195, fadeDuration: 18 },
+  Dragonfly: { softening: 0.015, fadeDuration: 22 },
+  Bumblebee: { softening: 0.105, fadeDuration: 65 },
+  Goggles: { softening: 0.035, fadeDuration: 11 },
+  Yarn: { softening: 0.13, fadeDuration: 56 },
+  Pythagorean: { softening: 0.08 },
+  Random: { softening: 0.08 },
+};
 
 const DEFAULT_COLORS = ["#ff6b6b", "#4ecdc4", "#ffe66d"];
 
@@ -187,11 +205,16 @@ function setupGui() {
   });
 }
 
+function getPresetPhysics(preset = settings.preset) {
+  return PRESET_PHYSICS[preset] || { softening: SOFTENING_DEFAULT };
+}
+
 function getSoftening() {
-  if (settings.preset === "Random" || settings.preset === "Pythagorean") {
-    return SOFTENING_CHAOTIC;
-  }
-  return SOFTENING_CATALOG;
+  return getPresetPhysics().softening ?? SOFTENING_CHAOTIC;
+}
+
+function getPresetFadeDuration() {
+  return getPresetPhysics().fadeDuration ?? settings.fadeDuration;
 }
 
 function isCatalogPreset(preset = settings.preset) {
@@ -209,11 +232,20 @@ function setEqualMassDefaults() {
   settings.body3 = { color: DEFAULT_COLORS[2], mass: 1, speed: 1, angle: 0 };
 }
 
+function applyPresetPhysics(preset) {
+  const physics = PRESET_PHYSICS[preset];
+  if (physics?.fadeDuration) {
+    settings.fadeDuration = physics.fadeDuration;
+    pane?.refresh();
+  }
+}
+
 function applyPreset(preset) {
   if (preset === "Figure-8") {
     settings.body1 = { color: DEFAULT_COLORS[0], mass: 1, speed: 1, angle: 0 };
     settings.body2 = { color: DEFAULT_COLORS[1], mass: 1, speed: 1, angle: 0 };
     settings.body3 = { color: DEFAULT_COLORS[2], mass: 1, speed: 1, angle: 0 };
+    applyPresetPhysics(preset);
     pane.refresh();
     return;
   }
@@ -222,6 +254,7 @@ function applyPreset(preset) {
     settings.body1 = { color: DEFAULT_COLORS[0], mass: 1, speed: 1, angle: 0 };
     settings.body2 = { color: DEFAULT_COLORS[1], mass: 1, speed: 1, angle: 120 };
     settings.body3 = { color: DEFAULT_COLORS[2], mass: 1, speed: 1, angle: 240 };
+    applyPresetPhysics(preset);
     pane.refresh();
     return;
   }
@@ -230,15 +263,19 @@ function applyPreset(preset) {
     settings.body1 = { color: DEFAULT_COLORS[0], mass: 3, speed: 0, angle: 0 };
     settings.body2 = { color: DEFAULT_COLORS[1], mass: 4, speed: 0, angle: 0 };
     settings.body3 = { color: DEFAULT_COLORS[2], mass: 5, speed: 0, angle: 0 };
+    applyPresetPhysics(preset);
     pane.refresh();
     return;
   }
 
   if (SUVAKOV_PRESETS[preset]) {
     setEqualMassDefaults();
+    applyPresetPhysics(preset);
     pane.refresh();
     return;
   }
+
+  applyPresetPhysics(preset);
 
   settings.body1 = {
     color: randomHexColor(),
@@ -500,7 +537,7 @@ function toScreenY(simY) {
 }
 
 function trailMaxAge() {
-  return settings.fadeDuration * 1000;
+  return getPresetFadeDuration() * 1000;
 }
 
 function recordTrailPoint(body) {
