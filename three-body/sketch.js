@@ -6,6 +6,36 @@ const BODY_RADIUS_SCALE = 6;
 const SUBSTEPS = 8;
 const BASE_DT = 0.003;
 
+const DEFAULT_COLORS = ["#ff6b6b", "#4ecdc4", "#ffe66d"];
+
+const PRESET_OPTIONS = {
+  "Figure-8": "Figure-8",
+  Lagrange: "Lagrange",
+  "Butterfly I": "Butterfly I",
+  "Butterfly II": "Butterfly II",
+  "Moth I": "Moth I",
+  "Yin-Yang I": "Yin-Yang I",
+  Dragonfly: "Dragonfly",
+  Bumblebee: "Bumblebee",
+  Goggles: "Goggles",
+  Yarn: "Yarn",
+  Pythagorean: "Pythagorean",
+  Random: "Random",
+};
+
+// Šuvakov & Dmitrašinović (PRL 2013) collinear symmetric family.
+// x1=-1, x2=+1, x3=0; v2=v1, v3=-2*v1; equal masses, G=1.
+const SUVAKOV_PRESETS = {
+  "Butterfly I": { vx: 0.306892759, vy: 0.125506783 },
+  "Butterfly II": { vx: 0.392955224, vy: 0.097579235 },
+  "Moth I": { vx: 0.464445237, vy: 0.396059973 },
+  "Yin-Yang I": { vx: 0.513938055, vy: 0.304736004 },
+  Dragonfly: { vx: 0.080584286, vy: 0.588836087 },
+  Bumblebee: { vx: 0.184278506, vy: 0.587188196 },
+  Goggles: { vx: 0.083300056, vy: 0.127889282 },
+  Yarn: { vx: 0.559064247, vy: 0.349191559 },
+};
+
 const settings = {
   preset: "Figure-8",
   paused: false,
@@ -63,11 +93,7 @@ function setupGui() {
   const simFolder = pane.addFolder({ title: "Simulation", expanded: true });
   simFolder
     .addInput(settings, "preset", {
-      options: {
-        "Figure-8": "Figure-8",
-        Lagrange: "Lagrange",
-        Random: "Random",
-      },
+      options: PRESET_OPTIONS,
     })
     .on("change", (ev) => {
       applyPreset(ev.value);
@@ -148,19 +174,39 @@ function setupGui() {
   });
 }
 
+function setEqualMassDefaults() {
+  settings.body1 = { color: DEFAULT_COLORS[0], mass: 1, speed: 1, angle: 0 };
+  settings.body2 = { color: DEFAULT_COLORS[1], mass: 1, speed: 1, angle: 0 };
+  settings.body3 = { color: DEFAULT_COLORS[2], mass: 1, speed: 1, angle: 0 };
+}
+
 function applyPreset(preset) {
   if (preset === "Figure-8") {
-    settings.body1 = { color: "#ff6b6b", mass: 1, speed: 1, angle: 223 };
-    settings.body2 = { color: "#4ecdc4", mass: 1, speed: 1, angle: 223 };
-    settings.body3 = { color: "#ffe66d", mass: 1, speed: 1, angle: 43 };
+    settings.body1 = { color: DEFAULT_COLORS[0], mass: 1, speed: 1, angle: 223 };
+    settings.body2 = { color: DEFAULT_COLORS[1], mass: 1, speed: 1, angle: 223 };
+    settings.body3 = { color: DEFAULT_COLORS[2], mass: 1, speed: 1, angle: 43 };
     pane.refresh();
     return;
   }
 
   if (preset === "Lagrange") {
-    settings.body1 = { color: "#ff6b6b", mass: 1, speed: 1.15, angle: 0 };
-    settings.body2 = { color: "#4ecdc4", mass: 1, speed: 1.15, angle: 120 };
-    settings.body3 = { color: "#ffe66d", mass: 1, speed: 1.15, angle: 240 };
+    settings.body1 = { color: DEFAULT_COLORS[0], mass: 1, speed: 1.15, angle: 0 };
+    settings.body2 = { color: DEFAULT_COLORS[1], mass: 1, speed: 1.15, angle: 120 };
+    settings.body3 = { color: DEFAULT_COLORS[2], mass: 1, speed: 1.15, angle: 240 };
+    pane.refresh();
+    return;
+  }
+
+  if (preset === "Pythagorean") {
+    settings.body1 = { color: DEFAULT_COLORS[0], mass: 3, speed: 0, angle: 0 };
+    settings.body2 = { color: DEFAULT_COLORS[1], mass: 4, speed: 0, angle: 0 };
+    settings.body3 = { color: DEFAULT_COLORS[2], mass: 5, speed: 0, angle: 0 };
+    pane.refresh();
+    return;
+  }
+
+  if (SUVAKOV_PRESETS[preset]) {
+    setEqualMassDefaults();
     pane.refresh();
     return;
   }
@@ -264,8 +310,32 @@ function createBody(state) {
   };
 }
 
+function bodiesFromSuvakov(vx1, vy1) {
+  const configs = [
+    { x: -1, y: 0, vx: vx1, vy: vy1, settings: settings.body1 },
+    { x: 1, y: 0, vx: vx1, vy: vy1, settings: settings.body2 },
+    { x: 0, y: 0, vx: -2 * vx1, vy: -2 * vy1, settings: settings.body3 },
+  ];
+
+  return configs.map((cfg) =>
+    createBody({
+      x: cfg.x,
+      y: cfg.y,
+      vx: cfg.vx,
+      vy: cfg.vy,
+      mass: cfg.settings.mass,
+      color: cfg.settings.color,
+    })
+  );
+}
+
 function createBodiesFromSettings() {
   const preset = settings.preset;
+
+  if (SUVAKOV_PRESETS[preset]) {
+    const { vx, vy } = SUVAKOV_PRESETS[preset];
+    return bodiesFromSuvakov(vx, vy);
+  }
 
   if (preset === "Figure-8") {
     const figureEight = [
@@ -321,6 +391,25 @@ function createBodiesFromSettings() {
         color: bodySettings.color,
       });
     });
+  }
+
+  if (preset === "Pythagorean") {
+    const pythagorean = [
+      { x: 1, y: 3, mass: settings.body1.mass, color: settings.body1.color },
+      { x: -2, y: -1, mass: settings.body2.mass, color: settings.body2.color },
+      { x: 1, y: -1, mass: settings.body3.mass, color: settings.body3.color },
+    ];
+
+    return pythagorean.map((state) =>
+      createBody({
+        x: state.x,
+        y: state.y,
+        vx: 0,
+        vy: 0,
+        mass: state.mass,
+        color: state.color,
+      })
+    );
   }
 
   const spread = 1.6;

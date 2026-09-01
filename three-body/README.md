@@ -6,7 +6,7 @@ Three bodies orbit each other under Newtonian gravity, integrated with Velocity 
 
 ## Controls
 
-- **Presets** — Figure-8 (stable periodic orbit), Lagrange (equilateral triangle), or Random chaos
+- **Presets** — Figure-8, Lagrange, Butterfly I/II, Moth I, Yin-Yang I, Dragonfly, Bumblebee, Goggles, Yarn, Pythagorean (3-4-5 triangle), and Random chaos
 - **Per body** — color, mass, speed, and launch angle
 - **Trails** — toggle, fade duration, and line weight
 - **Simulation** — pause, time scale, reset, and reset view
