@@ -74,6 +74,10 @@ const settings = {
   trails: true,
   trailWeight: 2,
   fadeDuration: 2.5,
+  glow: true,
+  glowIntensity: 1.35,
+  glowRadius: 1.4,
+  glowThreshold: 0.02,
   body1: { color: "#ff6b6b", mass: 1, speed: 1, angle: 0 },
   body2: { color: "#4ecdc4", mass: 1, speed: 1, angle: 0 },
   body3: { color: "#ffe66d", mass: 1, speed: 1, angle: 0 },
@@ -82,7 +86,11 @@ const settings = {
 let bodies = [];
 let accelerations = [];
 let pane;
-let trailGfx;
+let sceneGfx;
+let blurPing;
+let blurPong;
+let blurShader;
+let glowShader;
 let renderScale = 1;
 let isPanning = false;
 
@@ -92,25 +100,40 @@ const viewport = {
   panY: 0,
 };
 
+function preload() {
+  blurShader = loadShader("shader.vert", "blur.frag");
+  glowShader = loadShader("shader.vert", "glow.frag");
+}
+
 function setup() {
-  createCanvas(window.innerWidth, window.innerHeight);
-  pixelDensity(2);
-  createTrailBuffer();
+  createCanvas(window.innerWidth, window.innerHeight, WEBGL);
+  pixelDensity(1);
+  createSceneBuffer();
+  createBlurBuffers();
 
   setupGui();
   resetSimulation();
 }
 
-function createTrailBuffer() {
-  trailGfx = createGraphics(width, height);
-  trailGfx.pixelDensity(pixelDensity());
-  trailGfx.strokeCap(ROUND);
-  trailGfx.strokeJoin(ROUND);
+function createSceneBuffer() {
+  sceneGfx = createGraphics(width, height);
+  sceneGfx.pixelDensity(pixelDensity());
+  sceneGfx.strokeCap(ROUND);
+  sceneGfx.strokeJoin(ROUND);
+}
+
+function createBlurBuffers() {
+  const scale = 0.5;
+  const bw = max(1, floor(width * scale));
+  const bh = max(1, floor(height * scale));
+  blurPing = createFramebuffer({ width: bw, height: bh, depth: false });
+  blurPong = createFramebuffer({ width: bw, height: bh, depth: false });
 }
 
 function windowResized() {
   resizeCanvas(window.innerWidth, window.innerHeight);
-  createTrailBuffer();
+  createSceneBuffer();
+  createBlurBuffers();
   resetSimulation();
 }
 
@@ -157,6 +180,27 @@ function setupGui() {
     max: 6,
     step: 0.5,
     label: "line weight",
+  });
+
+  const glowFolder = pane.addFolder({ title: "Glow", expanded: true });
+  glowFolder.addInput(settings, "glow", { label: "enable glow" });
+  glowFolder.addInput(settings, "glowIntensity", {
+    min: 0,
+    max: 3,
+    step: 0.05,
+    label: "intensity",
+  });
+  glowFolder.addInput(settings, "glowRadius", {
+    min: 0.5,
+    max: 4,
+    step: 0.1,
+    label: "radius",
+  });
+  glowFolder.addInput(settings, "glowThreshold", {
+    min: 0,
+    max: 0.2,
+    step: 0.01,
+    label: "threshold",
   });
 
   for (let i = 1; i <= 3; i++) {
@@ -564,9 +608,11 @@ function pruneTrails() {
   }
 }
 
-function drawTrails() {
-  trailGfx.clear();
-  trailGfx.strokeWeight(settings.trailWeight);
+function drawTrails(gfx = sceneGfx) {
+  gfx.clear();
+  gfx.push();
+  gfx.blendMode(ADD);
+  gfx.strokeWeight(settings.trailWeight);
 
   const maxAge = trailMaxAge();
   const now = millis();
@@ -581,18 +627,20 @@ function drawTrails() {
       const p0 = trail[i - 1];
       const p1 = trail[i];
       const age = now - p0.t;
-      const alpha = constrain(map(age, 0, maxAge, 230, 0), 0, 230);
+      const alpha = constrain(map(age, 0, maxAge, 255, 0), 0, 255);
       if (alpha <= 0) continue;
 
-      trailGfx.stroke(red(col), green(col), blue(col), alpha);
+      gfx.stroke(red(col), green(col), blue(col), alpha);
 
       const x1 = toScreenX(p0.x);
       const y1 = toScreenY(p0.y);
       const x2 = toScreenX(p1.x);
       const y2 = toScreenY(p1.y);
-      drawTrailSegment(trailGfx, x1, y1, x2, y2);
+      drawTrailSegment(gfx, x1, y1, x2, y2);
     }
   }
+
+  gfx.pop();
 }
 
 function drawTrailSegment(gfx, x1, y1, x2, y2, maxStep = 3) {
@@ -619,6 +667,62 @@ function drawTrailSegment(gfx, x1, y1, x2, y2, maxStep = 3) {
   }
 }
 
+function renderSceneBuffer() {
+  sceneGfx.background(0);
+
+  if (settings.trails) {
+    drawTrails(sceneGfx);
+  }
+
+  drawBodies(sceneGfx);
+}
+
+function renderBloom() {
+  const radius = settings.glowRadius * 3;
+
+  blurPing.begin();
+  shader(blurShader);
+  blurShader.setUniform("u_texture", sceneGfx);
+  blurShader.setUniform("u_resolution", [blurPing.width, blurPing.height]);
+  blurShader.setUniform("u_direction", [1, 0]);
+  blurShader.setUniform("u_radius", radius);
+  noStroke();
+  plane(blurPing.width, blurPing.height);
+  blurPing.end();
+
+  blurPong.begin();
+  shader(blurShader);
+  blurShader.setUniform("u_texture", blurPing.color);
+  blurShader.setUniform("u_resolution", [blurPong.width, blurPong.height]);
+  blurShader.setUniform("u_direction", [0, 1]);
+  blurShader.setUniform("u_radius", radius);
+  plane(blurPong.width, blurPong.height);
+  blurPong.end();
+}
+
+function renderToScreen() {
+  clear();
+
+  if (settings.glow) {
+    renderBloom();
+    shader(glowShader);
+    glowShader.setUniform("u_scene", sceneGfx);
+    glowShader.setUniform("u_blur", blurPong.color);
+    glowShader.setUniform("u_resolution", [width, height]);
+    glowShader.setUniform("u_intensity", settings.glowIntensity);
+    glowShader.setUniform("u_threshold", settings.glowThreshold);
+    noStroke();
+    plane(width, height);
+    return;
+  }
+
+  push();
+  resetShader();
+  noStroke();
+  image(sceneGfx, -width / 2, -height / 2, width, height);
+  pop();
+}
+
 function draw() {
   if (!settings.paused) {
     const totalDt = SUBSTEPS * BASE_DT * settings.timeScale;
@@ -634,28 +738,30 @@ function draw() {
   }
 
   pruneTrails();
-
-  background(5, 10, 20);
-
-  if (settings.trails) {
-    drawTrails();
-    image(trailGfx, 0, 0);
-  }
-
-  drawBodies();
+  renderSceneBuffer();
+  renderToScreen();
 }
 
-function drawBodies() {
+function drawBodies(gfx = sceneGfx) {
+  gfx.push();
+  gfx.blendMode(ADD);
+  gfx.noStroke();
+
   for (const body of bodies) {
     const screenX = toScreenX(body.x);
     const screenY = toScreenY(body.y);
     const radius = sqrt(body.mass) * BODY_RADIUS_SCALE * viewport.zoom;
+    const col = color(body.color);
 
-    noStroke();
-    fill(body.color);
-    circle(screenX, screenY, radius * 2);
+    for (let i = 3; i >= 0; i--) {
+      const t = i / 3;
+      gfx.fill(red(col), green(col), blue(col), 60 + t * 70);
+      gfx.circle(screenX, screenY, radius * (1.4 + t * 2.2));
+    }
 
-    fill(255, 255, 255, 90);
-    circle(screenX - radius * 0.2, screenY - radius * 0.2, radius * 0.7);
+    gfx.fill(255, 255, 255, 200);
+    gfx.circle(screenX, screenY, radius * 0.55);
   }
+
+  gfx.pop();
 }
