@@ -85,17 +85,16 @@ function setupGui() {
 
   const trailFolder = pane.addFolder({ title: "Trails", expanded: true });
   trailFolder.addInput(settings, "trails", { label: "show trails" }).on("change", () => {
-    clearTrailBuffer();
-    resetTrailPositions();
+    if (!settings.trails) {
+      clearTrails();
+    }
   });
-  trailFolder
-    .addInput(settings, "fadeDuration", {
-      min: 0.2,
-      max: 8,
-      step: 0.1,
-      label: "fade duration (s)",
-    })
-    .on("change", clearTrailBuffer);
+  trailFolder.addInput(settings, "fadeDuration", {
+    min: 0.2,
+    max: 8,
+    step: 0.1,
+    label: "fade duration (s)",
+  });
   trailFolder.addInput(settings, "trailWeight", {
     min: 1,
     max: 6,
@@ -205,7 +204,6 @@ function resetView() {
   viewport.zoom = 1;
   viewport.panX = 0;
   viewport.panY = 0;
-  resetTrailPositions();
 }
 
 function isPointerOverPane() {
@@ -229,7 +227,6 @@ function mouseDragged() {
 
   viewport.panX += mouseX - pmouseX;
   viewport.panY += mouseY - pmouseY;
-  resetTrailPositions();
 }
 
 function mouseWheel(event) {
@@ -243,7 +240,6 @@ function mouseWheel(event) {
   viewport.zoom = newZoom;
   viewport.panX = mouseX - width / 2 - worldX * renderScale * viewport.zoom;
   viewport.panY = mouseY - height / 2 - worldY * renderScale * viewport.zoom;
-  resetTrailPositions();
 
   return false;
 }
@@ -252,15 +248,20 @@ function resetSimulation() {
   renderScale = getRenderScale();
   bodies = createBodiesFromSettings();
   accelerations = computeAccelerations(bodies);
-  resetTrailPositions();
-  clearTrailBuffer();
+  clearTrails();
 }
 
-function resetTrailPositions() {
+function clearTrails() {
   for (const body of bodies) {
-    body.prevSx = toScreenX(body.x);
-    body.prevSy = toScreenY(body.y);
+    body.trail = [];
   }
+}
+
+function createBody(state) {
+  return {
+    ...state,
+    trail: [],
+  };
 }
 
 function createBodiesFromSettings() {
@@ -281,14 +282,14 @@ function createBodiesFromSettings() {
         bodySettings.angle
       );
 
-      return {
+      return createBody({
         x: state.x,
         y: state.y,
         vx: velocity.vx,
         vy: velocity.vy,
         mass: bodySettings.mass,
         color: bodySettings.color,
-      };
+      });
     });
   }
 
@@ -298,9 +299,9 @@ function createBodiesFromSettings() {
       sqrt((G * settings.body1.mass * 3) / (radius * sqrt(3))) * 0.92;
 
     const positions = [
-      { x: 0, y: -radius, defaultAngle: 0 },
-      { x: radius * cos(PI / 6), y: radius * sin(PI / 6), defaultAngle: 120 },
-      { x: -radius * cos(PI / 6), y: radius * sin(PI / 6), defaultAngle: 240 },
+      { x: 0, y: -radius },
+      { x: radius * cos(PI / 6), y: radius * sin(PI / 6) },
+      { x: -radius * cos(PI / 6), y: radius * sin(PI / 6) },
     ];
 
     return positions.map((pos, index) => {
@@ -311,14 +312,14 @@ function createBodiesFromSettings() {
         bodySettings.angle
       );
 
-      return {
+      return createBody({
         x: pos.x,
         y: pos.y,
         vx: velocity.vx,
         vy: velocity.vy,
         mass: bodySettings.mass,
         color: bodySettings.color,
-      };
+      });
     });
   }
 
@@ -329,14 +330,14 @@ function createBodiesFromSettings() {
     const positionAngle = random(TWO_PI);
     const distance = random(spread * 0.35, spread);
 
-    return {
+    return createBody({
       x: cos(positionAngle) * distance,
       y: sin(positionAngle) * distance,
       vx: velocity.vx,
       vy: velocity.vy,
       mass: bodySettings.mass,
       color: bodySettings.color,
-    };
+    });
   });
 }
 
@@ -387,46 +388,69 @@ function toScreenY(simY) {
   return height / 2 + viewport.panY + simY * renderScale * viewport.zoom;
 }
 
-function clearTrailBuffer() {
-  trailGfx.background(5, 10, 20);
+function trailMaxAge() {
+  return settings.fadeDuration * 1000;
 }
 
-function fadeTrails() {
-  const fade = fadeAlpha();
-  trailGfx.noStroke();
-  trailGfx.fill(5, 10, 20, fade);
-  trailGfx.rect(0, 0, width, height);
-}
-
-function fadeAlpha() {
-  const frames = max(1, settings.fadeDuration * 60);
-  return constrain(255 * (1 - pow(0.02, 1 / frames)), 1, 255);
-}
-
-function recordTrailSegments() {
+function recordTrailPoint(body) {
   if (!settings.trails) return;
 
-  trailGfx.strokeWeight(settings.trailWeight);
+  body.trail.push({
+    x: body.x,
+    y: body.y,
+    t: millis(),
+  });
+}
+
+function pruneTrails() {
+  const cutoff = millis() - trailMaxAge();
 
   for (const body of bodies) {
-    const screenX = toScreenX(body.x);
-    const screenY = toScreenY(body.y);
-
-    if (body.prevSx !== undefined) {
-      drawTrailSegment(trailGfx, body.prevSx, body.prevSy, screenX, screenY, body.color);
+    let start = 0;
+    while (start < body.trail.length && body.trail[start].t < cutoff) {
+      start++;
     }
-
-    body.prevSx = screenX;
-    body.prevSy = screenY;
+    if (start > 0) {
+      body.trail = body.trail.slice(start);
+    }
   }
 }
 
-function drawTrailSegment(gfx, x1, y1, x2, y2, color, maxStep = 3) {
+function drawTrails() {
+  trailGfx.clear();
+  trailGfx.strokeWeight(settings.trailWeight);
+
+  const maxAge = trailMaxAge();
+  const now = millis();
+
+  for (const body of bodies) {
+    const trail = body.trail;
+    if (trail.length < 2) continue;
+
+    const col = color(body.color);
+
+    for (let i = 1; i < trail.length; i++) {
+      const p0 = trail[i - 1];
+      const p1 = trail[i];
+      const age = now - p0.t;
+      const alpha = constrain(map(age, 0, maxAge, 230, 0), 0, 230);
+      if (alpha <= 0) continue;
+
+      trailGfx.stroke(red(col), green(col), blue(col), alpha);
+
+      const x1 = toScreenX(p0.x);
+      const y1 = toScreenY(p0.y);
+      const x2 = toScreenX(p1.x);
+      const y2 = toScreenY(p1.y);
+      drawTrailSegment(trailGfx, x1, y1, x2, y2);
+    }
+  }
+}
+
+function drawTrailSegment(gfx, x1, y1, x2, y2, maxStep = 3) {
   const dx = x2 - x1;
   const dy = y2 - y1;
   const dist = sqrt(dx * dx + dy * dy);
-
-  gfx.stroke(color);
 
   if (dist <= maxStep) {
     gfx.line(x1, y1, x2, y2);
@@ -448,12 +472,6 @@ function drawTrailSegment(gfx, x1, y1, x2, y2, color, maxStep = 3) {
 }
 
 function draw() {
-  if (settings.trails) {
-    fadeTrails();
-  } else {
-    clearTrailBuffer();
-  }
-
   if (!settings.paused) {
     const totalDt = SUBSTEPS * BASE_DT * settings.timeScale;
     const substeps = min(64, max(SUBSTEPS, ceil(SUBSTEPS * settings.timeScale)));
@@ -461,13 +479,18 @@ function draw() {
 
     for (let step = 0; step < substeps; step++) {
       velocityVerletStep(dt);
-      recordTrailSegments();
+      for (const body of bodies) {
+        recordTrailPoint(body);
+      }
     }
   }
+
+  pruneTrails();
 
   background(5, 10, 20);
 
   if (settings.trails) {
+    drawTrails();
     image(trailGfx, 0, 0);
   }
 
