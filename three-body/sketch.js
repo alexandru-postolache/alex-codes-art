@@ -13,26 +13,36 @@ const settings = {
   trails: true,
   trailWeight: 2,
   fadeDuration: 2.5,
-  body1: { color: "#ff6b6b", mass: 1, speed: 1, angle: 210 },
-  body2: { color: "#4ecdc4", mass: 1, speed: 1, angle: 330 },
-  body3: { color: "#ffe66d", mass: 1, speed: 1, angle: 90 },
+  body1: { color: "#ff6b6b", mass: 1, speed: 1, angle: 223 },
+  body2: { color: "#4ecdc4", mass: 1, speed: 1, angle: 223 },
+  body3: { color: "#ffe66d", mass: 1, speed: 1, angle: 43 },
 };
 
 let bodies = [];
 let accelerations = [];
 let pane;
+let trailGfx;
 let renderScale = 1;
 
 function setup() {
   createCanvas(window.innerWidth, window.innerHeight);
   pixelDensity(2);
+  createTrailBuffer();
 
   setupGui();
   resetSimulation();
 }
 
+function createTrailBuffer() {
+  trailGfx = createGraphics(width, height);
+  trailGfx.pixelDensity(pixelDensity());
+  trailGfx.strokeCap(ROUND);
+  trailGfx.strokeJoin(ROUND);
+}
+
 function windowResized() {
   resizeCanvas(window.innerWidth, window.innerHeight);
+  createTrailBuffer();
   resetSimulation();
 }
 
@@ -66,13 +76,18 @@ function setupGui() {
   simFolder.addButton({ title: "Reset" }).on("click", () => resetSimulation());
 
   const trailFolder = pane.addFolder({ title: "Trails", expanded: true });
-  trailFolder.addInput(settings, "trails", { label: "show trails" });
-  trailFolder.addInput(settings, "fadeDuration", {
-    min: 0.2,
-    max: 8,
-    step: 0.1,
-    label: "fade duration (s)",
+  trailFolder.addInput(settings, "trails", { label: "show trails" }).on("change", () => {
+    clearTrailBuffer();
+    resetTrailPositions();
   });
+  trailFolder
+    .addInput(settings, "fadeDuration", {
+      min: 0.2,
+      max: 8,
+      step: 0.1,
+      label: "fade duration (s)",
+    })
+    .on("change", clearTrailBuffer);
   trailFolder.addInput(settings, "trailWeight", {
     min: 1,
     max: 6,
@@ -86,40 +101,59 @@ function setupGui() {
       expanded: i === 1,
     });
     const key = `body${i}`;
-    bodyFolder.addInput(settings[key], "color");
-    bodyFolder.addInput(settings[key], "mass", {
-      min: MIN_MASS,
-      max: MAX_MASS,
-      step: 0.1,
+    const bodyIndex = i - 1;
+
+    bodyFolder.addInput(settings[key], "color").on("change", () => {
+      if (bodies[bodyIndex]) {
+        bodies[bodyIndex].color = settings[key].color;
+      }
     });
-    bodyFolder.addInput(settings[key], "speed", {
-      min: 0,
-      max: 4,
-      step: 0.05,
-      label: "speed",
-    });
-    bodyFolder.addInput(settings[key], "angle", {
-      min: 0,
-      max: 360,
-      step: 1,
-      label: "angle (deg)",
-    });
+    bodyFolder
+      .addInput(settings[key], "mass", {
+        min: MIN_MASS,
+        max: MAX_MASS,
+        step: 0.1,
+      })
+      .on("change", () => resetSimulation());
+    bodyFolder
+      .addInput(settings[key], "speed", {
+        min: 0,
+        max: 4,
+        step: 0.05,
+        label: "speed",
+      })
+      .on("change", () => resetSimulation());
+    bodyFolder
+      .addInput(settings[key], "angle", {
+        min: 0,
+        max: 360,
+        step: 1,
+        label: "angle (deg)",
+      })
+      .on("change", () => resetSimulation());
   }
+
+  pane.on("change", (ev) => {
+    const key = ev.target.key;
+    if (key === "mass" || key === "speed" || key === "angle") {
+      resetSimulation();
+    }
+  });
 }
 
 function applyPreset(preset) {
   if (preset === "Figure-8") {
-    settings.body1 = { color: "#ff6b6b", mass: 1, speed: 1, angle: 210 };
-    settings.body2 = { color: "#4ecdc4", mass: 1, speed: 1, angle: 330 };
-    settings.body3 = { color: "#ffe66d", mass: 1, speed: 1, angle: 90 };
+    settings.body1 = { color: "#ff6b6b", mass: 1, speed: 1, angle: 223 };
+    settings.body2 = { color: "#4ecdc4", mass: 1, speed: 1, angle: 223 };
+    settings.body3 = { color: "#ffe66d", mass: 1, speed: 1, angle: 43 };
     pane.refresh();
     return;
   }
 
   if (preset === "Lagrange") {
-    settings.body1 = { color: "#ff6b6b", mass: 1, speed: 1.15, angle: 90 };
-    settings.body2 = { color: "#4ecdc4", mass: 1, speed: 1.15, angle: 210 };
-    settings.body3 = { color: "#ffe66d", mass: 1, speed: 1.15, angle: 330 };
+    settings.body1 = { color: "#ff6b6b", mass: 1, speed: 1.15, angle: 0 };
+    settings.body2 = { color: "#4ecdc4", mass: 1, speed: 1.15, angle: 120 };
+    settings.body3 = { color: "#ffe66d", mass: 1, speed: 1.15, angle: 240 };
     pane.refresh();
     return;
   }
@@ -150,11 +184,28 @@ function randomHexColor() {
   return random(palette);
 }
 
+function velocityFromSpeedAngle(baseSpeed, speedMultiplier, angleDeg) {
+  const speed = baseSpeed * speedMultiplier;
+  const angle = radians(angleDeg);
+  return {
+    vx: cos(angle) * speed,
+    vy: sin(angle) * speed,
+  };
+}
+
 function resetSimulation() {
   renderScale = getRenderScale();
   bodies = createBodiesFromSettings();
   accelerations = computeAccelerations(bodies);
+  resetTrailPositions();
   clearTrailBuffer();
+}
+
+function resetTrailPositions() {
+  for (const body of bodies) {
+    body.prevSx = toScreenX(body.x);
+    body.prevSy = toScreenY(body.y);
+  }
 }
 
 function createBodiesFromSettings() {
@@ -162,18 +213,24 @@ function createBodiesFromSettings() {
 
   if (preset === "Figure-8") {
     const figureEight = [
-      { x: 0.97000436, y: -0.24308753, vx: -0.466203685, vy: -0.43236573 },
-      { x: -0.97000436, y: 0.24308753, vx: -0.466203685, vy: -0.43236573 },
-      { x: 0, y: 0, vx: 0.93240737, vy: 0.86473146 },
+      { x: 0.97000436, y: -0.24308753, speed: 0.635 },
+      { x: -0.97000436, y: 0.24308753, speed: 0.635 },
+      { x: 0, y: 0, speed: 1.27 },
     ];
 
     return figureEight.map((state, index) => {
       const bodySettings = settings[`body${index + 1}`];
+      const velocity = velocityFromSpeedAngle(
+        state.speed,
+        bodySettings.speed,
+        bodySettings.angle
+      );
+
       return {
         x: state.x,
         y: state.y,
-        vx: state.vx,
-        vy: state.vy,
+        vx: velocity.vx,
+        vy: velocity.vy,
         mass: bodySettings.mass,
         color: bodySettings.color,
       };
@@ -182,27 +239,28 @@ function createBodiesFromSettings() {
 
   if (preset === "Lagrange") {
     const radius = 1.4;
-    const orbitSpeed =
+    const baseOrbitSpeed =
       sqrt((G * settings.body1.mass * 3) / (radius * sqrt(3))) * 0.92;
 
     const positions = [
-      { x: 0, y: -radius },
-      { x: radius * cos(PI / 6), y: radius * sin(PI / 6) },
-      { x: -radius * cos(PI / 6), y: radius * sin(PI / 6) },
+      { x: 0, y: -radius, defaultAngle: 0 },
+      { x: radius * cos(PI / 6), y: radius * sin(PI / 6), defaultAngle: 120 },
+      { x: -radius * cos(PI / 6), y: radius * sin(PI / 6), defaultAngle: 240 },
     ];
 
     return positions.map((pos, index) => {
       const bodySettings = settings[`body${index + 1}`];
-      const dist = sqrt(pos.x * pos.x + pos.y * pos.y) || 1;
-      const tangentX = -pos.y / dist;
-      const tangentY = pos.x / dist;
-      const speed = orbitSpeed * (bodySettings.speed / 1.15);
+      const velocity = velocityFromSpeedAngle(
+        baseOrbitSpeed,
+        bodySettings.speed,
+        bodySettings.angle
+      );
 
       return {
         x: pos.x,
         y: pos.y,
-        vx: tangentX * speed,
-        vy: tangentY * speed,
+        vx: velocity.vx,
+        vy: velocity.vy,
         mass: bodySettings.mass,
         color: bodySettings.color,
       };
@@ -212,16 +270,15 @@ function createBodiesFromSettings() {
   const spread = 1.6;
   return [1, 2, 3].map((index) => {
     const bodySettings = settings[`body${index}`];
-    const angle = radians(bodySettings.angle);
-    const speed = bodySettings.speed * 0.35;
+    const velocity = velocityFromSpeedAngle(0.35, bodySettings.speed, bodySettings.angle);
     const positionAngle = random(TWO_PI);
     const distance = random(spread * 0.35, spread);
 
     return {
       x: cos(positionAngle) * distance,
       y: sin(positionAngle) * distance,
-      vx: cos(angle) * speed,
-      vy: sin(angle) * speed,
+      vx: velocity.vx,
+      vy: velocity.vy,
       mass: bodySettings.mass,
       color: bodySettings.color,
     };
@@ -276,27 +333,87 @@ function toScreenY(simY) {
 }
 
 function clearTrailBuffer() {
-  background(5, 10, 20);
+  trailGfx.background(5, 10, 20);
+}
+
+function fadeTrails() {
+  const fade = fadeAlpha();
+  trailGfx.noStroke();
+  trailGfx.fill(5, 10, 20, fade);
+  trailGfx.rect(0, 0, width, height);
 }
 
 function fadeAlpha() {
   const frames = max(1, settings.fadeDuration * 60);
-  const alpha = 255 * (1 - pow(0.02, 1 / frames));
-  return constrain(alpha, 4, 255);
+  return constrain(255 * (1 - pow(0.02, 1 / frames)), 1, 255);
+}
+
+function recordTrailSegments() {
+  if (!settings.trails) return;
+
+  trailGfx.strokeWeight(settings.trailWeight);
+
+  for (const body of bodies) {
+    const screenX = toScreenX(body.x);
+    const screenY = toScreenY(body.y);
+
+    if (body.prevSx !== undefined) {
+      drawTrailSegment(trailGfx, body.prevSx, body.prevSy, screenX, screenY, body.color);
+    }
+
+    body.prevSx = screenX;
+    body.prevSy = screenY;
+  }
+}
+
+function drawTrailSegment(gfx, x1, y1, x2, y2, color, maxStep = 3) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dist = sqrt(dx * dx + dy * dy);
+
+  gfx.stroke(color);
+
+  if (dist <= maxStep) {
+    gfx.line(x1, y1, x2, y2);
+    return;
+  }
+
+  const steps = ceil(dist / maxStep);
+  let prevX = x1;
+  let prevY = y1;
+
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const nextX = lerp(x1, x2, t);
+    const nextY = lerp(y1, y2, t);
+    gfx.line(prevX, prevY, nextX, nextY);
+    prevX = nextX;
+    prevY = nextY;
+  }
 }
 
 function draw() {
   if (settings.trails) {
-    background(5, 10, 20, fadeAlpha() / 255);
+    fadeTrails();
   } else {
     clearTrailBuffer();
   }
 
   if (!settings.paused) {
-    const dt = BASE_DT * settings.timeScale;
-    for (let step = 0; step < SUBSTEPS; step++) {
+    const totalDt = SUBSTEPS * BASE_DT * settings.timeScale;
+    const substeps = min(64, max(SUBSTEPS, ceil(SUBSTEPS * settings.timeScale)));
+    const dt = totalDt / substeps;
+
+    for (let step = 0; step < substeps; step++) {
       velocityVerletStep(dt);
+      recordTrailSegments();
     }
+  }
+
+  background(5, 10, 20);
+
+  if (settings.trails) {
+    image(trailGfx, 0, 0);
   }
 
   drawBodies();
@@ -307,13 +424,6 @@ function drawBodies() {
     const screenX = toScreenX(body.x);
     const screenY = toScreenY(body.y);
     const radius = sqrt(body.mass) * BODY_RADIUS_SCALE;
-
-    if (settings.trails) {
-      noFill();
-      stroke(body.color);
-      strokeWeight(settings.trailWeight);
-      point(screenX, screenY);
-    }
 
     noStroke();
     fill(body.color);
