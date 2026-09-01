@@ -23,6 +23,13 @@ let accelerations = [];
 let pane;
 let trailGfx;
 let renderScale = 1;
+let isPanning = false;
+
+const viewport = {
+  zoom: 1,
+  panX: 0,
+  panY: 0,
+};
 
 function setup() {
   createCanvas(window.innerWidth, window.innerHeight);
@@ -74,6 +81,7 @@ function setupGui() {
   });
   simFolder.addInput(settings, "paused", { label: "pause" });
   simFolder.addButton({ title: "Reset" }).on("click", () => resetSimulation());
+  simFolder.addButton({ title: "Reset view" }).on("click", () => resetView());
 
   const trailFolder = pane.addFolder({ title: "Trails", expanded: true });
   trailFolder.addInput(settings, "trails", { label: "show trails" }).on("change", () => {
@@ -191,6 +199,53 @@ function velocityFromSpeedAngle(baseSpeed, speedMultiplier, angleDeg) {
     vx: cos(angle) * speed,
     vy: sin(angle) * speed,
   };
+}
+
+function resetView() {
+  viewport.zoom = 1;
+  viewport.panX = 0;
+  viewport.panY = 0;
+  resetTrailPositions();
+}
+
+function isPointerOverPane() {
+  if (!pane) return false;
+  const target = document.elementFromPoint(winMouseX, winMouseY);
+  return target && pane.element.contains(target);
+}
+
+function mousePressed() {
+  if (mouseButton === LEFT && !isPointerOverPane()) {
+    isPanning = true;
+  }
+}
+
+function mouseReleased() {
+  isPanning = false;
+}
+
+function mouseDragged() {
+  if (!isPanning || isPointerOverPane()) return;
+
+  viewport.panX += mouseX - pmouseX;
+  viewport.panY += mouseY - pmouseY;
+  resetTrailPositions();
+}
+
+function mouseWheel(event) {
+  if (isPointerOverPane()) return true;
+
+  const zoomFactor = 1 - event.delta * 0.001;
+  const newZoom = constrain(viewport.zoom * zoomFactor, 0.2, 8);
+  const worldX = (mouseX - width / 2 - viewport.panX) / (renderScale * viewport.zoom);
+  const worldY = (mouseY - height / 2 - viewport.panY) / (renderScale * viewport.zoom);
+
+  viewport.zoom = newZoom;
+  viewport.panX = mouseX - width / 2 - worldX * renderScale * viewport.zoom;
+  viewport.panY = mouseY - height / 2 - worldY * renderScale * viewport.zoom;
+  resetTrailPositions();
+
+  return false;
 }
 
 function resetSimulation() {
@@ -325,11 +380,11 @@ function velocityVerletStep(dt) {
 }
 
 function toScreenX(simX) {
-  return width / 2 + simX * renderScale;
+  return width / 2 + viewport.panX + simX * renderScale * viewport.zoom;
 }
 
 function toScreenY(simY) {
-  return height / 2 + simY * renderScale;
+  return height / 2 + viewport.panY + simY * renderScale * viewport.zoom;
 }
 
 function clearTrailBuffer() {
@@ -423,7 +478,7 @@ function drawBodies() {
   for (const body of bodies) {
     const screenX = toScreenX(body.x);
     const screenY = toScreenY(body.y);
-    const radius = sqrt(body.mass) * BODY_RADIUS_SCALE;
+    const radius = sqrt(body.mass) * BODY_RADIUS_SCALE * viewport.zoom;
 
     noStroke();
     fill(body.color);
