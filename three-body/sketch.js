@@ -120,6 +120,8 @@ function setup() {
   createBlurBuffers();
 
   setupGui();
+  applyPresetPhysics(settings.preset);
+  pane.refresh();
   resetSimulation();
 }
 
@@ -188,7 +190,7 @@ function setupGui() {
   });
   trailFolder.addInput(settings, "fadeDuration", {
     min: 0.2,
-    max: 8,
+    max: 80,
     step: 0.1,
     label: "fade duration (s)",
   });
@@ -224,7 +226,7 @@ function setupGui() {
 
     bodyFolder.addInput(settings[key], "color").on("change", () => {
       if (bodies[bodyIndex]) {
-        bodies[bodyIndex].color = settings[key].color;
+        bodies[bodyIndex].color = bodyColorHex(settings[key].color);
       }
     });
     bodyFolder
@@ -269,7 +271,39 @@ function getSoftening() {
 }
 
 function getPresetFadeDuration() {
-  return getPresetPhysics().fadeDuration ?? settings.fadeDuration;
+  return settings.fadeDuration;
+}
+
+function bodyColorHex(value) {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") {
+    const r = constrain(round(value.r ?? 255), 0, 255);
+    const g = constrain(round(value.g ?? 255), 0, 255);
+    const b = constrain(round(value.b ?? 255), 0, 255);
+    const toHex = (n) => n.toString(16).padStart(2, "0");
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+  }
+  return DEFAULT_COLORS[0];
+}
+
+function writeBodySettings(target, props) {
+  target.color = props.color;
+  target.mass = props.mass;
+  target.speed = props.speed;
+  target.angle = props.angle;
+}
+
+function applyVelocityModifiers(vx, vy, bodySettings) {
+  const scaledX = vx * bodySettings.speed;
+  const scaledY = vy * bodySettings.speed;
+  const angle = radians(bodySettings.angle);
+  const cosA = cos(angle);
+  const sinA = sin(angle);
+
+  return {
+    vx: scaledX * cosA - scaledY * sinA,
+    vy: scaledX * sinA + scaledY * cosA,
+  };
 }
 
 function isCatalogPreset(preset = settings.preset) {
@@ -282,42 +316,39 @@ function lagrangeOrbitSpeed(mass, radius) {
 }
 
 function setEqualMassDefaults() {
-  settings.body1 = { color: DEFAULT_COLORS[0], mass: 1, speed: 1, angle: 0 };
-  settings.body2 = { color: DEFAULT_COLORS[1], mass: 1, speed: 1, angle: 0 };
-  settings.body3 = { color: DEFAULT_COLORS[2], mass: 1, speed: 1, angle: 0 };
+  writeBodySettings(settings.body1, { color: DEFAULT_COLORS[0], mass: 1, speed: 1, angle: 0 });
+  writeBodySettings(settings.body2, { color: DEFAULT_COLORS[1], mass: 1, speed: 1, angle: 0 });
+  writeBodySettings(settings.body3, { color: DEFAULT_COLORS[2], mass: 1, speed: 1, angle: 0 });
 }
 
 function applyPresetPhysics(preset) {
   const physics = PRESET_PHYSICS[preset];
   if (physics?.fadeDuration) {
     settings.fadeDuration = physics.fadeDuration;
-    pane?.refresh();
   }
 }
 
 function applyPreset(preset) {
   if (preset === "Figure-8") {
-    settings.body1 = { color: DEFAULT_COLORS[0], mass: 1, speed: 1, angle: 0 };
-    settings.body2 = { color: DEFAULT_COLORS[1], mass: 1, speed: 1, angle: 0 };
-    settings.body3 = { color: DEFAULT_COLORS[2], mass: 1, speed: 1, angle: 0 };
+    setEqualMassDefaults();
     applyPresetPhysics(preset);
     pane.refresh();
     return;
   }
 
   if (preset === "Lagrange") {
-    settings.body1 = { color: DEFAULT_COLORS[0], mass: 1, speed: 1, angle: 0 };
-    settings.body2 = { color: DEFAULT_COLORS[1], mass: 1, speed: 1, angle: 120 };
-    settings.body3 = { color: DEFAULT_COLORS[2], mass: 1, speed: 1, angle: 240 };
+    writeBodySettings(settings.body1, { color: DEFAULT_COLORS[0], mass: 1, speed: 1, angle: 0 });
+    writeBodySettings(settings.body2, { color: DEFAULT_COLORS[1], mass: 1, speed: 1, angle: 120 });
+    writeBodySettings(settings.body3, { color: DEFAULT_COLORS[2], mass: 1, speed: 1, angle: 240 });
     applyPresetPhysics(preset);
     pane.refresh();
     return;
   }
 
   if (preset === "Pythagorean") {
-    settings.body1 = { color: DEFAULT_COLORS[0], mass: 3, speed: 0, angle: 0 };
-    settings.body2 = { color: DEFAULT_COLORS[1], mass: 4, speed: 0, angle: 0 };
-    settings.body3 = { color: DEFAULT_COLORS[2], mass: 5, speed: 0, angle: 0 };
+    writeBodySettings(settings.body1, { color: DEFAULT_COLORS[0], mass: 3, speed: 0, angle: 0 });
+    writeBodySettings(settings.body2, { color: DEFAULT_COLORS[1], mass: 4, speed: 0, angle: 0 });
+    writeBodySettings(settings.body3, { color: DEFAULT_COLORS[2], mass: 5, speed: 0, angle: 0 });
     applyPresetPhysics(preset);
     pane.refresh();
     return;
@@ -332,24 +363,24 @@ function applyPreset(preset) {
 
   applyPresetPhysics(preset);
 
-  settings.body1 = {
+  writeBodySettings(settings.body1, {
     color: randomHexColor(),
     mass: random(0.8, 2.5),
     speed: random(0.6, 2.2),
     angle: random(360),
-  };
-  settings.body2 = {
+  });
+  writeBodySettings(settings.body2, {
     color: randomHexColor(),
     mass: random(0.8, 2.5),
     speed: random(0.6, 2.2),
     angle: random(360),
-  };
-  settings.body3 = {
+  });
+  writeBodySettings(settings.body3, {
     color: randomHexColor(),
     mass: random(0.8, 2.5),
     speed: random(0.6, 2.2),
     angle: random(360),
-  };
+  });
   pane.refresh();
 }
 
@@ -438,28 +469,30 @@ function bodiesFromSuvakov(vx1, vy1) {
     { x: 0, y: 0, vx: -2 * vx1, vy: -2 * vy1, settings: settings.body3 },
   ];
 
-  return configs.map((cfg) =>
-    createBody({
+  return configs.map((cfg) => {
+    const velocity = applyVelocityModifiers(cfg.vx, cfg.vy, cfg.settings);
+    return createBody({
       x: cfg.x,
       y: cfg.y,
-      vx: cfg.vx,
-      vy: cfg.vy,
+      vx: velocity.vx,
+      vy: velocity.vy,
       mass: cfg.settings.mass,
-      color: cfg.settings.color,
-    })
-  );
+      color: bodyColorHex(cfg.settings.color),
+    });
+  });
 }
 
 function bodiesFromCatalog(states) {
   return states.map((state, index) => {
     const bodySettings = settings[`body${index + 1}`];
+    const velocity = applyVelocityModifiers(state.vx, state.vy, bodySettings);
     return createBody({
       x: state.x,
       y: state.y,
-      vx: state.vx,
-      vy: state.vy,
+      vx: velocity.vx,
+      vy: velocity.vy,
       mass: bodySettings.mass,
-      color: bodySettings.color,
+      color: bodyColorHex(bodySettings.color),
     });
   });
 }
@@ -500,28 +533,29 @@ function createBodiesFromSettings() {
         vx: velocity.vx,
         vy: velocity.vy,
         mass: bodySettings.mass,
-        color: bodySettings.color,
+        color: bodyColorHex(bodySettings.color),
       });
     });
   }
 
   if (preset === "Pythagorean") {
     const pythagorean = [
-      { x: 1, y: 3, mass: settings.body1.mass, color: settings.body1.color },
-      { x: -2, y: -1, mass: settings.body2.mass, color: settings.body2.color },
-      { x: 1, y: -1, mass: settings.body3.mass, color: settings.body3.color },
+      { x: 1, y: 3, settings: settings.body1 },
+      { x: -2, y: -1, settings: settings.body2 },
+      { x: 1, y: -1, settings: settings.body3 },
     ];
 
-    return pythagorean.map((state) =>
-      createBody({
+    return pythagorean.map((state) => {
+      const velocity = velocityFromSpeedAngle(0.35, state.settings.speed, state.settings.angle);
+      return createBody({
         x: state.x,
         y: state.y,
-        vx: 0,
-        vy: 0,
-        mass: state.mass,
-        color: state.color,
-      })
-    );
+        vx: velocity.vx,
+        vy: velocity.vy,
+        mass: state.settings.mass,
+        color: bodyColorHex(state.settings.color),
+      });
+    });
   }
 
   const spread = 1.6;
@@ -537,7 +571,7 @@ function createBodiesFromSettings() {
       vx: velocity.vx,
       vy: velocity.vy,
       mass: bodySettings.mass,
-      color: bodySettings.color,
+      color: bodyColorHex(bodySettings.color),
     });
   });
 }
