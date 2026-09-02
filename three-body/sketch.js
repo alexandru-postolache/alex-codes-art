@@ -117,11 +117,13 @@ let sceneFbo;
 let blurPing;
 let blurPong;
 let blurShader;
+let copyShader;
 let isOrbiting = false;
 let isPanning = false;
 
 function preload() {
   blurShader = loadShader("shader.vert", "blur.frag");
+  copyShader = loadShader("shader.vert", "copy.frag");
 }
 
 function shaderTexelSize(w, h) {
@@ -529,11 +531,22 @@ function applyCamera() {
   camera(tx + fx * d, ty + fy * d, tz + fz * d, tx, ty, tz, 0, 1, 0);
 }
 
-function resetCompositeCamera() {
-  resetShader();
-  resetMatrix();
-  camera();
-  perspective();
+function glContext() {
+  return drawingContext;
+}
+
+function setDepthTest(enabled) {
+  const gl = glContext();
+  if (!gl) return;
+  if (enabled) gl.enable(gl.DEPTH_TEST);
+  else gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.CULL_FACE);
+}
+
+function drawClipQuad() {
+  noStroke();
+  fill(255);
+  quad(-1, -1, 1, -1, 1, 1, -1, 1);
 }
 
 function resetSimulation() {
@@ -816,7 +829,7 @@ function pruneTrails() {
 
 function drawGrid() {
   if (!settings.showGrid) return;
-  stroke(255, 255, 255, 22);
+  stroke(255, 255, 255, 28);
   strokeWeight(1);
   const extent = 3;
   const step = 0.5;
@@ -861,6 +874,7 @@ function drawBodies3D() {
 
 function renderScene() {
   sceneFbo.begin();
+  setDepthTest(true);
   clear();
   background(0);
   perspective(PI / 3, width / height, 0.05, 500);
@@ -889,6 +903,7 @@ function blurSource(source) {
 
 function runBlurPass(target, source, direction) {
   target.begin();
+  setDepthTest(false);
   clear();
   shader(blurShader);
   blurShader.setUniform("u_clipSpace", 1);
@@ -896,8 +911,7 @@ function runBlurPass(target, source, direction) {
   blurShader.setUniform("u_texelSize", shaderTexelSize(target.width, target.height));
   blurShader.setUniform("u_direction", direction);
   blurShader.setUniform("u_radius", glowSettings.radius);
-  noStroke();
-  plane(2, 2);
+  drawClipQuad();
   resetShader();
   target.end();
 }
@@ -911,27 +925,27 @@ function renderBloom() {
   }
 }
 
-function blitFramebuffer(fbo) {
-  resetCompositeCamera();
-  push();
-  imageMode(CORNER);
-  image(fbo, -width / 2, -height / 2, width, height);
-  pop();
+function blitFramebuffer(fbo, tintRgba) {
+  setDepthTest(false);
+  shader(copyShader);
+  copyShader.setUniform("u_clipSpace", 1);
+  copyShader.setUniform("u_texture", blurSource(fbo));
+  copyShader.setUniform("u_tint", tintRgba);
+  drawClipQuad();
+  resetShader();
 }
 
 function renderToScreen() {
+  setDepthTest(false);
   background(0);
-  blitFramebuffer(sceneFbo);
+  blitFramebuffer(sceneFbo, [1, 1, 1, 1]);
 
   if (glowSettings.enabled && glowSettings.intensity > 0) {
     renderBloom();
-    push();
+    const a = constrain(glowSettings.intensity * 0.45, 0, 1);
     blendMode(ADD);
-    tint(255, constrain(glowSettings.intensity * 90, 0, 255));
-    blitFramebuffer(blurPong);
-    noTint();
+    blitFramebuffer(blurPong, [a, a, a, 1]);
     blendMode(BLEND);
-    pop();
   }
 }
 
