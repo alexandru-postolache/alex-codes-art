@@ -2,28 +2,19 @@
 precision highp float;
 #endif
 
+varying vec2 vTexCoord;
+
 uniform sampler2D u_scene;
 uniform sampler2D u_blur;
-uniform vec2 u_texelSize;
 uniform float u_intensity;
 
-vec2 sceneUv(vec2 fragCoord) {
-  return vec2(fragCoord.x, 1.0 - fragCoord.y) * u_texelSize;
-}
-
-vec2 blurUv(vec2 fragCoord) {
-  return fragCoord * u_texelSize;
-}
-
 void main() {
-  vec2 coord = gl_FragCoord.xy;
-  vec3 scene = texture2D(u_scene, sceneUv(coord)).rgb;
-  vec3 blur = texture2D(u_blur, blurUv(coord)).rgb;
+  vec2 sceneUv = vec2(vTexCoord.x, 1.0 - vTexCoord.y);
+  vec3 scene = texture2D(u_scene, sceneUv).rgb;
+  vec3 blur = texture2D(u_blur, vTexCoord).rgb;
 
-  float lum = max(max(scene.r, scene.g), scene.b);
-  vec3 chroma = lum > 0.001 ? scene / lum : vec3(1.0);
-  vec3 bloom = blur * chroma * u_intensity;
-  vec3 color = scene + bloom;
+  vec3 halo = max(blur - scene, vec3(0.0));
+  vec3 color = scene + halo * u_intensity;
 
   gl_FragColor = vec4(min(color, vec3(1.0)), 1.0);
 }

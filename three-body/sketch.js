@@ -81,11 +81,10 @@ const settings = {
 
 const glowSettings = {
   enabled: true,
-  intensity: 1.1,
-  radius: 2.5,
+  intensity: 1.4,
+  radius: 3.5,
 };
 
-const BLOOM_SCALE = 0.5;
 const BLOOM_ITERATIONS = 2;
 
 let bodies = [];
@@ -111,17 +110,12 @@ function preload() {
 }
 
 function shaderTexelSize(w, h) {
-  return [1 / w, 1 / h];
-}
-
-function screenPixelSize() {
-  const d = pixelDensity();
-  return [width * d, height * d];
+  return [1 / max(1, w), 1 / max(1, h)];
 }
 
 function setup() {
   createCanvas(window.innerWidth, window.innerHeight, WEBGL);
-  pixelDensity(1);
+  pixelDensity(2);
   createSceneBuffer();
   createBlurBuffers();
 
@@ -137,20 +131,16 @@ function createSceneBuffer() {
 }
 
 function createBlurBuffers() {
-  const [sw, sh] = screenPixelSize();
-  const bw = max(1, floor(sw * BLOOM_SCALE));
-  const bh = max(1, floor(sh * BLOOM_SCALE));
-
   blurPing = createFramebuffer({
-    width: bw,
-    height: bh,
+    width,
+    height,
     depth: false,
     density: 1,
     textureFiltering: LINEAR,
   });
   blurPong = createFramebuffer({
-    width: bw,
-    height: bh,
+    width,
+    height,
     depth: false,
     density: 1,
     textureFiltering: LINEAR,
@@ -219,8 +209,8 @@ function setupGui() {
   });
   glowFolder.addInput(glowSettings, "radius", {
     min: 0.5,
-    max: 8,
-    step: 0.1,
+    max: 16,
+    step: 0.5,
     label: "radius",
   });
 
@@ -697,28 +687,25 @@ function renderSceneBuffer() {
 }
 
 function runBlurPass(target, source, direction, flipY) {
-  const res = [target.width, target.height];
-  const texel = shaderTexelSize(res[0], res[1]);
-
   target.begin();
   shader(blurShader);
   blurShader.setUniform("u_texture", source);
-  blurShader.setUniform("u_texelSize", texel);
+  blurShader.setUniform("u_texelSize", shaderTexelSize(target.width, target.height));
   blurShader.setUniform("u_direction", direction);
+  blurShader.setUniform("u_radius", glowSettings.radius);
   blurShader.setUniform("u_flipY", flipY);
   noStroke();
-  plane(target.width, target.height);
+  plane(width, height);
   target.end();
 }
 
 function renderBloom() {
-  const spread = glowSettings.radius;
   let source = sceneGfx;
   let flipSource = 1;
 
   for (let i = 0; i < BLOOM_ITERATIONS; i++) {
-    runBlurPass(blurPing, source, [spread, 0], flipSource);
-    runBlurPass(blurPong, blurPing.color, [0, spread], 0);
+    runBlurPass(blurPing, source, [1, 0], flipSource);
+    runBlurPass(blurPong, blurPing.color, [0, 1], 0);
     source = blurPong.color;
     flipSource = 0;
   }
@@ -729,11 +716,9 @@ function renderToScreen() {
 
   if (glowSettings.enabled && glowSettings.intensity > 0) {
     renderBloom();
-    const [sw, sh] = screenPixelSize();
     shader(glowShader);
     glowShader.setUniform("u_scene", sceneGfx);
     glowShader.setUniform("u_blur", blurPong.color);
-    glowShader.setUniform("u_texelSize", shaderTexelSize(sw, sh));
     glowShader.setUniform("u_intensity", glowSettings.intensity);
     noStroke();
     plane(width, height);
