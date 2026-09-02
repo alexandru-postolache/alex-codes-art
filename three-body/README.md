@@ -2,7 +2,7 @@
 
 An interactive 2D visualization of the classic three-body gravitational problem, built with [p5.js](https://p5js.org/) and [Tweakpane](https://tweakpane.github.io/docs/).
 
-Three bodies orbit each other under Newtonian gravity, integrated with Velocity Verlet for stability. Trails fade over time so you can read the shape of chaotic and periodic orbits. A GPU bloom shader adds soft colored halos around trails and bodies.
+Three bodies orbit each other under Newtonian gravity, integrated with adaptive RK4 so close approaches stay accurate. Trails fade over time so you can read the shape of chaotic and periodic orbits. A GPU bloom shader adds soft colored halos around trails and bodies.
 
 ## Controls
 
