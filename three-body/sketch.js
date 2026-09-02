@@ -11,6 +11,7 @@ const DT_MIN = 1e-6;
 const ADAPT_C = 0.02;
 const MAX_STEPS_PER_FRAME = 2500;
 const BLOOM_ITERATIONS = 2;
+const WORLD_SCALE = 80;
 
 const PRESET_PHYSICS = {
   "Figure-8": { fadeDuration: 6.5 },
@@ -117,13 +118,12 @@ let sceneFbo;
 let blurPing;
 let blurPong;
 let blurShader;
-let copyShader;
+let displayCamera;
 let isOrbiting = false;
 let isPanning = false;
 
 function preload() {
   blurShader = loadShader("shader.vert", "blur.frag");
-  copyShader = loadShader("shader.vert", "copy.frag");
 }
 
 function shaderTexelSize(w, h) {
@@ -133,6 +133,7 @@ function shaderTexelSize(w, h) {
 function setup() {
   canvas = createCanvas(window.innerWidth, window.innerHeight, WEBGL);
   pixelDensity(2);
+  displayCamera = createCamera();
   canvas.elt.addEventListener("contextmenu", (event) => event.preventDefault());
   createRenderTargets();
   setupGui();
@@ -524,29 +525,21 @@ function cameraBasis() {
 
 function applyCamera() {
   const { fx, fy, fz } = cameraBasis();
-  const d = cameraState.distance;
-  const tx = cameraState.targetX;
-  const ty = cameraState.targetY;
-  const tz = cameraState.targetZ;
+  const d = cameraState.distance * WORLD_SCALE;
+  const tx = cameraState.targetX * WORLD_SCALE;
+  const ty = cameraState.targetY * WORLD_SCALE;
+  const tz = cameraState.targetZ * WORLD_SCALE;
   camera(tx + fx * d, ty + fy * d, tz + fz * d, tx, ty, tz, 0, 1, 0);
 }
 
-function glContext() {
-  return drawingContext;
+function worldX(v) {
+  return v * WORLD_SCALE;
 }
 
-function setDepthTest(enabled) {
-  const gl = glContext();
-  if (!gl) return;
-  if (enabled) gl.enable(gl.DEPTH_TEST);
-  else gl.disable(gl.DEPTH_TEST);
-  gl.disable(gl.CULL_FACE);
-}
-
-function drawClipQuad() {
-  noStroke();
-  fill(255);
-  quad(-1, -1, 1, -1, 1, 1, -1, 1);
+function restoreDisplayCamera() {
+  resetShader();
+  setCamera(displayCamera);
+  resetMatrix();
 }
 
 function resetSimulation() {
@@ -831,8 +824,8 @@ function drawGrid() {
   if (!settings.showGrid) return;
   stroke(255, 255, 255, 28);
   strokeWeight(1);
-  const extent = 3;
-  const step = 0.5;
+  const extent = worldX(3);
+  const step = worldX(0.5);
   for (let i = -extent; i <= extent; i += step) {
     line(i, 0, -extent, i, 0, extent);
     line(-extent, 0, i, extent, 0, i);
@@ -855,7 +848,7 @@ function drawTrails3D() {
       const alpha = constrain(map(now - p0.t, 0, maxAge, 220, 0), 0, 220);
       if (alpha <= 0) continue;
       stroke(red(col), green(col), blue(col), alpha);
-      line(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z);
+      line(worldX(p0.x), worldX(p0.y), worldX(p0.z), worldX(p1.x), worldX(p1.y), worldX(p1.z));
     }
   }
 }
@@ -865,87 +858,100 @@ function drawBodies3D() {
   for (const body of simBodies) {
     const col = color(body.color);
     push();
-    translate(body.x, body.y, body.z);
+    translate(worldX(body.x), worldX(body.y), worldX(body.z));
     fill(red(col), green(col), blue(col));
-    sphere(BODY_RADIUS * sqrt(body.mass), 20, 14);
+    sphere(worldX(BODY_RADIUS) * sqrt(body.mass), 20, 14);
     pop();
   }
 }
 
 function renderScene() {
   sceneFbo.begin();
-  setDepthTest(true);
   clear();
   background(0);
-  perspective(PI / 3, width / height, 0.05, 500);
+  perspective(PI / 3, width / height, 0.5, 20000);
   applyCamera();
   ambientLight(32);
   directionalLight(230, 230, 230, 0.35, 0.7, -1);
   const { fx, fy, fz } = cameraBasis();
-  const d = cameraState.distance;
+  const d = cameraState.distance * WORLD_SCALE;
   pointLight(
     160,
     160,
     180,
-    cameraState.targetX + fx * d,
-    cameraState.targetY + fy * d,
-    cameraState.targetZ + fz * d
+    (cameraState.targetX + fx * cameraState.distance) * WORLD_SCALE,
+    (cameraState.targetY + fy * cameraState.distance) * WORLD_SCALE,
+    (cameraState.targetZ + fz * cameraState.distance) * WORLD_SCALE
   );
   drawGrid();
   if (settings.trails) drawTrails3D();
   drawBodies3D();
   sceneFbo.end();
+  restoreDisplayCamera();
 }
 
 function blurSource(source) {
   return source && source.color ? source.color : source;
 }
 
-function runBlurPass(target, source, direction) {
+function drawFullscreenRect() {
+  push();
+  resetMatrix();
+  rectMode(CORNER);
+  noStroke();
+  fill(255);
+  rect(0, 0, 1, 1);
+  pop();
+}
+
+function runBlurPass(target, source, direction, flipY) {
   target.begin();
-  setDepthTest(false);
   clear();
   shader(blurShader);
-  blurShader.setUniform("u_clipSpace", 1);
   blurShader.setUniform("u_texture", blurSource(source));
   blurShader.setUniform("u_texelSize", shaderTexelSize(target.width, target.height));
   blurShader.setUniform("u_direction", direction);
   blurShader.setUniform("u_radius", glowSettings.radius);
-  drawClipQuad();
+  blurShader.setUniform("u_flipY", flipY);
+  drawFullscreenRect();
   resetShader();
   target.end();
 }
 
 function renderBloom() {
   let source = sceneFbo;
+  let flipY = 1;
   for (let i = 0; i < BLOOM_ITERATIONS; i++) {
-    runBlurPass(blurPing, source, [1, 0]);
-    runBlurPass(blurPong, blurPing, [0, 1]);
+    runBlurPass(blurPing, source, [1, 0], flipY);
+    runBlurPass(blurPong, blurPing, [0, 1], 0);
     source = blurPong;
+    flipY = 0;
   }
 }
 
-function blitFramebuffer(fbo, tintRgba) {
-  setDepthTest(false);
-  shader(copyShader);
-  copyShader.setUniform("u_clipSpace", 1);
-  copyShader.setUniform("u_texture", blurSource(fbo));
-  copyShader.setUniform("u_tint", tintRgba);
-  drawClipQuad();
-  resetShader();
+function blitImage(fbo) {
+  restoreDisplayCamera();
+  push();
+  imageMode(CORNER);
+  image(fbo, -width / 2, -height / 2, width, height);
+  pop();
 }
 
 function renderToScreen() {
-  setDepthTest(false);
+  restoreDisplayCamera();
   background(0);
-  blitFramebuffer(sceneFbo, [1, 1, 1, 1]);
+  blitImage(sceneFbo);
 
   if (glowSettings.enabled && glowSettings.intensity > 0) {
     renderBloom();
-    const a = constrain(glowSettings.intensity * 0.45, 0, 1);
+    restoreDisplayCamera();
+    push();
     blendMode(ADD);
-    blitFramebuffer(blurPong, [a, a, a, 1]);
+    tint(255, constrain(glowSettings.intensity * 90, 0, 255));
+    blitImage(blurPong);
+    noTint();
     blendMode(BLEND);
+    pop();
   }
 }
 
