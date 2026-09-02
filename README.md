@@ -16,7 +16,7 @@ This repository contains the source code for interactive [p5.js](https://p5js.or
 | [`lesson-10/`](lesson-10/) | Animated noisy circles built from polar coordinates and Perlin noise | [Drawing Noisy Circles with p5.js](https://alexcodesart.com/drawing-noisy-circles-with-p5-js-a-deep-dive-into-polar-coordinates-and-perlin-noise/) |
 | [`l-system/`](l-system/) | Fractal plants, Koch curves, and more via L-systems and turtle graphics | [Drawing Fractals with L-Systems in p5.js](https://alexcodesart.com/drawing-fractals-with-l-systems-in-p5-js-a-creative-coding-tutorial/) |
 | [`tap-to-notation/`](tap-to-notation/) | Tap rhythms on mobile or desktop, layer up to 4 drum tracks, and hear them as sheet music | — |
-| [`three-body/`](three-body/) | Interactive 2D three-body gravitational simulation with trails and Tweakpane controls | — |
+| [`three-body/`](three-body/) | Interactive 3D n-body gravitational simulation (2–10 bodies) with trails, GPU glow, and orbit controls | — |
 
 ## Running a sketch
 

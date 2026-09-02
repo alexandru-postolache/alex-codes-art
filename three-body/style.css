@@ -14,3 +14,14 @@ canvas {
 canvas:active {
   cursor: grabbing;
 }
+
+#help {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 2;
+  color: rgba(255, 255, 255, 0.45);
+  font: 12px/1.45 ui-sans-serif, system-ui, sans-serif;
+  pointer-events: none;
+  user-select: none;
+}

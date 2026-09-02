@@ -8,14 +8,9 @@ uniform sampler2D u_texture;
 uniform vec2 u_texelSize;
 uniform vec2 u_direction;
 uniform float u_radius;
-uniform float u_flipY;
 
 void main() {
   vec2 uv = vTexCoord;
-  if (u_flipY > 0.5) {
-    uv.y = 1.0 - uv.y;
-  }
-
   vec2 offset = u_direction * u_radius * u_texelSize;
 
   vec3 color = texture2D(u_texture, uv).rgb * 0.227027;

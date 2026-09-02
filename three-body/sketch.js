@@ -3,13 +3,15 @@ const SOFTENING_CHAOTIC = 0.08;
 const SOFTENING_CATALOG = 1e-6;
 const MIN_MASS = 0.5;
 const MAX_MASS = 8;
-const BODY_RADIUS_SCALE = 6;
+const MAX_BODIES = 10;
+const MIN_BODIES = 2;
+const BODY_RADIUS = 0.08;
 const BASE_DT = 0.002;
 const DT_MIN = 1e-6;
 const ADAPT_C = 0.02;
 const MAX_STEPS_PER_FRAME = 2500;
+const BLOOM_ITERATIONS = 2;
 
-// Trail fade (seconds) sized to show about one period of each orbit.
 const PRESET_PHYSICS = {
   "Figure-8": { fadeDuration: 6.5 },
   Lagrange: { fadeDuration: 4 },
@@ -25,7 +27,18 @@ const PRESET_PHYSICS = {
   Random: { fadeDuration: 6 },
 };
 
-const DEFAULT_COLORS = ["#ff6b6b", "#4ecdc4", "#ffe66d"];
+const PALETTE = [
+  "#ff6b6b",
+  "#4ecdc4",
+  "#ffe66d",
+  "#a29bfe",
+  "#fd79a8",
+  "#55efc4",
+  "#74b9ff",
+  "#fab1a0",
+  "#81ecec",
+  "#dfe6e9",
+];
 
 const PRESET_OPTIONS = {
   "Figure-8": "Figure-8",
@@ -42,8 +55,6 @@ const PRESET_OPTIONS = {
   Random: "Random",
 };
 
-// Šuvakov & Dmitrašinović (PRL 2013) collinear symmetric family.
-// x1=-1, x2=+1, x3=0; v2=v1, v3=-2*v1; equal masses, G=1.
 const SUVAKOV_PRESETS = {
   "Butterfly I": { vx: 0.306892758965492, vy: 0.125506782829762 },
   "Butterfly II": { vx: 0.39295, vy: 0.09758 },
@@ -56,27 +67,31 @@ const SUVAKOV_PRESETS = {
 };
 
 const FIGURE_EIGHT_BODIES = [
-  { x: 0.97000436, y: -0.24308753, vx: -0.466203685, vy: -0.43236573 },
-  { x: -0.97000436, y: 0.24308753, vx: -0.466203685, vy: -0.43236573 },
-  { x: 0, y: 0, vx: 0.93240737, vy: 0.86473146 },
+  { x: 0.97000436, y: -0.24308753, z: 0, vx: -0.466203685, vy: -0.43236573, vz: 0 },
+  { x: -0.97000436, y: 0.24308753, z: 0, vx: -0.466203685, vy: -0.43236573, vz: 0 },
+  { x: 0, y: 0, z: 0, vx: 0.93240737, vy: 0.86473146, vz: 0 },
 ];
 
-const CATALOG_PRESETS = new Set([
-  "Figure-8",
-  "Lagrange",
-  ...Object.keys(SUVAKOV_PRESETS),
-]);
+function defaultBodySettings(index) {
+  return {
+    color: PALETTE[index % PALETTE.length],
+    mass: 1,
+    speed: 1,
+    azimuth: 0,
+    elevation: 0,
+  };
+}
 
 const settings = {
   preset: "Figure-8",
+  bodyCount: 3,
   paused: false,
   timeScale: 1,
   trails: true,
   trailWeight: 2,
-  fadeDuration: 2.5,
-  body1: { color: "#ff6b6b", mass: 1, speed: 1, angle: 0 },
-  body2: { color: "#4ecdc4", mass: 1, speed: 1, angle: 0 },
-  body3: { color: "#ffe66d", mass: 1, speed: 1, angle: 0 },
+  fadeDuration: 6.5,
+  showGrid: true,
+  bodies: Array.from({ length: MAX_BODIES }, (_, i) => defaultBodySettings(i)),
 };
 
 const glowSettings = {
@@ -85,28 +100,28 @@ const glowSettings = {
   radius: 3.5,
 };
 
-const BLOOM_ITERATIONS = 2;
+const cameraState = {
+  yaw: 0,
+  pitch: 0.18,
+  distance: 6.5,
+  targetX: 0,
+  targetY: 0,
+  targetZ: 0,
+};
 
-let bodies = [];
-let accelerations = [];
+let simBodies = [];
 let pane;
-let sceneGfx;
+let bodyFolders = [];
+let canvas;
+let sceneFbo;
 let blurPing;
 let blurPong;
 let blurShader;
-let glowShader;
-let renderScale = 1;
+let isOrbiting = false;
 let isPanning = false;
-
-const viewport = {
-  zoom: 1,
-  panX: 0,
-  panY: 0,
-};
 
 function preload() {
   blurShader = loadShader("shader.vert", "blur.frag");
-  glowShader = loadShader("shader.vert", "glow.frag");
 }
 
 function shaderTexelSize(w, h) {
@@ -114,25 +129,21 @@ function shaderTexelSize(w, h) {
 }
 
 function setup() {
-  createCanvas(window.innerWidth, window.innerHeight, WEBGL);
+  canvas = createCanvas(window.innerWidth, window.innerHeight, WEBGL);
   pixelDensity(2);
-  createSceneBuffer();
-  createBlurBuffers();
-
+  canvas.elt.addEventListener("contextmenu", (event) => event.preventDefault());
+  createRenderTargets();
   setupGui();
   applyPresetPhysics(settings.preset);
   pane.refresh();
   resetSimulation();
 }
 
-function createSceneBuffer() {
-  sceneGfx = createGraphics(width, height);
-  sceneGfx.pixelDensity(pixelDensity());
-  sceneGfx.strokeCap(ROUND);
-  sceneGfx.strokeJoin(ROUND);
-}
-
-function createBlurBuffers() {
+function createRenderTargets() {
+  sceneFbo = createFramebuffer({
+    depth: true,
+    textureFiltering: LINEAR,
+  });
   blurPing = createFramebuffer({
     width,
     height,
@@ -151,25 +162,28 @@ function createBlurBuffers() {
 
 function windowResized() {
   resizeCanvas(window.innerWidth, window.innerHeight);
-  createSceneBuffer();
-  createBlurBuffers();
-  resetSimulation();
-}
-
-function getRenderScale() {
-  return min(width, height) * 0.18;
+  createRenderTargets();
 }
 
 function setupGui() {
-  pane = new Tweakpane.Pane({ title: "Three-Body Problem" });
+  pane = new Tweakpane.Pane({ title: "N-Body Problem" });
 
   const simFolder = pane.addFolder({ title: "Simulation", expanded: true });
   simFolder
-    .addInput(settings, "preset", {
-      options: PRESET_OPTIONS,
-    })
+    .addInput(settings, "preset", { options: PRESET_OPTIONS })
     .on("change", (ev) => {
       applyPreset(ev.value);
+      resetSimulation();
+    });
+  simFolder
+    .addInput(settings, "bodyCount", {
+      min: MIN_BODIES,
+      max: MAX_BODIES,
+      step: 1,
+      label: "bodies",
+    })
+    .on("change", () => {
+      updateBodyFolderVisibility();
       resetSimulation();
     });
   simFolder.addInput(settings, "timeScale", {
@@ -179,14 +193,13 @@ function setupGui() {
     label: "time scale",
   });
   simFolder.addInput(settings, "paused", { label: "pause" });
+  simFolder.addInput(settings, "showGrid", { label: "show grid" });
   simFolder.addButton({ title: "Reset" }).on("click", () => resetSimulation());
   simFolder.addButton({ title: "Reset view" }).on("click", () => resetView());
 
   const trailFolder = pane.addFolder({ title: "Trails", expanded: true });
   trailFolder.addInput(settings, "trails", { label: "show trails" }).on("change", () => {
-    if (!settings.trails) {
-      clearTrails();
-    }
+    if (!settings.trails) clearTrails();
   });
   trailFolder.addInput(settings, "fadeDuration", {
     min: 0.2,
@@ -216,65 +229,63 @@ function setupGui() {
     label: "radius",
   });
 
-  for (let i = 1; i <= 3; i++) {
-    const bodyFolder = pane.addFolder({
-      title: `Body ${i}`,
-      expanded: i === 1,
-    });
-    const key = `body${i}`;
-    const bodyIndex = i - 1;
+  const camFolder = pane.addFolder({ title: "Camera", expanded: false });
+  camFolder.addInput(cameraState, "distance", { min: 1.5, max: 40, step: 0.1 });
+  camFolder.addInput(cameraState, "yaw", { min: -Math.PI, max: Math.PI, step: 0.01 });
+  camFolder.addInput(cameraState, "pitch", { min: -1.2, max: 1.2, step: 0.01 });
 
-    bodyFolder.addInput(settings[key], "color").on("change", () => {
-      if (bodies[bodyIndex]) {
-        bodies[bodyIndex].color = bodyColorHex(settings[key].color);
-      }
+  for (let i = 0; i < MAX_BODIES; i++) {
+    const folder = pane.addFolder({
+      title: `Body ${i + 1}`,
+      expanded: i === 0,
     });
-    bodyFolder
-      .addInput(settings[key], "mass", {
-        min: MIN_MASS,
-        max: MAX_MASS,
-        step: 0.1,
-      })
+    const bodySettings = settings.bodies[i];
+
+    folder.addInput(bodySettings, "color").on("change", () => {
+      if (simBodies[i]) simBodies[i].color = bodyColorHex(bodySettings.color);
+    });
+    folder
+      .addInput(bodySettings, "mass", { min: MIN_MASS, max: MAX_MASS, step: 0.1 })
+      .on("change", () => {
+        if (simBodies[i]) simBodies[i].mass = bodySettings.mass;
+      });
+    folder
+      .addInput(bodySettings, "speed", { min: 0, max: 4, step: 0.05, label: "speed" })
       .on("change", () => resetSimulation());
-    bodyFolder
-      .addInput(settings[key], "speed", {
-        min: 0,
-        max: 4,
-        step: 0.05,
-        label: "speed",
-      })
-      .on("change", () => resetSimulation());
-    bodyFolder
-      .addInput(settings[key], "angle", {
+    folder
+      .addInput(bodySettings, "azimuth", {
         min: 0,
         max: 360,
         step: 1,
-        label: "angle (deg)",
+        label: "azimuth (deg)",
       })
       .on("change", () => resetSimulation());
+    folder
+      .addInput(bodySettings, "elevation", {
+        min: -90,
+        max: 90,
+        step: 1,
+        label: "elevation (deg)",
+      })
+      .on("change", () => resetSimulation());
+
+    bodyFolders.push(folder);
   }
 
-  pane.on("change", (ev) => {
-    const key = ev.target.key;
-    if (key === "mass" || key === "speed" || key === "angle") {
-      resetSimulation();
-    }
-  });
+  updateBodyFolderVisibility();
 }
 
-function getPresetPhysics(preset = settings.preset) {
-  return PRESET_PHYSICS[preset] || {};
+function updateBodyFolderVisibility() {
+  for (let i = 0; i < bodyFolders.length; i++) {
+    bodyFolders[i].hidden = i >= settings.bodyCount;
+  }
 }
 
 function getSoftening() {
-  if (settings.preset === "Random" || settings.preset === "Pythagorean") {
+  if (settings.preset === "Random" || settings.preset === "Pythagorean" || settings.bodyCount !== 3) {
     return SOFTENING_CHAOTIC;
   }
   return SOFTENING_CATALOG;
-}
-
-function getPresetFadeDuration() {
-  return settings.fadeDuration;
 }
 
 function bodyColorHex(value) {
@@ -286,31 +297,36 @@ function bodyColorHex(value) {
     const toHex = (n) => n.toString(16).padStart(2, "0");
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
   }
-  return DEFAULT_COLORS[0];
+  return PALETTE[0];
 }
 
 function writeBodySettings(target, props) {
-  target.color = props.color;
-  target.mass = props.mass;
-  target.speed = props.speed;
-  target.angle = props.angle;
+  target.color = props.color ?? target.color;
+  target.mass = props.mass ?? target.mass;
+  target.speed = props.speed ?? target.speed;
+  target.azimuth = props.azimuth ?? 0;
+  target.elevation = props.elevation ?? 0;
 }
 
-function applyVelocityModifiers(vx, vy, bodySettings) {
+function applyVelocityModifiers(vx, vy, vz, bodySettings) {
   const scaledX = vx * bodySettings.speed;
   const scaledY = vy * bodySettings.speed;
-  const angle = radians(bodySettings.angle);
-  const cosA = cos(angle);
-  const sinA = sin(angle);
-
-  return {
-    vx: scaledX * cosA - scaledY * sinA,
-    vy: scaledX * sinA + scaledY * cosA,
-  };
-}
-
-function isCatalogPreset(preset = settings.preset) {
-  return CATALOG_PRESETS.has(preset);
+  const scaledZ = (vz || 0) * bodySettings.speed;
+  const yaw = radians(bodySettings.azimuth || 0);
+  const pitch = radians(bodySettings.elevation || 0);
+  const cosY = cos(yaw);
+  const sinY = sin(yaw);
+  let rx = scaledX * cosY - scaledY * sinY;
+  let ry = scaledX * sinY + scaledY * cosY;
+  let rz = scaledZ;
+  const hyp = sqrt(rx * rx + rz * rz);
+  const nHoriz = hyp * cos(pitch) - ry * sin(pitch);
+  const nY = hyp * sin(pitch) + ry * cos(pitch);
+  if (hyp > 1e-8) {
+    rx *= nHoriz / hyp;
+    rz *= nHoriz / hyp;
+  }
+  return { vx: rx, vy: nY, vz: rz };
 }
 
 function lagrangeOrbitSpeed(mass, radius) {
@@ -319,92 +335,75 @@ function lagrangeOrbitSpeed(mass, radius) {
 }
 
 function setEqualMassDefaults() {
-  writeBodySettings(settings.body1, { color: DEFAULT_COLORS[0], mass: 1, speed: 1, angle: 0 });
-  writeBodySettings(settings.body2, { color: DEFAULT_COLORS[1], mass: 1, speed: 1, angle: 0 });
-  writeBodySettings(settings.body3, { color: DEFAULT_COLORS[2], mass: 1, speed: 1, angle: 0 });
+  for (let i = 0; i < 3; i++) {
+    writeBodySettings(settings.bodies[i], {
+      color: PALETTE[i],
+      mass: 1,
+      speed: 1,
+      azimuth: 0,
+      elevation: 0,
+    });
+  }
 }
 
 function applyPresetPhysics(preset) {
   const physics = PRESET_PHYSICS[preset];
-  if (physics?.fadeDuration) {
-    settings.fadeDuration = physics.fadeDuration;
-  }
+  if (physics?.fadeDuration) settings.fadeDuration = physics.fadeDuration;
 }
 
 function applyPreset(preset) {
-  if (preset === "Figure-8") {
-    setEqualMassDefaults();
-    applyPresetPhysics(preset);
-    pane.refresh();
-    return;
-  }
-
-  if (preset === "Lagrange") {
-    writeBodySettings(settings.body1, { color: DEFAULT_COLORS[0], mass: 1, speed: 1, angle: 0 });
-    writeBodySettings(settings.body2, { color: DEFAULT_COLORS[1], mass: 1, speed: 1, angle: 120 });
-    writeBodySettings(settings.body3, { color: DEFAULT_COLORS[2], mass: 1, speed: 1, angle: 240 });
-    applyPresetPhysics(preset);
-    pane.refresh();
-    return;
-  }
-
-  if (preset === "Pythagorean") {
-    writeBodySettings(settings.body1, { color: DEFAULT_COLORS[0], mass: 3, speed: 0, angle: 0 });
-    writeBodySettings(settings.body2, { color: DEFAULT_COLORS[1], mass: 4, speed: 0, angle: 0 });
-    writeBodySettings(settings.body3, { color: DEFAULT_COLORS[2], mass: 5, speed: 0, angle: 0 });
-    applyPresetPhysics(preset);
-    pane.refresh();
-    return;
-  }
-
-  if (SUVAKOV_PRESETS[preset]) {
-    setEqualMassDefaults();
-    applyPresetPhysics(preset);
-    pane.refresh();
-    return;
+  if (preset === "Random") {
+    settings.bodyCount = 4 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < MAX_BODIES; i++) {
+      writeBodySettings(settings.bodies[i], {
+        color: randomHexColor(),
+        mass: random(0.8, 2.5),
+        speed: random(0.6, 2.2),
+        azimuth: random(360),
+        elevation: random(-40, 40),
+      });
+    }
+  } else {
+    settings.bodyCount = 3;
+    if (preset === "Lagrange") {
+      writeBodySettings(settings.bodies[0], { color: PALETTE[0], mass: 1, speed: 1, azimuth: 0, elevation: 0 });
+      writeBodySettings(settings.bodies[1], { color: PALETTE[1], mass: 1, speed: 1, azimuth: 120, elevation: 0 });
+      writeBodySettings(settings.bodies[2], { color: PALETTE[2], mass: 1, speed: 1, azimuth: 240, elevation: 0 });
+    } else if (preset === "Pythagorean") {
+      writeBodySettings(settings.bodies[0], { color: PALETTE[0], mass: 3, speed: 0, azimuth: 0, elevation: 0 });
+      writeBodySettings(settings.bodies[1], { color: PALETTE[1], mass: 4, speed: 0, azimuth: 0, elevation: 0 });
+      writeBodySettings(settings.bodies[2], { color: PALETTE[2], mass: 5, speed: 0, azimuth: 0, elevation: 0 });
+    } else {
+      setEqualMassDefaults();
+    }
   }
 
   applyPresetPhysics(preset);
-
-  writeBodySettings(settings.body1, {
-    color: randomHexColor(),
-    mass: random(0.8, 2.5),
-    speed: random(0.6, 2.2),
-    angle: random(360),
-  });
-  writeBodySettings(settings.body2, {
-    color: randomHexColor(),
-    mass: random(0.8, 2.5),
-    speed: random(0.6, 2.2),
-    angle: random(360),
-  });
-  writeBodySettings(settings.body3, {
-    color: randomHexColor(),
-    mass: random(0.8, 2.5),
-    speed: random(0.6, 2.2),
-    angle: random(360),
-  });
+  updateBodyFolderVisibility();
   pane.refresh();
 }
 
 function randomHexColor() {
-  const palette = ["#ff6b6b", "#4ecdc4", "#ffe66d", "#a29bfe", "#fd79a8", "#55efc4"];
-  return random(palette);
+  return random(PALETTE);
 }
 
-function velocityFromSpeedAngle(baseSpeed, speedMultiplier, angleDeg) {
-  const speed = baseSpeed * speedMultiplier;
-  const angle = radians(angleDeg);
+function velocityFromSpherical(speed, azimuthDeg, elevationDeg) {
+  const az = radians(azimuthDeg);
+  const el = radians(elevationDeg);
   return {
-    vx: cos(angle) * speed,
-    vy: sin(angle) * speed,
+    vx: speed * cos(el) * cos(az),
+    vy: speed * sin(el),
+    vz: speed * cos(el) * sin(az),
   };
 }
 
 function resetView() {
-  viewport.zoom = 1;
-  viewport.panX = 0;
-  viewport.panY = 0;
+  cameraState.yaw = 0;
+  cameraState.pitch = 0.18;
+  cameraState.distance = 6.5;
+  cameraState.targetX = 0;
+  cameraState.targetY = 0;
+  cameraState.targetZ = 0;
 }
 
 function isPointerOverPane() {
@@ -413,87 +412,214 @@ function isPointerOverPane() {
   return target && pane.element.contains(target);
 }
 
+function isGuiFocused() {
+  const el = document.activeElement;
+  return Boolean(el && pane && pane.element.contains(el));
+}
+
 function mousePressed() {
-  if (mouseButton === LEFT && !isPointerOverPane()) {
+  if (isPointerOverPane()) return;
+  if (mouseButton === RIGHT || mouseButton === CENTER || keyIsDown(SHIFT)) {
     isPanning = true;
+  } else if (mouseButton === LEFT) {
+    isOrbiting = true;
   }
 }
 
 function mouseReleased() {
+  isOrbiting = false;
   isPanning = false;
 }
 
 function mouseDragged() {
-  if (!isPanning || isPointerOverPane()) return;
+  if (isPointerOverPane()) return;
+  const dx = mouseX - pmouseX;
+  const dy = mouseY - pmouseY;
+  const basis = cameraBasis();
 
-  viewport.panX += mouseX - pmouseX;
-  viewport.panY += mouseY - pmouseY;
+  if (isPanning || keyIsDown(SHIFT)) {
+    const scale = cameraState.distance * 0.0025;
+    cameraState.targetX += (-basis.rx * dx + basis.ux * dy) * scale;
+    cameraState.targetY += (-basis.ry * dx + basis.uy * dy) * scale;
+    cameraState.targetZ += (-basis.rz * dx + basis.uz * dy) * scale;
+    return;
+  }
+
+  if (isOrbiting) {
+    cameraState.yaw -= dx * 0.005;
+    cameraState.pitch = constrain(cameraState.pitch + dy * 0.005, -1.2, 1.2);
+  }
 }
 
 function mouseWheel(event) {
   if (isPointerOverPane()) return true;
-
-  const zoomFactor = 1 - event.delta * 0.001;
-  const newZoom = constrain(viewport.zoom * zoomFactor, 0.2, 8);
-  const worldX = (mouseX - width / 2 - viewport.panX) / (renderScale * viewport.zoom);
-  const worldY = (mouseY - height / 2 - viewport.panY) / (renderScale * viewport.zoom);
-
-  viewport.zoom = newZoom;
-  viewport.panX = mouseX - width / 2 - worldX * renderScale * viewport.zoom;
-  viewport.panY = mouseY - height / 2 - worldY * renderScale * viewport.zoom;
-
+  cameraState.distance = constrain(cameraState.distance * (1 + event.delta * 0.001), 1.5, 40);
   return false;
 }
 
+function handleKeyboard(dt) {
+  if (isGuiFocused()) return;
+
+  const move = 1.8 * dt * cameraState.distance * 0.2;
+  const rot = 1.3 * dt;
+  const basis = cameraBasis();
+  const flen = max(0.001, sqrt(basis.fx * basis.fx + basis.fz * basis.fz));
+  const fx = basis.fx / flen;
+  const fz = basis.fz / flen;
+
+  if (keyIsDown(87)) {
+    cameraState.targetX -= fx * move;
+    cameraState.targetZ -= fz * move;
+  }
+  if (keyIsDown(83)) {
+    cameraState.targetX += fx * move;
+    cameraState.targetZ += fz * move;
+  }
+  if (keyIsDown(65)) {
+    cameraState.targetX -= basis.rx * move;
+    cameraState.targetZ -= basis.rz * move;
+  }
+  if (keyIsDown(68)) {
+    cameraState.targetX += basis.rx * move;
+    cameraState.targetZ += basis.rz * move;
+  }
+  if (keyIsDown(UP_ARROW)) cameraState.pitch = constrain(cameraState.pitch + rot, -1.2, 1.2);
+  if (keyIsDown(DOWN_ARROW)) cameraState.pitch = constrain(cameraState.pitch - rot, -1.2, 1.2);
+  if (keyIsDown(LEFT_ARROW)) cameraState.yaw += rot;
+  if (keyIsDown(RIGHT_ARROW)) cameraState.yaw -= rot;
+  if (keyIsDown(81)) cameraState.targetY += move;
+  if (keyIsDown(69)) cameraState.targetY -= move;
+  if (keyIsDown(187) || keyIsDown(61) || keyIsDown(107)) {
+    cameraState.distance = max(1.5, cameraState.distance * 0.98);
+  }
+  if (keyIsDown(189) || keyIsDown(173) || keyIsDown(109)) {
+    cameraState.distance = min(40, cameraState.distance * 1.02);
+  }
+}
+
+function keyPressed() {
+  if (isGuiFocused()) return;
+  if (key === "r" || key === "R") resetView();
+}
+
+function cameraBasis() {
+  const cosP = cos(cameraState.pitch);
+  const sinP = sin(cameraState.pitch);
+  const cosY = cos(cameraState.yaw);
+  const sinY = sin(cameraState.yaw);
+  return {
+    fx: cosP * sinY,
+    fy: sinP,
+    fz: cosP * cosY,
+    rx: cosY,
+    ry: 0,
+    rz: -sinY,
+    ux: -sinP * sinY,
+    uy: cosP,
+    uz: -sinP * cosY,
+  };
+}
+
+function applyCamera() {
+  const { fx, fy, fz } = cameraBasis();
+  const d = cameraState.distance;
+  const tx = cameraState.targetX;
+  const ty = cameraState.targetY;
+  const tz = cameraState.targetZ;
+  camera(tx + fx * d, ty + fy * d, tz + fz * d, tx, ty, tz, 0, 1, 0);
+}
+
+function resetCompositeCamera() {
+  resetShader();
+  resetMatrix();
+  camera();
+  perspective();
+}
+
 function resetSimulation() {
-  renderScale = getRenderScale();
-  bodies = createBodiesFromSettings();
-  accelerations = computeAccelerations(bodies);
+  simBodies = createBodiesFromSettings();
   clearTrails();
 }
 
 function clearTrails() {
-  for (const body of bodies) {
-    body.trail = [];
-  }
+  for (const body of simBodies) body.trail = [];
 }
 
 function createBody(state) {
   return {
-    ...state,
+    x: state.x,
+    y: state.y,
+    z: state.z || 0,
+    vx: state.vx,
+    vy: state.vy,
+    vz: state.vz || 0,
+    mass: state.mass,
+    color: state.color,
     trail: [],
   };
 }
 
+function extraBodies(startIndex) {
+  const extras = [];
+  for (let i = startIndex; i < settings.bodyCount; i++) {
+    extras.push(randomBody3D(settings.bodies[i]));
+  }
+  return extras;
+}
+
+function randomBody3D(bodySettings) {
+  const r = random(0.8, 2.2);
+  const theta = random(TWO_PI);
+  const phi = random(-1, 1);
+  const vel = velocityFromSpherical(
+    0.28 * bodySettings.speed,
+    bodySettings.azimuth,
+    bodySettings.elevation
+  );
+  return createBody({
+    x: r * cos(theta) * cos(phi),
+    y: r * sin(phi),
+    z: r * sin(theta) * cos(phi),
+    vx: vel.vx,
+    vy: vel.vy,
+    vz: vel.vz,
+    mass: bodySettings.mass,
+    color: bodyColorHex(bodySettings.color),
+  });
+}
+
 function bodiesFromSuvakov(vx1, vy1) {
   const configs = [
-    { x: -1, y: 0, vx: vx1, vy: vy1, settings: settings.body1 },
-    { x: 1, y: 0, vx: vx1, vy: vy1, settings: settings.body2 },
-    { x: 0, y: 0, vx: -2 * vx1, vy: -2 * vy1, settings: settings.body3 },
+    { x: -1, y: 0, z: 0, vx: vx1, vy: vy1, vz: 0 },
+    { x: 1, y: 0, z: 0, vx: vx1, vy: vy1, vz: 0 },
+    { x: 0, y: 0, z: 0, vx: -2 * vx1, vy: -2 * vy1, vz: 0 },
   ];
-
-  return configs.map((cfg) => {
-    const velocity = applyVelocityModifiers(cfg.vx, cfg.vy, cfg.settings);
+  return configs.slice(0, settings.bodyCount).map((cfg, i) => {
+    const velocity = applyVelocityModifiers(cfg.vx, cfg.vy, cfg.vz, settings.bodies[i]);
     return createBody({
       x: cfg.x,
       y: cfg.y,
+      z: cfg.z,
       vx: velocity.vx,
       vy: velocity.vy,
-      mass: cfg.settings.mass,
-      color: bodyColorHex(cfg.settings.color),
+      vz: velocity.vz,
+      mass: settings.bodies[i].mass,
+      color: bodyColorHex(settings.bodies[i].color),
     });
   });
 }
 
 function bodiesFromCatalog(states) {
-  return states.map((state, index) => {
-    const bodySettings = settings[`body${index + 1}`];
-    const velocity = applyVelocityModifiers(state.vx, state.vy, bodySettings);
+  return states.slice(0, settings.bodyCount).map((state, index) => {
+    const bodySettings = settings.bodies[index];
+    const velocity = applyVelocityModifiers(state.vx, state.vy, state.vz || 0, bodySettings);
     return createBody({
       x: state.x,
       y: state.y,
+      z: state.z || 0,
       vx: velocity.vx,
       vy: velocity.vy,
+      vz: velocity.vz,
       mass: bodySettings.mass,
       color: bodyColorHex(bodySettings.color),
     });
@@ -502,81 +628,71 @@ function bodiesFromCatalog(states) {
 
 function createBodiesFromSettings() {
   const preset = settings.preset;
+  let created = [];
 
   if (SUVAKOV_PRESETS[preset]) {
     const { vx, vy } = SUVAKOV_PRESETS[preset];
-    return bodiesFromSuvakov(vx, vy);
-  }
-
-  if (preset === "Figure-8") {
-    return bodiesFromCatalog(FIGURE_EIGHT_BODIES);
-  }
-
-  if (preset === "Lagrange") {
+    created = bodiesFromSuvakov(vx, vy);
+  } else if (preset === "Figure-8") {
+    created = bodiesFromCatalog(FIGURE_EIGHT_BODIES);
+  } else if (preset === "Lagrange") {
     const radius = 1.4;
-    const baseOrbitSpeed = lagrangeOrbitSpeed(settings.body1.mass, radius);
-
+    const baseOrbitSpeed = lagrangeOrbitSpeed(settings.bodies[0].mass, radius);
     const positions = [
-      { x: 0, y: -radius, angle: 0 },
-      { x: radius * cos(PI / 6), y: radius * sin(PI / 6), angle: 120 },
-      { x: -radius * cos(PI / 6), y: radius * sin(PI / 6), angle: 240 },
+      { x: 0, y: -radius, z: 0 },
+      { x: radius * cos(PI / 6), y: radius * sin(PI / 6), z: 0 },
+      { x: -radius * cos(PI / 6), y: radius * sin(PI / 6), z: 0 },
     ];
-
-    return positions.map((pos, index) => {
-      const bodySettings = settings[`body${index + 1}`];
-      const velocity = velocityFromSpeedAngle(
-        baseOrbitSpeed,
-        bodySettings.speed,
-        bodySettings.angle
+    created = positions.slice(0, settings.bodyCount).map((pos, index) => {
+      const bodySettings = settings.bodies[index];
+      const vel = velocityFromSpherical(
+        baseOrbitSpeed * bodySettings.speed,
+        bodySettings.azimuth,
+        bodySettings.elevation
       );
-
       return createBody({
         x: pos.x,
         y: pos.y,
-        vx: velocity.vx,
-        vy: velocity.vy,
+        z: pos.z,
+        vx: vel.vx,
+        vy: vel.vy,
+        vz: vel.vz,
         mass: bodySettings.mass,
         color: bodyColorHex(bodySettings.color),
       });
     });
-  }
-
-  if (preset === "Pythagorean") {
+  } else if (preset === "Pythagorean") {
     const pythagorean = [
-      { x: 1, y: 3, settings: settings.body1 },
-      { x: -2, y: -1, settings: settings.body2 },
-      { x: 1, y: -1, settings: settings.body3 },
+      { x: 1, y: 3, z: 0 },
+      { x: -2, y: -1, z: 0 },
+      { x: 1, y: -1, z: 0 },
     ];
-
-    return pythagorean.map((state) => {
-      const velocity = velocityFromSpeedAngle(0.35, state.settings.speed, state.settings.angle);
+    created = pythagorean.slice(0, settings.bodyCount).map((state, index) => {
+      const bodySettings = settings.bodies[index];
+      const vel = velocityFromSpherical(
+        0.35 * bodySettings.speed,
+        bodySettings.azimuth,
+        bodySettings.elevation
+      );
       return createBody({
         x: state.x,
         y: state.y,
-        vx: velocity.vx,
-        vy: velocity.vy,
-        mass: state.settings.mass,
-        color: bodyColorHex(state.settings.color),
+        z: state.z,
+        vx: vel.vx,
+        vy: vel.vy,
+        vz: vel.vz,
+        mass: bodySettings.mass,
+        color: bodyColorHex(bodySettings.color),
       });
     });
+  } else {
+    for (let i = 0; i < settings.bodyCount; i++) {
+      created.push(randomBody3D(settings.bodies[i]));
+    }
+    return created;
   }
 
-  const spread = 1.6;
-  return [1, 2, 3].map((index) => {
-    const bodySettings = settings[`body${index}`];
-    const velocity = velocityFromSpeedAngle(0.35, bodySettings.speed, bodySettings.angle);
-    const positionAngle = random(TWO_PI);
-    const distance = random(spread * 0.35, spread);
-
-    return createBody({
-      x: cos(positionAngle) * distance,
-      y: sin(positionAngle) * distance,
-      vx: velocity.vx,
-      vy: velocity.vy,
-      mass: bodySettings.mass,
-      color: bodyColorHex(bodySettings.color),
-    });
-  });
+  return created.concat(extraBodies(created.length));
 }
 
 function computeAccelerations(currentBodies) {
@@ -585,43 +701,47 @@ function computeAccelerations(currentBodies) {
   return currentBodies.map((body, i) => {
     let ax = 0;
     let ay = 0;
+    let az = 0;
 
     for (let j = 0; j < currentBodies.length; j++) {
       if (i === j) continue;
-
       const other = currentBodies[j];
       const dx = other.x - body.x;
       const dy = other.y - body.y;
-      const distSq = dx * dx + dy * dy + softening * softening;
+      const dz = (other.z || 0) - (body.z || 0);
+      const distSq = dx * dx + dy * dy + dz * dz + softening * softening;
       const dist = sqrt(distSq);
       const accel = (G * other.mass) / distSq;
-
       ax += (dx / dist) * accel;
       ay += (dy / dist) * accel;
+      az += (dz / dist) * accel;
     }
 
-    return createVector(ax, ay);
+    return { x: ax, y: ay, z: az };
   });
 }
 
 function minPairDistance() {
   let minDist = Infinity;
-  for (let i = 0; i < bodies.length; i++) {
-    for (let j = i + 1; j < bodies.length; j++) {
-      const dx = bodies[i].x - bodies[j].x;
-      const dy = bodies[i].y - bodies[j].y;
-      minDist = min(minDist, sqrt(dx * dx + dy * dy));
+  for (let i = 0; i < simBodies.length; i++) {
+    for (let j = i + 1; j < simBodies.length; j++) {
+      const dx = simBodies[i].x - simBodies[j].x;
+      const dy = simBodies[i].y - simBodies[j].y;
+      const dz = simBodies[i].z - simBodies[j].z;
+      minDist = min(minDist, sqrt(dx * dx + dy * dy + dz * dz));
     }
   }
   return minDist;
 }
 
 function rk4Step(dt) {
-  const state = bodies.map((body) => ({
+  const state = simBodies.map((body) => ({
     x: body.x,
     y: body.y,
+    z: body.z,
     vx: body.vx,
     vy: body.vy,
+    vz: body.vz,
     mass: body.mass,
   }));
 
@@ -630,8 +750,10 @@ function rk4Step(dt) {
     return current.map((body, i) => ({
       x: body.vx,
       y: body.vy,
+      z: body.vz,
       vx: acc[i].x,
       vy: acc[i].y,
+      vz: acc[i].z,
     }));
   };
 
@@ -639,8 +761,10 @@ function rk4Step(dt) {
     current.map((body, i) => ({
       x: body.x + k[i].x * h,
       y: body.y + k[i].y * h,
+      z: body.z + k[i].z * h,
       vx: body.vx + k[i].vx * h,
       vy: body.vy + k[i].vy * h,
+      vz: body.vz + k[i].vz * h,
       mass: body.mass,
     }));
 
@@ -649,18 +773,19 @@ function rk4Step(dt) {
   const k3 = derivative(addScaled(state, k2, dt / 2));
   const k4 = derivative(addScaled(state, k3, dt));
 
-  for (let i = 0; i < bodies.length; i++) {
-    bodies[i].x += (dt / 6) * (k1[i].x + 2 * k2[i].x + 2 * k3[i].x + k4[i].x);
-    bodies[i].y += (dt / 6) * (k1[i].y + 2 * k2[i].y + 2 * k3[i].y + k4[i].y);
-    bodies[i].vx += (dt / 6) * (k1[i].vx + 2 * k2[i].vx + 2 * k3[i].vx + k4[i].vx);
-    bodies[i].vy += (dt / 6) * (k1[i].vy + 2 * k2[i].vy + 2 * k3[i].vy + k4[i].vy);
+  for (let i = 0; i < simBodies.length; i++) {
+    simBodies[i].x += (dt / 6) * (k1[i].x + 2 * k2[i].x + 2 * k3[i].x + k4[i].x);
+    simBodies[i].y += (dt / 6) * (k1[i].y + 2 * k2[i].y + 2 * k3[i].y + k4[i].y);
+    simBodies[i].z += (dt / 6) * (k1[i].z + 2 * k2[i].z + 2 * k3[i].z + k4[i].z);
+    simBodies[i].vx += (dt / 6) * (k1[i].vx + 2 * k2[i].vx + 2 * k3[i].vx + k4[i].vx);
+    simBodies[i].vy += (dt / 6) * (k1[i].vy + 2 * k2[i].vy + 2 * k3[i].vy + k4[i].vy);
+    simBodies[i].vz += (dt / 6) * (k1[i].vz + 2 * k2[i].vz + 2 * k3[i].vz + k4[i].vz);
   }
 }
 
 function integrateFrame(totalDt) {
   let advanced = 0;
   let steps = 0;
-
   while (advanced < totalDt && steps < MAX_STEPS_PER_FRAME) {
     const pairDist = minPairDistance();
     let dt = min(BASE_DT, max(DT_MIN, ADAPT_C * pow(max(pairDist, DT_MIN), 1.5)));
@@ -671,182 +796,154 @@ function integrateFrame(totalDt) {
   }
 }
 
-function toScreenX(simX) {
-  return width / 2 + viewport.panX + simX * renderScale * viewport.zoom;
-}
-
-function toScreenY(simY) {
-  return height / 2 + viewport.panY + simY * renderScale * viewport.zoom;
-}
-
 function trailMaxAge() {
-  return getPresetFadeDuration() * 1000;
+  return settings.fadeDuration * 1000;
 }
 
 function recordTrailPoint(body) {
   if (!settings.trails) return;
-
-  body.trail.push({
-    x: body.x,
-    y: body.y,
-    t: millis(),
-  });
+  body.trail.push({ x: body.x, y: body.y, z: body.z, t: millis() });
 }
 
 function pruneTrails() {
   const cutoff = millis() - trailMaxAge();
-
-  for (const body of bodies) {
+  for (const body of simBodies) {
     let start = 0;
-    while (start < body.trail.length && body.trail[start].t < cutoff) {
-      start++;
-    }
-    if (start > 0) {
-      body.trail = body.trail.slice(start);
-    }
+    while (start < body.trail.length && body.trail[start].t < cutoff) start++;
+    if (start > 0) body.trail = body.trail.slice(start);
   }
 }
 
-function drawTrails(gfx = sceneGfx) {
-  gfx.clear();
-  gfx.strokeWeight(settings.trailWeight);
-  gfx.strokeCap(ROUND);
-  gfx.strokeJoin(ROUND);
+function drawGrid() {
+  if (!settings.showGrid) return;
+  stroke(255, 255, 255, 22);
+  strokeWeight(1);
+  const extent = 3;
+  const step = 0.5;
+  for (let i = -extent; i <= extent; i += step) {
+    line(i, 0, -extent, i, 0, extent);
+    line(-extent, 0, i, extent, 0, i);
+  }
+}
 
+function drawTrails3D() {
   const maxAge = trailMaxAge();
   const now = millis();
+  strokeWeight(settings.trailWeight);
 
-  for (const body of bodies) {
+  for (const body of simBodies) {
     const trail = body.trail;
     if (trail.length < 2) continue;
-
     const col = color(body.color);
 
     for (let i = 1; i < trail.length; i++) {
       const p0 = trail[i - 1];
       const p1 = trail[i];
-      const age = now - p0.t;
-      const alpha = constrain(map(age, 0, maxAge, 220, 0), 0, 220);
+      const alpha = constrain(map(now - p0.t, 0, maxAge, 220, 0), 0, 220);
       if (alpha <= 0) continue;
-
-      gfx.stroke(red(col), green(col), blue(col), alpha);
-
-      const x1 = toScreenX(p0.x);
-      const y1 = toScreenY(p0.y);
-      const x2 = toScreenX(p1.x);
-      const y2 = toScreenY(p1.y);
-      drawTrailSegment(gfx, x1, y1, x2, y2);
+      stroke(red(col), green(col), blue(col), alpha);
+      line(p0.x, p0.y, p0.z, p1.x, p1.y, p1.z);
     }
   }
 }
 
-function drawTrailSegment(gfx, x1, y1, x2, y2, maxStep = 3) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const dist = sqrt(dx * dx + dy * dy);
-
-  if (dist <= maxStep) {
-    gfx.line(x1, y1, x2, y2);
-    return;
-  }
-
-  const steps = ceil(dist / maxStep);
-  let prevX = x1;
-  let prevY = y1;
-
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps;
-    const nextX = lerp(x1, x2, t);
-    const nextY = lerp(y1, y2, t);
-    gfx.line(prevX, prevY, nextX, nextY);
-    prevX = nextX;
-    prevY = nextY;
+function drawBodies3D() {
+  noStroke();
+  for (const body of simBodies) {
+    const col = color(body.color);
+    push();
+    translate(body.x, body.y, body.z);
+    fill(red(col), green(col), blue(col));
+    sphere(BODY_RADIUS * sqrt(body.mass), 20, 14);
+    pop();
   }
 }
 
-function renderSceneBuffer() {
-  sceneGfx.background(0);
-
-  if (settings.trails) {
-    drawTrails(sceneGfx);
-  }
-
-  drawBodies(sceneGfx);
+function renderScene() {
+  sceneFbo.begin();
+  clear();
+  background(0);
+  perspective(PI / 3, width / height, 0.05, 500);
+  applyCamera();
+  ambientLight(32);
+  directionalLight(230, 230, 230, 0.35, 0.7, -1);
+  const { fx, fy, fz } = cameraBasis();
+  const d = cameraState.distance;
+  pointLight(
+    160,
+    160,
+    180,
+    cameraState.targetX + fx * d,
+    cameraState.targetY + fy * d,
+    cameraState.targetZ + fz * d
+  );
+  drawGrid();
+  if (settings.trails) drawTrails3D();
+  drawBodies3D();
+  sceneFbo.end();
 }
 
-function runBlurPass(target, source, direction, flipY) {
+function blurSource(source) {
+  return source && source.color ? source.color : source;
+}
+
+function runBlurPass(target, source, direction) {
   target.begin();
+  clear();
   shader(blurShader);
-  blurShader.setUniform("u_texture", source);
+  blurShader.setUniform("u_clipSpace", 1);
+  blurShader.setUniform("u_texture", blurSource(source));
   blurShader.setUniform("u_texelSize", shaderTexelSize(target.width, target.height));
   blurShader.setUniform("u_direction", direction);
   blurShader.setUniform("u_radius", glowSettings.radius);
-  blurShader.setUniform("u_flipY", flipY);
   noStroke();
-  plane(width, height);
+  plane(2, 2);
+  resetShader();
   target.end();
 }
 
 function renderBloom() {
-  let source = sceneGfx;
-  let flipSource = 1;
-
+  let source = sceneFbo;
   for (let i = 0; i < BLOOM_ITERATIONS; i++) {
-    runBlurPass(blurPing, source, [1, 0], flipSource);
-    runBlurPass(blurPong, blurPing.color, [0, 1], 0);
-    source = blurPong.color;
-    flipSource = 0;
+    runBlurPass(blurPing, source, [1, 0]);
+    runBlurPass(blurPong, blurPing, [0, 1]);
+    source = blurPong;
   }
 }
 
-function renderToScreen() {
-  clear();
-
-  if (glowSettings.enabled && glowSettings.intensity > 0) {
-    renderBloom();
-    shader(glowShader);
-    glowShader.setUniform("u_scene", sceneGfx);
-    glowShader.setUniform("u_blur", blurPong.color);
-    glowShader.setUniform("u_intensity", glowSettings.intensity);
-    noStroke();
-    plane(width, height);
-    return;
-  }
-
+function blitFramebuffer(fbo) {
+  resetCompositeCamera();
   push();
-  resetShader();
-  noStroke();
-  image(sceneGfx, -width / 2, -height / 2, width, height);
+  imageMode(CORNER);
+  image(fbo, -width / 2, -height / 2, width, height);
   pop();
 }
 
+function renderToScreen() {
+  background(0);
+  blitFramebuffer(sceneFbo);
+
+  if (glowSettings.enabled && glowSettings.intensity > 0) {
+    renderBloom();
+    push();
+    blendMode(ADD);
+    tint(255, constrain(glowSettings.intensity * 90, 0, 255));
+    blitFramebuffer(blurPong);
+    noTint();
+    blendMode(BLEND);
+    pop();
+  }
+}
+
 function draw() {
+  handleKeyboard(deltaTime / 1000);
+
   if (!settings.paused) {
-    const totalDt = 12 * BASE_DT * settings.timeScale;
-    integrateFrame(totalDt);
-    for (const body of bodies) {
-      recordTrailPoint(body);
-    }
+    integrateFrame(12 * BASE_DT * settings.timeScale);
+    for (const body of simBodies) recordTrailPoint(body);
   }
 
   pruneTrails();
-  renderSceneBuffer();
+  renderScene();
   renderToScreen();
-}
-
-function drawBodies(gfx = sceneGfx) {
-  gfx.noStroke();
-
-  for (const body of bodies) {
-    const screenX = toScreenX(body.x);
-    const screenY = toScreenY(body.y);
-    const radius = sqrt(body.mass) * BODY_RADIUS_SCALE * viewport.zoom;
-    const col = color(body.color);
-
-    gfx.fill(red(col), green(col), blue(col), 255);
-    gfx.circle(screenX, screenY, radius * 1.15);
-
-    gfx.fill(255, 255, 255, 220);
-    gfx.circle(screenX, screenY, radius * 0.42);
-  }
 }
