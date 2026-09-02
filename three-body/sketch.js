@@ -920,7 +920,7 @@ function runBlurPass(target, source, direction, flipY) {
 
 function renderBloom() {
   let source = sceneFbo;
-  let flipY = 1;
+  let flipY = 0;
   for (let i = 0; i < BLOOM_ITERATIONS; i++) {
     runBlurPass(blurPing, source, [1, 0], flipY);
     runBlurPass(blurPong, blurPing, [0, 1], 0);
