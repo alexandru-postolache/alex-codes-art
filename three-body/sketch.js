@@ -1,28 +1,28 @@
 const G = 1;
 const SOFTENING_CHAOTIC = 0.08;
-const SOFTENING_DEFAULT = 0.05;
+const SOFTENING_CATALOG = 1e-6;
 const MIN_MASS = 0.5;
 const MAX_MASS = 8;
 const BODY_RADIUS_SCALE = 6;
-const SUBSTEPS = 12;
 const BASE_DT = 0.002;
+const DT_MIN = 1e-6;
+const ADAPT_C = 0.02;
+const MAX_STEPS_PER_FRAME = 2500;
 
-// Per-preset softening tuned for stable periodic orbits with Velocity Verlet.
-// Šuvakov catalog orbits need different values — a single global softening
-// works for Figure-8 and Lagrange but not the collinear-symmetric family.
+// Trail fade (seconds) sized to show about one period of each orbit.
 const PRESET_PHYSICS = {
-  "Figure-8": { softening: 0.05, fadeDuration: 6.5 },
-  Lagrange: { softening: 0.05, fadeDuration: 4 },
-  "Butterfly I": { softening: 0.07, fadeDuration: 6.5 },
-  "Butterfly II": { softening: 0.025, fadeDuration: 7.5 },
-  "Moth I": { softening: 0.01, fadeDuration: 15 },
-  "Yin-Yang I": { softening: 0.195, fadeDuration: 18 },
-  Dragonfly: { softening: 0.015, fadeDuration: 22 },
-  Bumblebee: { softening: 0.105, fadeDuration: 65 },
-  Goggles: { softening: 0.035, fadeDuration: 11 },
-  Yarn: { softening: 0.13, fadeDuration: 56 },
-  Pythagorean: { softening: 0.08 },
-  Random: { softening: 0.08 },
+  "Figure-8": { fadeDuration: 6.5 },
+  Lagrange: { fadeDuration: 4 },
+  "Butterfly I": { fadeDuration: 6.5 },
+  "Butterfly II": { fadeDuration: 7.5 },
+  "Moth I": { fadeDuration: 15 },
+  "Yin-Yang I": { fadeDuration: 18 },
+  Dragonfly: { fadeDuration: 22 },
+  Bumblebee: { fadeDuration: 65 },
+  Goggles: { fadeDuration: 11 },
+  Yarn: { fadeDuration: 56 },
+  Pythagorean: { fadeDuration: 8 },
+  Random: { fadeDuration: 6 },
 };
 
 const DEFAULT_COLORS = ["#ff6b6b", "#4ecdc4", "#ffe66d"];
@@ -46,12 +46,12 @@ const PRESET_OPTIONS = {
 // x1=-1, x2=+1, x3=0; v2=v1, v3=-2*v1; equal masses, G=1.
 const SUVAKOV_PRESETS = {
   "Butterfly I": { vx: 0.306892758965492, vy: 0.125506782829762 },
-  "Butterfly II": { vx: 0.392955223941802, vy: 0.097579235208034 },
-  "Moth I": { vx: 0.464445237398184, vy: 0.396059973403921 },
+  "Butterfly II": { vx: 0.39295, vy: 0.09758 },
+  "Moth I": { vx: 0.46444, vy: 0.39606 },
   "Yin-Yang I": { vx: 0.513938054919243, vy: 0.304736003875733 },
   Dragonfly: { vx: 0.080584285736084, vy: 0.588836087036132 },
-  Bumblebee: { vx: 0.184278506469727, vy: 0.587188195800781 },
-  Goggles: { vx: 0.083300056457519, vy: 0.127889282226563 },
+  Bumblebee: { vx: 0.18428, vy: 0.58719 },
+  Goggles: { vx: 0.0833000564575194, vy: 0.127889282226563 },
   Yarn: { vx: 0.559064247131347, vy: 0.349191558837891 },
 };
 
@@ -263,11 +263,14 @@ function setupGui() {
 }
 
 function getPresetPhysics(preset = settings.preset) {
-  return PRESET_PHYSICS[preset] || { softening: SOFTENING_DEFAULT };
+  return PRESET_PHYSICS[preset] || {};
 }
 
 function getSoftening() {
-  return getPresetPhysics().softening ?? SOFTENING_CHAOTIC;
+  if (settings.preset === "Random" || settings.preset === "Pythagorean") {
+    return SOFTENING_CHAOTIC;
+  }
+  return SOFTENING_CATALOG;
 }
 
 function getPresetFadeDuration() {
@@ -601,20 +604,71 @@ function computeAccelerations(currentBodies) {
   });
 }
 
-function velocityVerletStep(dt) {
+function minPairDistance() {
+  let minDist = Infinity;
   for (let i = 0; i < bodies.length; i++) {
-    bodies[i].x += bodies[i].vx * dt + 0.5 * accelerations[i].x * dt * dt;
-    bodies[i].y += bodies[i].vy * dt + 0.5 * accelerations[i].y * dt * dt;
+    for (let j = i + 1; j < bodies.length; j++) {
+      const dx = bodies[i].x - bodies[j].x;
+      const dy = bodies[i].y - bodies[j].y;
+      minDist = min(minDist, sqrt(dx * dx + dy * dy));
+    }
   }
+  return minDist;
+}
 
-  const newAccelerations = computeAccelerations(bodies);
+function rk4Step(dt) {
+  const state = bodies.map((body) => ({
+    x: body.x,
+    y: body.y,
+    vx: body.vx,
+    vy: body.vy,
+    mass: body.mass,
+  }));
+
+  const derivative = (current) => {
+    const acc = computeAccelerations(current);
+    return current.map((body, i) => ({
+      x: body.vx,
+      y: body.vy,
+      vx: acc[i].x,
+      vy: acc[i].y,
+    }));
+  };
+
+  const addScaled = (current, k, h) =>
+    current.map((body, i) => ({
+      x: body.x + k[i].x * h,
+      y: body.y + k[i].y * h,
+      vx: body.vx + k[i].vx * h,
+      vy: body.vy + k[i].vy * h,
+      mass: body.mass,
+    }));
+
+  const k1 = derivative(state);
+  const k2 = derivative(addScaled(state, k1, dt / 2));
+  const k3 = derivative(addScaled(state, k2, dt / 2));
+  const k4 = derivative(addScaled(state, k3, dt));
 
   for (let i = 0; i < bodies.length; i++) {
-    bodies[i].vx += 0.5 * (accelerations[i].x + newAccelerations[i].x) * dt;
-    bodies[i].vy += 0.5 * (accelerations[i].y + newAccelerations[i].y) * dt;
+    bodies[i].x += (dt / 6) * (k1[i].x + 2 * k2[i].x + 2 * k3[i].x + k4[i].x);
+    bodies[i].y += (dt / 6) * (k1[i].y + 2 * k2[i].y + 2 * k3[i].y + k4[i].y);
+    bodies[i].vx += (dt / 6) * (k1[i].vx + 2 * k2[i].vx + 2 * k3[i].vx + k4[i].vx);
+    bodies[i].vy += (dt / 6) * (k1[i].vy + 2 * k2[i].vy + 2 * k3[i].vy + k4[i].vy);
   }
+}
 
-  accelerations = newAccelerations;
+function integrateFrame(totalDt) {
+  let advanced = 0;
+  let steps = 0;
+
+  while (advanced < totalDt && steps < MAX_STEPS_PER_FRAME) {
+    const pairDist = minPairDistance();
+    let dt = min(BASE_DT, max(DT_MIN, ADAPT_C * pow(max(pairDist, DT_MIN), 1.5)));
+    dt = min(dt, totalDt - advanced);
+    rk4Step(dt);
+    advanced += dt;
+    steps++;
+  }
 }
 
 function toScreenX(simX) {
@@ -768,15 +822,10 @@ function renderToScreen() {
 
 function draw() {
   if (!settings.paused) {
-    const totalDt = SUBSTEPS * BASE_DT * settings.timeScale;
-    const substeps = min(64, max(SUBSTEPS, ceil(SUBSTEPS * settings.timeScale)));
-    const dt = totalDt / substeps;
-
-    for (let step = 0; step < substeps; step++) {
-      velocityVerletStep(dt);
-      for (const body of bodies) {
-        recordTrailPoint(body);
-      }
+    const totalDt = 12 * BASE_DT * settings.timeScale;
+    integrateFrame(totalDt);
+    for (const body of bodies) {
+      recordTrailPoint(body);
     }
   }
 
