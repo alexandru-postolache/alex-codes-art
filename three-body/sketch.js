@@ -74,12 +74,15 @@ const settings = {
   trails: true,
   trailWeight: 2,
   fadeDuration: 2.5,
-  glow: true,
-  glowIntensity: 0.75,
-  glowRadius: 1.2,
   body1: { color: "#ff6b6b", mass: 1, speed: 1, angle: 0 },
   body2: { color: "#4ecdc4", mass: 1, speed: 1, angle: 0 },
   body3: { color: "#ffe66d", mass: 1, speed: 1, angle: 0 },
+};
+
+const glowSettings = {
+  enabled: true,
+  intensity: 0.85,
+  radius: 2,
 };
 
 let bodies = [];
@@ -199,16 +202,16 @@ function setupGui() {
   });
 
   const glowFolder = pane.addFolder({ title: "Glow", expanded: true });
-  glowFolder.addInput(settings, "glow", { label: "enable glow" });
-  glowFolder.addInput(settings, "glowIntensity", {
+  glowFolder.addInput(glowSettings, "enabled", { label: "enable glow" });
+  glowFolder.addInput(glowSettings, "intensity", {
     min: 0,
     max: 3,
     step: 0.05,
     label: "intensity",
   });
-  glowFolder.addInput(settings, "glowRadius", {
+  glowFolder.addInput(glowSettings, "radius", {
     min: 0.5,
-    max: 4,
+    max: 8,
     step: 0.1,
     label: "radius",
   });
@@ -624,6 +627,7 @@ function drawTrails(gfx = sceneGfx) {
 
   const maxAge = trailMaxAge();
   const now = millis();
+  const trailAlpha = glowSettings.enabled ? 220 : 180;
 
   for (const body of bodies) {
     const trail = body.trail;
@@ -635,7 +639,7 @@ function drawTrails(gfx = sceneGfx) {
       const p0 = trail[i - 1];
       const p1 = trail[i];
       const age = now - p0.t;
-      const alpha = constrain(map(age, 0, maxAge, 200, 0), 0, 200);
+      const alpha = constrain(map(age, 0, maxAge, trailAlpha, 0), 0, trailAlpha);
       if (alpha <= 0) continue;
 
       gfx.stroke(red(col), green(col), blue(col), alpha);
@@ -684,7 +688,7 @@ function renderSceneBuffer() {
 }
 
 function renderBloom() {
-  const radius = settings.glowRadius * 1.1;
+  const radius = glowSettings.radius;
   let source = sceneGfx;
   let flipSource = 1;
 
@@ -720,13 +724,13 @@ function renderBloom() {
 function renderToScreen() {
   clear();
 
-  if (settings.glow) {
+  if (glowSettings.enabled) {
     renderBloom();
     shader(glowShader);
     glowShader.setUniform("u_scene", sceneGfx);
     glowShader.setUniform("u_blur", blurPong.color);
     glowShader.setUniform("u_resolution", [physicalWidth(), physicalHeight()]);
-    glowShader.setUniform("u_intensity", settings.glowIntensity);
+    glowShader.setUniform("u_intensity", glowSettings.intensity);
     noStroke();
     plane(width, height);
     return;
@@ -767,13 +771,12 @@ function drawBodies(gfx = sceneGfx) {
     const radius = sqrt(body.mass) * BODY_RADIUS_SCALE * viewport.zoom;
     const col = color(body.color);
 
-    gfx.fill(red(col), green(col), blue(col), 90);
-    gfx.circle(screenX, screenY, radius * 3.2);
+    gfx.fill(red(col), green(col), blue(col), 255);
+    gfx.circle(screenX, screenY, radius * 1.1);
 
-    gfx.fill(red(col), green(col), blue(col), 210);
-    gfx.circle(screenX, screenY, radius * 1.5);
-
-    gfx.fill(255, 255, 255, 170);
-    gfx.circle(screenX, screenY, radius * 0.55);
+    if (glowSettings.enabled) {
+      gfx.fill(255, 255, 255, 255);
+      gfx.circle(screenX, screenY, radius * 0.4);
+    }
   }
 }

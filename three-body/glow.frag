@@ -23,7 +23,7 @@ void main() {
   float sceneLum = max(max(scene.r, scene.g), scene.b);
   vec3 chroma = scene / max(sceneLum, 0.001);
   vec3 bloom = blur * chroma * u_intensity;
+  vec3 color = scene + bloom;
 
-  vec3 color = scene + bloom * (1.0 - scene);
-  gl_FragColor = vec4(color, 1.0);
+  gl_FragColor = vec4(min(color, vec3(1.0)), 1.0);
 }
