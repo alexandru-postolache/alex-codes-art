@@ -81,18 +81,14 @@ const settings = {
 
 const glowSettings = {
   enabled: true,
-  intensity: 0.85,
-  radius: 2,
+  intensity: 1.2,
+  radius: 12,
 };
 
 let bodies = [];
 let accelerations = [];
 let pane;
 let sceneGfx;
-let blurPing;
-let blurPong;
-let blurShader;
-let glowShader;
 let renderScale = 1;
 let isPanning = false;
 
@@ -102,30 +98,10 @@ const viewport = {
   panY: 0,
 };
 
-function preload() {
-  blurShader = loadShader("shader.vert", "blur.frag");
-  glowShader = loadShader("shader.vert", "glow.frag");
-}
-
-const BLOOM_PASSES = 2;
-
-function physicalWidth() {
-  return width * pixelDensity();
-}
-
-function physicalHeight() {
-  return height * pixelDensity();
-}
-
-function framebufferResolution(fbo) {
-  return [fbo.width * fbo.density, fbo.height * fbo.density];
-}
-
 function setup() {
-  createCanvas(window.innerWidth, window.innerHeight, WEBGL);
+  createCanvas(window.innerWidth, window.innerHeight);
   pixelDensity(2);
   createSceneBuffer();
-  createBlurBuffers();
 
   setupGui();
   resetSimulation();
@@ -138,22 +114,36 @@ function createSceneBuffer() {
   sceneGfx.strokeJoin(ROUND);
 }
 
-function createBlurBuffers() {
-  blurPing = createFramebuffer({
-    depth: false,
-    textureFiltering: LINEAR,
-  });
-  blurPong = createFramebuffer({
-    depth: false,
-    textureFiltering: LINEAR,
-  });
-}
-
 function windowResized() {
   resizeCanvas(window.innerWidth, window.innerHeight);
   createSceneBuffer();
-  createBlurBuffers();
   resetSimulation();
+}
+
+function glowBlurAmount() {
+  if (!glowSettings.enabled || glowSettings.intensity <= 0) return 0;
+  return glowSettings.radius * glowSettings.intensity;
+}
+
+function applyGlow(gfx, col, alpha = 255) {
+  const blur = glowBlurAmount();
+  const ctx = gfx.drawingContext;
+
+  if (blur <= 0) {
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = "transparent";
+    return;
+  }
+
+  const glowAlpha = constrain((alpha / 255) * glowSettings.intensity * 0.65, 0.05, 1);
+  ctx.shadowBlur = blur;
+  ctx.shadowColor = `rgba(${red(col)},${green(col)},${blue(col)},${glowAlpha})`;
+}
+
+function clearGlow(gfx) {
+  const ctx = gfx.drawingContext;
+  ctx.shadowBlur = 0;
+  ctx.shadowColor = "transparent";
 }
 
 function getRenderScale() {
@@ -210,9 +200,9 @@ function setupGui() {
     label: "intensity",
   });
   glowFolder.addInput(glowSettings, "radius", {
-    min: 0.5,
-    max: 8,
-    step: 0.1,
+    min: 0,
+    max: 40,
+    step: 1,
     label: "radius",
   });
 
@@ -624,10 +614,11 @@ function pruneTrails() {
 function drawTrails(gfx = sceneGfx) {
   gfx.clear();
   gfx.strokeWeight(settings.trailWeight);
+  gfx.strokeCap(ROUND);
+  gfx.strokeJoin(ROUND);
 
   const maxAge = trailMaxAge();
   const now = millis();
-  const trailAlpha = glowSettings.enabled ? 220 : 180;
 
   for (const body of bodies) {
     const trail = body.trail;
@@ -639,9 +630,10 @@ function drawTrails(gfx = sceneGfx) {
       const p0 = trail[i - 1];
       const p1 = trail[i];
       const age = now - p0.t;
-      const alpha = constrain(map(age, 0, maxAge, trailAlpha, 0), 0, trailAlpha);
+      const alpha = constrain(map(age, 0, maxAge, 220, 0), 0, 220);
       if (alpha <= 0) continue;
 
+      applyGlow(gfx, col, alpha);
       gfx.stroke(red(col), green(col), blue(col), alpha);
 
       const x1 = toScreenX(p0.x);
@@ -651,6 +643,8 @@ function drawTrails(gfx = sceneGfx) {
       drawTrailSegment(gfx, x1, y1, x2, y2);
     }
   }
+
+  clearGlow(gfx);
 }
 
 function drawTrailSegment(gfx, x1, y1, x2, y2, maxStep = 3) {
@@ -687,60 +681,9 @@ function renderSceneBuffer() {
   drawBodies(sceneGfx);
 }
 
-function renderBloom() {
-  const radius = glowSettings.radius;
-  let source = sceneGfx;
-  let flipSource = 1;
-
-  for (let pass = 0; pass < BLOOM_PASSES; pass++) {
-    const pingRes = framebufferResolution(blurPing);
-
-    blurPing.begin();
-    shader(blurShader);
-    blurShader.setUniform("u_texture", source);
-    blurShader.setUniform("u_resolution", pingRes);
-    blurShader.setUniform("u_direction", [1, 0]);
-    blurShader.setUniform("u_radius", radius);
-    blurShader.setUniform("u_flipY", flipSource);
-    noStroke();
-    plane(blurPing.width, blurPing.height);
-    blurPing.end();
-
-    blurPong.begin();
-    shader(blurShader);
-    blurShader.setUniform("u_texture", blurPing.color);
-    blurShader.setUniform("u_resolution", framebufferResolution(blurPong));
-    blurShader.setUniform("u_direction", [0, 1]);
-    blurShader.setUniform("u_radius", radius);
-    blurShader.setUniform("u_flipY", 0);
-    plane(blurPong.width, blurPong.height);
-    blurPong.end();
-
-    source = blurPong.color;
-    flipSource = 0;
-  }
-}
-
 function renderToScreen() {
-  clear();
-
-  if (glowSettings.enabled) {
-    renderBloom();
-    shader(glowShader);
-    glowShader.setUniform("u_scene", sceneGfx);
-    glowShader.setUniform("u_blur", blurPong.color);
-    glowShader.setUniform("u_resolution", [physicalWidth(), physicalHeight()]);
-    glowShader.setUniform("u_intensity", glowSettings.intensity);
-    noStroke();
-    plane(width, height);
-    return;
-  }
-
-  push();
-  resetShader();
-  noStroke();
-  image(sceneGfx, -width / 2, -height / 2, width, height);
-  pop();
+  background(0);
+  image(sceneGfx, 0, 0);
 }
 
 function draw() {
@@ -771,12 +714,12 @@ function drawBodies(gfx = sceneGfx) {
     const radius = sqrt(body.mass) * BODY_RADIUS_SCALE * viewport.zoom;
     const col = color(body.color);
 
+    applyGlow(gfx, col, 255);
     gfx.fill(red(col), green(col), blue(col), 255);
-    gfx.circle(screenX, screenY, radius * 1.1);
+    gfx.circle(screenX, screenY, radius * 1.2);
 
-    if (glowSettings.enabled) {
-      gfx.fill(255, 255, 255, 255);
-      gfx.circle(screenX, screenY, radius * 0.4);
-    }
+    clearGlow(gfx);
+    gfx.fill(255, 255, 255, glowSettings.enabled ? 200 : 120);
+    gfx.circle(screenX, screenY, radius * 0.45);
   }
 }
