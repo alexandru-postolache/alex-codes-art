@@ -14,7 +14,6 @@ const BLOOM_ITERATIONS = 2;
 const WORLD_SCALE = 80;
 const STAR_COUNT = 750;
 const STAR_RADIUS = 3200;
-const SKY_RADIUS = 4200;
 
 const PRESET_PHYSICS = {
   "Figure-8": { fadeDuration: 6.5 },
@@ -130,7 +129,7 @@ let isPanning = false;
 
 function preload() {
   blurShader = loadShader("shader.vert", "blur.frag");
-  skyShader = loadShader("sky.vert", "sky.frag");
+  skyShader = loadShader("shader.vert", "sky.frag");
 }
 
 function shaderTexelSize(w, h) {
@@ -890,20 +889,13 @@ function drawGrid() {
 }
 
 function drawSpaceSky() {
-  const eye = eyePosition();
-  const gl = drawingContext;
-  push();
-  translate(eye.x, eye.y, eye.z);
   setDepthTest(false);
-  setCullFace(false);
   shader(skyShader);
-  noStroke();
-  fill(255);
-  sphere(SKY_RADIUS, 24, 16);
+  skyShader.setUniform("u_look", [cameraState.yaw * 0.15, cameraState.pitch * 0.2]);
+  drawFullscreenRect();
   resetShader();
-  setCullFace(true);
   setDepthTest(true);
-  pop();
+  const gl = drawingContext;
   if (gl) gl.clear(gl.DEPTH_BUFFER_BIT);
 }
 
@@ -959,9 +951,10 @@ function drawBodies3D() {
 function renderScene() {
   sceneFbo.begin();
   clear();
+  background(10, 12, 36);
+  drawSpaceSky();
   perspective(PI / 3, width / height, 0.5, 20000);
   applyCamera();
-  drawSpaceSky();
   noLights();
   drawStars();
   ambientLight(28, 24, 40);
