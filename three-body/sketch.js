@@ -551,13 +551,6 @@ function setDepthTest(enabled) {
   else gl.disable(gl.DEPTH_TEST);
 }
 
-function setCullFace(enabled) {
-  const gl = drawingContext;
-  if (!gl) return;
-  if (enabled) gl.enable(gl.CULL_FACE);
-  else gl.disable(gl.CULL_FACE);
-}
-
 function restoreDisplayCamera() {
   resetShader();
   setCamera(displayCamera);
@@ -577,24 +570,32 @@ function eyePosition() {
 function createStarfield() {
   stars = [];
   randomSeed(20260903);
-  for (let i = 0; i < STAR_COUNT; i++) {
-    const theta = random(TWO_PI);
-    const phi = acos(random(-1, 1));
-    const bright = random() > 0.92;
-    const cool = random() > 0.35;
+
+  const pushStar = (theta, phi, bright, cool, sizeScale = 1) => {
     stars.push({
       x: STAR_RADIUS * sin(phi) * cos(theta),
       y: STAR_RADIUS * cos(phi),
       z: STAR_RADIUS * sin(phi) * sin(theta),
-      size: bright ? random(2.4, 3.6) : random(1.1, 2.2),
+      size: (bright ? random(2.6, 4.2) : random(1.2, 2.4)) * sizeScale,
       r: cool ? random(210, 255) : 255,
       g: cool ? random(220, 245) : random(210, 235),
       b: cool ? 255 : random(170, 210),
-      brightness: bright ? random(210, 255) : random(110, 200),
+      brightness: bright ? random(220, 255) : random(120, 210),
       twinkle: random(TWO_PI),
       twinkleSpeed: random(0.4, 1.8),
     });
+  };
+
+  for (let i = 0; i < STAR_COUNT; i++) {
+    pushStar(random(TWO_PI), acos(random(-1, 1)), random() > 0.93, random() > 0.35);
   }
+
+  for (let i = 0; i < 420; i++) {
+    const theta = random(TWO_PI);
+    const phi = HALF_PI + randomGaussian(0, 0.14);
+    pushStar(theta, phi, random() > 0.88, random() > 0.25, 0.95);
+  }
+
   randomSeed(Date.now());
 }
 
