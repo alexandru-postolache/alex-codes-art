@@ -12,6 +12,9 @@ const ADAPT_C = 0.02;
 const MAX_STEPS_PER_FRAME = 2500;
 const BLOOM_ITERATIONS = 2;
 const WORLD_SCALE = 80;
+const STAR_COUNT = 750;
+const STAR_RADIUS = 3200;
+const SKY_RADIUS = 4200;
 
 const PRESET_PHYSICS = {
   "Figure-8": { fadeDuration: 6.5 },
@@ -92,6 +95,7 @@ const settings = {
   trailWeight: 2,
   fadeDuration: 6.5,
   showGrid: true,
+  showStars: true,
   bodies: Array.from({ length: MAX_BODIES }, (_, i) => defaultBodySettings(i)),
 };
 
@@ -118,12 +122,15 @@ let sceneFbo;
 let blurPing;
 let blurPong;
 let blurShader;
+let skyShader;
 let displayCamera;
+let stars = [];
 let isOrbiting = false;
 let isPanning = false;
 
 function preload() {
   blurShader = loadShader("shader.vert", "blur.frag");
+  skyShader = loadShader("sky.vert", "sky.frag");
 }
 
 function shaderTexelSize(w, h) {
@@ -135,6 +142,7 @@ function setup() {
   pixelDensity(2);
   displayCamera = createCamera();
   canvas.elt.addEventListener("contextmenu", (event) => event.preventDefault());
+  createStarfield();
   createRenderTargets();
   setupGui();
   applyPresetPhysics(settings.preset);
@@ -197,6 +205,7 @@ function setupGui() {
   });
   simFolder.addInput(settings, "paused", { label: "pause" });
   simFolder.addInput(settings, "showGrid", { label: "show grid" });
+  simFolder.addInput(settings, "showStars", { label: "stars" });
   simFolder.addButton({ title: "Reset" }).on("click", () => resetSimulation());
   simFolder.addButton({ title: "Reset view" }).on("click", () => resetView());
 
@@ -536,10 +545,58 @@ function worldX(v) {
   return v * WORLD_SCALE;
 }
 
+function setDepthTest(enabled) {
+  const gl = drawingContext;
+  if (!gl) return;
+  if (enabled) gl.enable(gl.DEPTH_TEST);
+  else gl.disable(gl.DEPTH_TEST);
+}
+
+function setCullFace(enabled) {
+  const gl = drawingContext;
+  if (!gl) return;
+  if (enabled) gl.enable(gl.CULL_FACE);
+  else gl.disable(gl.CULL_FACE);
+}
+
 function restoreDisplayCamera() {
   resetShader();
   setCamera(displayCamera);
   resetMatrix();
+}
+
+function eyePosition() {
+  const { fx, fy, fz } = cameraBasis();
+  const d = cameraState.distance * WORLD_SCALE;
+  return {
+    x: cameraState.targetX * WORLD_SCALE + fx * d,
+    y: cameraState.targetY * WORLD_SCALE + fy * d,
+    z: cameraState.targetZ * WORLD_SCALE + fz * d,
+  };
+}
+
+function createStarfield() {
+  stars = [];
+  randomSeed(20260903);
+  for (let i = 0; i < STAR_COUNT; i++) {
+    const theta = random(TWO_PI);
+    const phi = acos(random(-1, 1));
+    const bright = random() > 0.92;
+    const cool = random() > 0.35;
+    stars.push({
+      x: STAR_RADIUS * sin(phi) * cos(theta),
+      y: STAR_RADIUS * cos(phi),
+      z: STAR_RADIUS * sin(phi) * sin(theta),
+      size: bright ? random(2.4, 3.6) : random(1.1, 2.2),
+      r: cool ? random(210, 255) : 255,
+      g: cool ? random(220, 245) : random(210, 235),
+      b: cool ? 255 : random(170, 210),
+      brightness: bright ? random(210, 255) : random(110, 200),
+      twinkle: random(TWO_PI),
+      twinkleSpeed: random(0.4, 1.8),
+    });
+  }
+  randomSeed(Date.now());
 }
 
 function resetSimulation() {
@@ -822,7 +879,7 @@ function pruneTrails() {
 
 function drawGrid() {
   if (!settings.showGrid) return;
-  stroke(255, 255, 255, 28);
+  stroke(180, 200, 255, 22);
   strokeWeight(1);
   const extent = worldX(3);
   const step = worldX(0.5);
@@ -830,6 +887,40 @@ function drawGrid() {
     line(i, 0, -extent, i, 0, extent);
     line(-extent, 0, i, extent, 0, i);
   }
+}
+
+function drawSpaceSky() {
+  const eye = eyePosition();
+  const gl = drawingContext;
+  push();
+  translate(eye.x, eye.y, eye.z);
+  setDepthTest(false);
+  setCullFace(false);
+  shader(skyShader);
+  noStroke();
+  fill(255);
+  sphere(SKY_RADIUS, 24, 16);
+  resetShader();
+  setCullFace(true);
+  setDepthTest(true);
+  pop();
+  if (gl) gl.clear(gl.DEPTH_BUFFER_BIT);
+}
+
+function drawStars() {
+  if (!settings.showStars) return;
+  const eye = eyePosition();
+  const t = millis() * 0.001;
+  push();
+  translate(eye.x, eye.y, eye.z);
+  noFill();
+  for (const star of stars) {
+    const twinkle = 0.72 + 0.28 * sin(t * star.twinkleSpeed + star.twinkle);
+    stroke(star.r, star.g, star.b, star.brightness * twinkle);
+    strokeWeight(star.size);
+    point(star.x, star.y, star.z);
+  }
+  pop();
 }
 
 function drawTrails3D() {
@@ -868,17 +959,18 @@ function drawBodies3D() {
 function renderScene() {
   sceneFbo.begin();
   clear();
-  background(0);
   perspective(PI / 3, width / height, 0.5, 20000);
   applyCamera();
-  ambientLight(32);
-  directionalLight(230, 230, 230, 0.35, 0.7, -1);
+  drawSpaceSky();
+  noLights();
+  drawStars();
+  ambientLight(28, 24, 40);
+  directionalLight(230, 220, 245, 0.35, 0.7, -1);
   const { fx, fy, fz } = cameraBasis();
-  const d = cameraState.distance * WORLD_SCALE;
   pointLight(
     160,
-    160,
-    180,
+    150,
+    190,
     (cameraState.targetX + fx * cameraState.distance) * WORLD_SCALE,
     (cameraState.targetY + fy * cameraState.distance) * WORLD_SCALE,
     (cameraState.targetZ + fz * cameraState.distance) * WORLD_SCALE
@@ -939,7 +1031,7 @@ function blitImage(fbo) {
 
 function renderToScreen() {
   restoreDisplayCamera();
-  background(0);
+  background(8, 10, 28);
   blitImage(sceneFbo);
 
   if (glowSettings.enabled && glowSettings.intensity > 0) {
