@@ -680,3 +680,8 @@ Non-obvious caveats:
   are no automated tests to run).
 - **Do not save walkthrough artifacts** (screenshots, screen recordings) to
   `/opt/cursor/artifacts/` unless the user explicitly asks for them.
+
+### Git
+
+Commit each logical change and **push it to `main` immediately**. Do not leave work
+only on a feature branch unless the user asks for a pull request.
