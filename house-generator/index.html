@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>House Generator — Alex Codes Art</title>
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.11.3/lib/p5.min.js"></script>
+  <style>
+    :root {
+      --bg: #23263a;
+      --bg-gradient: linear-gradient(135deg, #23263a 0%, #32364a 100%);
+      --surface: #161b2b;
+      --input-bg: #1c2236;
+      --border: rgba(255, 255, 255, 0.12);
+      --text: #f4f4f6;
+      --muted: #a8adbf;
+      --accent: #ffba06;
+      --accent-soft: #ffcc4d;
+      --white: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg-gradient);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+    }
+    .layout {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    header {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    header h1 {
+      margin: 0 0 4px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    header p {
+      margin: 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    header a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    header a:hover { text-decoration: underline; }
+    .main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(280px, 360px) 1fr;
+      min-height: 0;
+    }
+    @media (max-width: 800px) {
+      .main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    }
+    .panel {
+      padding: 14px 16px;
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.04);
+    }
+    @media (max-width: 800px) {
+      .panel { border-right: none; border-bottom: 1px solid var(--border); max-height: 46vh; }
+    }
+    label {
+      display: block;
+      margin-top: 12px;
+      margin-bottom: 4px;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+    input[type="text"], input[type="number"], textarea, select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--input-bg);
+      color: var(--text);
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: rgba(255, 186, 6, 0.65);
+      box-shadow: 0 0 0 2px rgba(255, 186, 6, 0.18);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+    .range-val {
+      float: right;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+    button {
+      margin-top: 14px;
+      width: 100%;
+      padding: 10px 14px;
+      border: none;
+      border-radius: 6px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-soft));
+      color: #40476d;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 100ms ease, filter 120ms ease;
+    }
+    button:hover { filter: brightness(1.05); }
+    button:active { transform: translateY(1px); }
+    button.secondary {
+      margin-top: 8px;
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--muted);
+    }
+    button.secondary:hover {
+      border-color: var(--accent);
+      color: var(--white);
+    }
+    .hint {
+      margin-top: 8px;
+      font-size: 0.75rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 12px;
+      font-size: 0.85rem;
+      color: var(--text);
+    }
+    .check-row input { width: auto; accent-color: var(--accent); }
+    #derivation {
+      margin-top: 8px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--input-bg);
+      font-family: ui-monospace, monospace;
+      font-size: 11px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      max-height: 220px;
+      overflow-y: auto;
+      color: var(--muted);
+    }
+    #canvas-host {
+      position: relative;
+      min-height: 280px;
+      background: var(--bg);
+    }
+    #canvas-host canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+    .status {
+      position: absolute;
+      bottom: 10px;
+      left: 12px;
+      font-size: 11px;
+      color: var(--muted);
+      pointer-events: none;
+      text-shadow: 0 1px 2px var(--bg);
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <header>
+      <div>
+        <h1>Shape Grammar House Generator</h1>
+        <p>Procedural houses from rewrite rules · <a href="https://alexcodesart.com/">Alex Codes Art</a></p>
+      </div>
+    </header>
+    <div class="main">
+      <aside class="panel">
+        <label for="style">Architectural style</label>
+        <select id="style"></select>
+
+        <div class="row">
+          <div>
+            <label for="seed">Seed</label>
+            <input type="number" id="seed" value="42" min="1" max="999999" />
+          </div>
+          <div>
+            <label for="floors">Floors <span class="range-val" id="floors-val"></span></label>
+            <input type="range" id="floors" min="1" max="3" value="1" />
+          </div>
+        </div>
+
+        <button type="button" id="regenerate">Generate house</button>
+        <button type="button" id="random-seed" class="secondary">Random seed</button>
+
+        <div class="check-row">
+          <input type="checkbox" id="show-tree" checked />
+          <label for="show-tree" style="margin:0;text-transform:none;letter-spacing:0;">Show derivation tree</label>
+        </div>
+
+        <pre id="derivation" aria-label="Shape grammar derivation"></pre>
+
+        <p class="hint">
+          <strong>Shape grammar:</strong> start with a <code>House</code> symbol and apply
+          production rules — <code>House → Sky + Ground + Building</code>,
+          <code>Building → Body + Roof + …</code>, <code>Body → Door + Windows</code> —
+          until every shape is a drawable terminal. Same seed always gives the same house.
+        </p>
+      </aside>
+      <div id="canvas-host">
+        <span class="status" id="status"></span>
+      </div>
+    </div>
+  </div>
+  <script src="grammar.js?v=1"></script>
+  <script src="sketch.js?v=1"></script>
+</body>
+</html>
