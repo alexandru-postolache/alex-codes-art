@@ -55,9 +55,31 @@ const TERMINAL_TYPES = new Set([
   'Trim',
   'FloorLine',
   'Sill',
+  'Wing',
+  'Parapet',
+  'Balcony',
+  'Stairs',
+  'Column',
+  'Dome',
+  'Pot',
+  'Vine',
+  'Terrace',
 ]);
 
+function clampFloors(floors) {
+  return Math.max(1, Math.min(3, floors));
+}
+
+function isGreek(style) {
+  return style === 'greek';
+}
+
 function getDoorLayout(style) {
+  if (isGreek(style)) {
+    const doorW = 0.17;
+    const doorH = 0.27;
+    return { doorW, doorH, doorX: 0.5 - doorW / 2 };
+  }
   const doorW = style === 'barn' ? 0.34 : style === 'modern' ? 0.14 : 0.18;
   const doorH = style === 'barn' ? 0.4 : style === 'modern' ? 0.22 : 0.24;
   const doorX = style === 'barn' ? 0.33 : 0.5 - doorW / 2;
@@ -65,13 +87,40 @@ function getDoorLayout(style) {
 }
 
 function createHouseGrammar(style, floors, rng) {
-  const floorCount = constrain(floors, 1, 3);
+  const floorCount = clampFloors(floors);
+
+  if (isGreek(style)) {
+    const variant = rng.pick(['cycladic', 'village', 'mansion']);
+    return new ShapeNode('House', {
+      style: 'greek',
+      variant,
+      floors: floorCount,
+      roofStyle: 'parapet',
+      palette: pickPalette('greek', rng),
+      windowCols: rng.int(2, 3),
+      bodyWidth: variant === 'mansion' ? rng.range(0.4, 0.52) : rng.range(0.34, 0.46),
+      bodyHeight: 0.24 + (floorCount - 1) * 0.11,
+      hasWing: variant !== 'cycladic' && rng.chance(0.55),
+      wingSide: rng.pick(['left', 'right']),
+      hasBalcony: floorCount > 1 && rng.chance(0.7),
+      hasStairs: floorCount > 1 && rng.chance(0.6),
+      stairSide: rng.pick(['left', 'right']),
+      hasDome: rng.chance(0.38),
+      hasColumns: rng.chance(0.5),
+      columnCount: rng.int(2, 4),
+      hasVines: rng.chance(0.55),
+      potCount: rng.int(0, 3),
+      hasTerrace: floorCount > 1 && rng.chance(0.45),
+      shutterOpen: rng.chance(0.35),
+    });
+  }
+
   const baseHeights = { cottage: 0.26, townhouse: 0.28, modern: 0.24, barn: 0.24 };
   const perFloorHeights = { cottage: 0.12, townhouse: 0.1, modern: 0.11, barn: 0.1 };
   const base = baseHeights[style] || 0.26;
   const perFloor = perFloorHeights[style] || 0.11;
 
-  const params = {
+  return new ShapeNode('House', {
     style,
     floors: floorCount,
     roofStyle: style === 'modern' ? 'flat' : style === 'barn' ? 'barn' : 'gable',
@@ -81,13 +130,16 @@ function createHouseGrammar(style, floors, rng) {
     hasPorch: (style === 'cottage' || style === 'barn') && rng.chance(0.45),
     bodyWidth: style === 'modern' ? rng.range(0.42, 0.58) : rng.range(0.34, 0.46),
     bodyHeight: base + (floorCount - 1) * perFloor,
-  };
-
-  return new ShapeNode('House', params);
+  });
 }
 
 function pickPalette(style, rng) {
   const palettes = {
+    greek: [
+      { wall: '#f8f6f0', trim: '#dce6f2', roof: '#f4f2ec', door: '#1f4f8a', accent: '#2f67b0', stone: '#b8b0a4', plant: '#c94b7b', pot: '#b85c38', skyTop: '#4a90c8', skyBottom: '#b8dff5', ground: '#d8cfc0' },
+      { wall: '#fffdf8', trim: '#e8eef5', roof: '#faf8f4', door: '#245a96', accent: '#3a74b8', stone: '#a8a098', plant: '#d65a88', pot: '#c06840', skyTop: '#5a9fd4', skyBottom: '#c8e8fa', ground: '#e0d4c4' },
+      { wall: '#f5f0e8', trim: '#d0dae8', roof: '#f0ece4', door: '#183f72', accent: '#285ea0', stone: '#9c9488', plant: '#b83a6a', pot: '#a05030', skyTop: '#4588be', skyBottom: '#aad4f0', ground: '#cfc4b4' },
+    ],
     cottage: [
       { wall: '#f2e6d8', trim: '#5c4a3a', roof: '#8b3a2f', door: '#4a2f1f', accent: '#c97b4a' },
       { wall: '#e8edf2', trim: '#3d4f5f', roof: '#2f4a62', door: '#243447', accent: '#7a9eb8' },
@@ -113,149 +165,265 @@ function pickPalette(style, rng) {
   return rng.pick(palettes[style] || palettes.cottage);
 }
 
-const GRAMMAR_RULES = {
-  House(node, rng) {
-    const p = node.params;
-    const horizon = 0.68;
-    const bodyW = p.bodyWidth;
-    const bodyH = p.bodyHeight;
-    const bodyX = 0.5 - bodyW / 2;
-    const bodyY = horizon - bodyH;
-    const roofH = p.roofStyle === 'flat' ? 0.03 : p.roofStyle === 'barn' ? 0.16 : 0.12;
+function buildGreekBuilding(node, rng) {
+  const p = node.params;
+  const parapetH = 0.045;
+  const bodyH = 1 - parapetH;
+  const door = getDoorLayout('greek');
+  const children = [];
 
-    return [
-      new ShapeNode('Sky', { palette: p.palette }, { x: 0, y: 0, w: 1, h: horizon }),
-      new ShapeNode('Ground', { palette: p.palette }, { x: 0, y: horizon, w: 1, h: 1 - horizon }),
-      new ShapeNode(
-        'Building',
-        { ...p, roofH },
-        { x: bodyX, y: bodyY - roofH, w: bodyW, h: bodyH + roofH }
-      ),
-    ];
-  },
-
-  Building(node, rng) {
-    const p = node.params;
-    const roofH = p.roofH / (p.bodyHeight + p.roofH);
-    const bodyH = 1 - roofH;
-    const door = getDoorLayout(p.style);
-    const children = [
-      new ShapeNode(
-        'Body',
-        { palette: p.palette, style: p.style, floors: p.floors, windowCols: p.windowCols },
-        { x: 0, y: roofH, w: 1, h: bodyH }
-      ),
-      new ShapeNode(
-        'Roof',
-        {
-          palette: p.palette,
-          style: p.roofStyle,
-          overhang: p.style === 'modern' ? 0.02 : 0.06,
-        },
-        { x: -0.04, y: 0, w: 1.08, h: roofH }
-      ),
-    ];
-
-    if (p.hasChimney) {
-      children.push(
-        new ShapeNode(
-          'Chimney',
-          { palette: p.palette },
-          { x: rng.range(0.62, 0.78), y: -0.08, w: 0.08, h: roofH + 0.1 }
-        )
-      );
-    }
-
-    if (p.hasPorch) {
-      const porchPad = 0.06;
-      const porchW = door.doorW + porchPad * 2;
-      const porchX = door.doorX - porchPad;
-      children.push(
-        new ShapeNode(
-          'Porch',
-          { palette: p.palette, doorCenter: door.doorX + door.doorW / 2 },
-          { x: porchX, y: 1 - 0.025, w: porchW, h: 0.06 }
-        )
-      );
-    }
-
+  if (p.hasWing) {
+    const wingW = 0.28;
+    const wingH = bodyH * rng.range(0.55, 0.78);
+    const wingX = p.wingSide === 'left' ? -wingW + 0.06 : 1 - 0.06;
     children.push(
       new ShapeNode(
-        'Foundation',
+        'Wing',
+        { palette: p.palette, side: p.wingSide },
+        { x: wingX, y: bodyH - wingH, w: wingW, h: wingH }
+      )
+    );
+  }
+
+  children.push(
+    new ShapeNode(
+      'Body',
+      {
+        palette: p.palette,
+        style: 'greek',
+        floors: p.floors,
+        windowCols: p.windowCols,
+        shutterOpen: p.shutterOpen,
+      },
+      { x: 0, y: parapetH, w: 1, h: bodyH }
+    ),
+    new ShapeNode(
+      'Parapet',
+      { palette: p.palette, style: p.variant },
+      { x: -0.02, y: 0, w: 1.04, h: parapetH }
+    ),
+    new ShapeNode(
+      'Foundation',
+      { palette: p.palette, style: 'greek' },
+      { x: -0.03, y: 1 - 0.018, w: 1.06, h: 0.022 }
+    )
+  );
+
+  if (p.hasTerrace) {
+    children.push(
+      new ShapeNode(
+        'Terrace',
         { palette: p.palette },
-        { x: -0.02, y: 1 - 0.012, w: 1.04, h: 0.025 }
+        { x: 0.04, y: parapetH + bodyH * 0.34, w: 0.92, h: 0.012 }
       )
     );
+  }
 
-    return children;
-  },
+  if (p.hasColumns) {
+    const count = p.columnCount;
+    const spacing = door.doorW * 1.35 / Math.max(1, count - 1);
+    const startX = door.doorX + door.doorW / 2 - (spacing * (count - 1)) / 2;
+    for (let i = 0; i < count; i++) {
+      children.push(
+        new ShapeNode(
+          'Column',
+          { palette: p.palette, index: i },
+          { x: startX + spacing * i - 0.018, y: 1 - door.doorH - 0.02, w: 0.036, h: door.doorH + 0.02 }
+        )
+      );
+    }
+  }
 
-  Body(node, rng) {
-    const p = node.params;
-    const children = [];
-    const floors = p.floors;
-    const door = getDoorLayout(p.style);
-    const cols = p.style === 'townhouse' ? Math.max(2, p.windowCols) : 2;
-    const sideMargin = 0.1;
-    const floorH = 1 / floors;
-
+  if (p.hasBalcony) {
+    const balconyY = parapetH + bodyH * (1 - 1 / p.floors - 0.08);
     children.push(
       new ShapeNode(
-        'Door',
-        { palette: p.palette, style: p.style },
-        { x: door.doorX, y: 1 - door.doorH, w: door.doorW, h: door.doorH }
+        'Balcony',
+        { palette: p.palette, floor: p.floors - 2 },
+        { x: 0.12, y: balconyY, w: 0.76, h: 0.045 }
       )
     );
+  }
 
-    if (floors > 1) {
-      for (let floor = 1; floor < floors; floor++) {
-        const y = floor * floorH;
-        children.push(
-          new ShapeNode(
-            'FloorLine',
-            { palette: p.palette },
-            { x: 0.03, y: y - 0.004, w: 0.94, h: 0.008 }
-          )
-        );
-      }
+  if (p.hasDome) {
+    children.push(
+      new ShapeNode(
+        'Dome',
+        { palette: p.palette },
+        { x: 0.68, y: -0.055, w: 0.16, h: 0.09 }
+      )
+    );
+  }
+
+  for (let i = 0; i < p.potCount; i++) {
+    children.push(
+      new ShapeNode(
+        'Pot',
+        { palette: p.palette, index: i },
+        { x: 0.06 + i * 0.11, y: 1 - 0.035, w: 0.05, h: 0.04 }
+      )
+    );
+  }
+
+  if (p.hasVines) {
+    children.push(
+      new ShapeNode(
+        'Vine',
+        { palette: p.palette, corner: rng.pick(['left', 'right']) },
+        { x: p.hasWing && p.wingSide === 'left' ? -0.02 : 0.82, y: parapetH + bodyH * 0.45, w: 0.2, h: 0.35 }
+      )
+    );
+  }
+
+  return children;
+}
+
+function buildGreekHouseExtras(node) {
+  const p = node.params;
+  const extras = [];
+
+  if (p.hasStairs) {
+    const stairW = 0.09;
+    const stairH = p.bodyHeight * 0.55;
+    const stairX = p.stairSide === 'left' ? -0.07 : p.bodyWidth + 0.02;
+    extras.push(
+      new ShapeNode(
+        'Stairs',
+        { palette: p.palette, side: p.stairSide, steps: p.floors + 2 },
+        { x: stairX, y: 0.68 - stairH, w: stairW, h: stairH }
+      )
+    );
+  }
+
+  return extras;
+}
+
+function buildStandardBuilding(node, rng) {
+  const p = node.params;
+  const roofH = p.roofH / (p.bodyHeight + p.roofH);
+  const bodyH = 1 - roofH;
+  const door = getDoorLayout(p.style);
+  const children = [
+    new ShapeNode(
+      'Body',
+      { palette: p.palette, style: p.style, floors: p.floors, windowCols: p.windowCols },
+      { x: 0, y: roofH, w: 1, h: bodyH }
+    ),
+    new ShapeNode(
+      'Roof',
+      { palette: p.palette, style: p.roofStyle, overhang: p.style === 'modern' ? 0.02 : 0.06 },
+      { x: -0.04, y: 0, w: 1.08, h: roofH }
+    ),
+  ];
+
+  if (p.hasChimney) {
+    children.push(
+      new ShapeNode(
+        'Chimney',
+        { palette: p.palette },
+        { x: rng.range(0.62, 0.78), y: -0.08, w: 0.08, h: roofH + 0.1 }
+      )
+    );
+  }
+
+  if (p.hasPorch) {
+    const porchPad = 0.06;
+    const porchW = door.doorW + porchPad * 2;
+    const porchX = door.doorX - porchPad;
+    children.push(
+      new ShapeNode(
+        'Porch',
+        { palette: p.palette, doorCenter: door.doorX + door.doorW / 2 },
+        { x: porchX, y: 1 - 0.025, w: porchW, h: 0.06 }
+      )
+    );
+  }
+
+  children.push(
+    new ShapeNode(
+      'Foundation',
+      { palette: p.palette },
+      { x: -0.02, y: 1 - 0.012, w: 1.04, h: 0.025 }
+    )
+  );
+
+  return children;
+}
+
+function buildBodyChildren(node) {
+  const p = node.params;
+  const children = [];
+  const floors = p.floors;
+  const door = getDoorLayout(p.style);
+  const cols = p.style === 'townhouse' ? Math.max(2, p.windowCols) : isGreek(p.style) ? p.windowCols : 2;
+  const sideMargin = isGreek(p.style) ? 0.08 : 0.1;
+  const floorH = 1 / floors;
+
+  children.push(
+    new ShapeNode(
+      'Door',
+      { palette: p.palette, style: p.style },
+      { x: door.doorX, y: 1 - door.doorH, w: door.doorW, h: door.doorH }
+    )
+  );
+
+  if (floors > 1) {
+    for (let floor = 1; floor < floors; floor++) {
+      const y = floor * floorH;
+      children.push(
+        new ShapeNode(
+          'FloorLine',
+          { palette: p.palette, style: p.style },
+          { x: 0.03, y: y - 0.004, w: 0.94, h: isGreek(p.style) ? 0.006 : 0.008 }
+        )
+      );
     }
+  }
 
-    const winW = p.style === 'modern' ? 0.16 : 0.13;
-    const winH = Math.min(floorH * 0.42, p.style === 'modern' ? 0.14 : 0.11);
+  const winW = isGreek(p.style) ? 0.12 : p.style === 'modern' ? 0.16 : 0.13;
+  const winH = Math.min(floorH * 0.42, isGreek(p.style) ? 0.12 : p.style === 'modern' ? 0.14 : 0.11);
 
-    for (let floor = 0; floor < floors; floor++) {
-      const bandTop = floor * floorH;
-      const cy = bandTop + floorH * 0.42;
-      const isGroundFloor = floor === floors - 1;
+  for (let floor = 0; floor < floors; floor++) {
+    const bandTop = floor * floorH;
+    const cy = bandTop + floorH * 0.42;
+    const isGroundFloor = floor === floors - 1;
 
-      for (let col = 0; col < cols; col++) {
-        const cx = sideMargin + ((col + 0.5) / cols) * (1 - sideMargin * 2);
-        const wx = cx - winW / 2;
-        const wy = cy - winH / 2;
+    for (let col = 0; col < cols; col++) {
+      const cx = sideMargin + ((col + 0.5) / cols) * (1 - sideMargin * 2);
+      const wx = cx - winW / 2;
+      const wy = cy - winH / 2;
 
-        if (
-          isGroundFloor &&
-          rectsOverlap(
-            wx,
-            wy,
-            winW,
-            winH,
-            door.doorX - 0.02,
-            1 - door.doorH - 0.02,
-            door.doorW + 0.04,
-            door.doorH + 0.04
-          )
-        ) {
-          continue;
-        }
+      if (
+        isGroundFloor &&
+        rectsOverlap(
+          wx,
+          wy,
+          winW,
+          winH,
+          door.doorX - 0.02,
+          1 - door.doorH - 0.02,
+          door.doorW + 0.04,
+          door.doorH + 0.04
+        )
+      ) {
+        continue;
+      }
 
-        children.push(
-          new ShapeNode(
-            'Window',
-            { palette: p.palette, style: p.style, floor, col },
-            { x: wx, y: wy, w: winW, h: winH }
-          )
-        );
+      children.push(
+        new ShapeNode(
+          'Window',
+          {
+            palette: p.palette,
+            style: p.style,
+            floor,
+            col,
+            shutterOpen: p.shutterOpen,
+          },
+          { x: wx, y: wy, w: winW, h: winH }
+        )
+      );
+
+      if (!isGreek(p.style)) {
         children.push(
           new ShapeNode(
             'Sill',
@@ -265,18 +433,67 @@ const GRAMMAR_RULES = {
         );
       }
     }
+  }
 
-    if (p.style !== 'modern') {
-      children.push(
-        new ShapeNode(
-          'Trim',
-          { palette: p.palette },
-          { x: 0, y: 0, w: 1, h: 0.02 }
-        )
-      );
+  if (p.style !== 'modern' && !isGreek(p.style)) {
+    children.push(
+      new ShapeNode('Trim', { palette: p.palette }, { x: 0, y: 0, w: 1, h: 0.02 })
+    );
+  }
+
+  return children;
+}
+
+const GRAMMAR_RULES = {
+  House(node, rng) {
+    const p = node.params;
+    const horizon = 0.68;
+    const bodyW = p.bodyWidth;
+    const bodyH = p.bodyHeight;
+    const bodyX = 0.5 - bodyW / 2;
+    const bodyY = horizon - bodyH;
+    const roofH = isGreek(p.style)
+      ? 0.045
+      : p.roofStyle === 'flat'
+        ? 0.03
+        : p.roofStyle === 'barn'
+          ? 0.16
+          : 0.12;
+
+    const children = [
+      new ShapeNode(
+        'Sky',
+        { palette: p.palette, style: p.style },
+        { x: 0, y: 0, w: 1, h: horizon }
+      ),
+      new ShapeNode(
+        'Ground',
+        { palette: p.palette, style: p.style },
+        { x: 0, y: horizon, w: 1, h: 1 - horizon }
+      ),
+      new ShapeNode(
+        'Building',
+        { ...p, roofH },
+        { x: bodyX, y: bodyY - roofH, w: bodyW, h: bodyH + roofH }
+      ),
+    ];
+
+    if (isGreek(p.style)) {
+      children.push(...buildGreekHouseExtras(node));
     }
 
     return children;
+  },
+
+  Building(node, rng) {
+    if (isGreek(node.params.style)) {
+      return buildGreekBuilding(node, rng);
+    }
+    return buildStandardBuilding(node, rng);
+  },
+
+  Body(node) {
+    return buildBodyChildren(node);
   },
 };
 
@@ -295,7 +512,11 @@ function deriveShapeTree(root, rules, maxDepth = 12) {
     node.children = rule(node, node.params._rng);
     node.children.forEach((child) => {
       child.depth = node.depth + 1;
-      child.params = { ...child.params, _rng: node.params._rng, palette: child.params.palette || node.params.palette };
+      child.params = {
+        ...child.params,
+        _rng: node.params._rng,
+        palette: child.params.palette || node.params.palette,
+      };
     });
     queue.push(...node.children.filter((child) => rules[child.type]));
   }
@@ -330,7 +551,7 @@ function flattenDrawables(root) {
 
 function generateHouse(options = {}) {
   const seed = options.seed ?? Math.floor(Math.random() * 999999);
-  const style = options.style ?? 'cottage';
+  const style = options.style ?? 'greek';
   const floors = options.floors ?? 1;
   const rng = new SeededRandom(seed);
 
@@ -363,7 +584,24 @@ function countRuleApplications(root) {
 }
 
 function describeDerivation(root) {
-  const lines = [`House (${root.params.style}, ${root.params.floors} floor${root.params.floors > 1 ? 's' : ''})`];
+  const p = root.params;
+  const variantNote = p.variant ? ` · ${p.variant}` : '';
+  const lines = [
+    `House (${p.style}${variantNote}, ${p.floors} floor${p.floors > 1 ? 's' : ''})`,
+  ];
+
+  if (isGreek(p.style)) {
+    const features = [];
+    if (p.hasWing) features.push(`wing ${p.wingSide}`);
+    if (p.hasBalcony) features.push('balcony');
+    if (p.hasStairs) features.push(`stairs ${p.stairSide}`);
+    if (p.hasDome) features.push('dome');
+    if (p.hasColumns) features.push(`${p.columnCount} columns`);
+    if (p.hasVines) features.push('vines');
+    if (p.hasTerrace) features.push('terrace');
+    if (p.potCount) features.push(`${p.potCount} pots`);
+    if (features.length) lines.push(`Features: ${features.join(', ')}`);
+  }
 
   function walk(node, indent) {
     node.children.forEach((child) => {

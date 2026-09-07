@@ -9,6 +9,7 @@ const ALEX_PALETTE = {
 };
 
 const STYLES = [
+  { id: 'greek', name: 'Greek (Cycladic)' },
   { id: 'cottage', name: 'Cottage' },
   { id: 'townhouse', name: 'Townhouse' },
   { id: 'modern', name: 'Modern' },
@@ -32,6 +33,7 @@ function setup() {
     opt.textContent = s.name;
     styleSel.appendChild(opt);
   });
+  styleSel.value = 'greek';
 
   document.getElementById('regenerate').addEventListener('click', regenerate);
   document.getElementById('random-seed').addEventListener('click', () => {
@@ -100,7 +102,10 @@ function draw() {
   fill(168, 173, 191, 180);
   textSize(11);
   textAlign(LEFT, BOTTOM);
-  text(`Shape grammar · ${houseData.style}`, 12, height - 10);
+  const label = houseData.style === 'greek'
+    ? `Greek · ${houseData.root.params.variant || 'cycladic'}`
+    : houseData.style;
+  text(`Shape grammar · ${label}`, 12, height - 10);
 }
 
 function drawShape(node, sceneW, sceneH, reveal) {
@@ -116,10 +121,10 @@ function drawShape(node, sceneW, sceneH, reveal) {
 
   switch (node.type) {
     case 'Sky':
-      drawSky(x, y, w, h, palette);
+      drawSky(x, y, w, h, palette, node.params.style);
       break;
     case 'Ground':
-      drawGround(x, y, w, h, palette);
+      drawGround(x, y, w, h, palette, node.params.style);
       break;
     case 'Body':
       drawBody(x, y, w, h, palette, node.params.style);
@@ -131,13 +136,13 @@ function drawShape(node, sceneW, sceneH, reveal) {
       drawDoor(x, y, w, h, palette, node.params.style);
       break;
     case 'Window':
-      drawWindow(x, y, w, h, palette, node.params.style);
+      drawWindow(x, y, w, h, palette, node.params);
       break;
     case 'Chimney':
       drawChimney(x, y, w, h, palette);
       break;
     case 'Foundation':
-      drawFoundation(x, y, w, h, palette);
+      drawFoundation(x, y, w, h, palette, node.params.style);
       break;
     case 'Porch':
       drawPorch(x, y, w, h, palette);
@@ -149,7 +154,34 @@ function drawShape(node, sceneW, sceneH, reveal) {
       drawTrim(x, y, w, h, palette);
       break;
     case 'FloorLine':
-      drawFloorLine(x, y, w, h, palette);
+      drawFloorLine(x, y, w, h, palette, node.params.style);
+      break;
+    case 'Wing':
+      drawWing(x, y, w, h, palette);
+      break;
+    case 'Parapet':
+      drawParapet(x, y, w, h, palette);
+      break;
+    case 'Balcony':
+      drawBalcony(x, y, w, h, palette);
+      break;
+    case 'Stairs':
+      drawStairs(x, y, w, h, palette, node.params);
+      break;
+    case 'Column':
+      drawColumn(x, y, w, h, palette);
+      break;
+    case 'Dome':
+      drawDome(x, y, w, h, palette);
+      break;
+    case 'Pot':
+      drawPot(x, y, w, h, palette);
+      break;
+    case 'Vine':
+      drawVine(x, y, w, h, palette, node.params);
+      break;
+    case 'Terrace':
+      drawTerrace(x, y, w, h, palette);
       break;
     default:
       break;
@@ -158,17 +190,29 @@ function drawShape(node, sceneW, sceneH, reveal) {
   pop();
 }
 
-function drawSky(x, y, w, h, palette) {
+function drawSky(x, y, w, h, palette, style) {
+  const top = style === 'greek' ? color(palette.skyTop || '#4a90c8') : color('#5a7a9a');
+  const bottom = style === 'greek' ? color(palette.skyBottom || '#b8dff5') : color('#9ec5e8');
   for (let i = 0; i <= 12; i++) {
     const t = i / 12;
-    const c = lerpColor(color('#5a7a9a'), color('#9ec5e8'), t);
-    fill(c);
+    fill(lerpColor(top, bottom, t));
     noStroke();
     rect(x, y + h * t, w, h / 12 + 1);
   }
 }
 
-function drawGround(x, y, w, h, palette) {
+function drawGround(x, y, w, h, palette, style) {
+  if (style === 'greek') {
+    fill(palette.ground || '#d8cfc0');
+    noStroke();
+    rect(x, y, w, h);
+    fill(palette.stone || '#b8b0a4');
+    for (let i = 0; i < 8; i++) {
+      const sx = x + (i / 8) * w;
+      rect(sx, y, w / 8 - 1, h * 0.14, 1);
+    }
+    return;
+  }
   fill('#4a7a52');
   noStroke();
   rect(x, y, w, h);
@@ -178,6 +222,15 @@ function drawGround(x, y, w, h, palette) {
 
 function drawBody(x, y, w, h, palette, style) {
   fill(palette.wall);
+  if (style === 'greek') {
+    noStroke();
+    rect(x, y, w, h, 2);
+    stroke(palette.trim);
+    strokeWeight(max(1, w * 0.004));
+    noFill();
+    rect(x + w * 0.02, y + h * 0.02, w * 0.96, h * 0.96, 1);
+    return;
+  }
   stroke(palette.trim);
   strokeWeight(max(1, w * 0.008));
   rect(x, y, w, h, style === 'modern' ? 2 : 4);
@@ -185,12 +238,9 @@ function drawBody(x, y, w, h, palette, style) {
 
 function drawRoof(x, y, w, h, palette, params) {
   fill(palette.roof);
-  stroke(palette.trim);
-  strokeWeight(max(1, w * 0.01));
   noStroke();
 
   if (params.style === 'flat') {
-    fill(palette.roof);
     rect(x, y + h * 0.35, w, h * 0.65, 1);
     fill(red(color(palette.roof)) * 0.85, green(color(palette.roof)) * 0.85, blue(color(palette.roof)) * 0.85);
     rect(x, y + h * 0.35, w, h * 0.12);
@@ -230,6 +280,19 @@ function drawDoor(x, y, w, h, palette, style) {
     rect(x + w * 0.08, y + h * 0.12, w * 0.84, h * 0.08);
     rect(x + w * 0.08, y + h * 0.28, w * 0.84, h * 0.08);
     rect(x + w * 0.08, y + h * 0.44, w * 0.84, h * 0.08);
+  } else if (style === 'greek') {
+    const archH = w * 0.55;
+    const bodyTop = y + archH * 0.5;
+    rect(x, bodyTop, w, h - archH * 0.5, 1);
+    arc(x + w / 2, bodyTop, w, archH, PI, TWO_PI);
+    fill(palette.wall);
+    stroke(palette.trim);
+    strokeWeight(max(1, w * 0.04));
+    noFill();
+    rect(x + w * 0.08, bodyTop + (h - archH * 0.5) * 0.08, w * 0.84, (h - archH * 0.5) * 0.84, 1);
+    noStroke();
+    fill(palette.accent);
+    circle(x + w * 0.82, y + h * 0.58, w * 0.07);
   } else {
     const archH = w * 0.52;
     const bodyTop = y + archH * 0.5;
@@ -240,7 +303,29 @@ function drawDoor(x, y, w, h, palette, style) {
   }
 }
 
-function drawWindow(x, y, w, h, palette, style) {
+function drawWindow(x, y, w, h, palette, params) {
+  const style = params.style;
+  if (style === 'greek') {
+    fill(palette.wall);
+    noStroke();
+    rect(x - w * 0.06, y - h * 0.04, w * 1.12, h * 1.08, 2);
+    fill('#d8ecfa');
+    rect(x, y, w, h, 1);
+    fill(palette.door);
+    const open = params.shutterOpen;
+    if (open) {
+      rect(x - w * 0.04, y + h * 0.05, w * 0.38, h * 0.9, 1);
+      rect(x + w * 0.66, y + h * 0.05, w * 0.38, h * 0.9, 1);
+    } else {
+      rect(x + w * 0.02, y + h * 0.05, w * 0.45, h * 0.9, 1);
+      rect(x + w * 0.53, y + h * 0.05, w * 0.45, h * 0.9, 1);
+    }
+    stroke(palette.trim);
+    strokeWeight(max(1, w * 0.05));
+    line(x + w * 0.5, y, x + w * 0.5, y + h);
+    return;
+  }
+
   fill(style === 'modern' ? '#d8e8f0' : '#a8cce8');
   stroke(palette.trim);
   strokeWeight(max(1, w * 0.06));
@@ -257,8 +342,8 @@ function drawChimney(x, y, w, h, palette) {
   rect(x - w * 0.08, y, w * 1.16, h * 0.08, 2);
 }
 
-function drawFoundation(x, y, w, h, palette) {
-  fill(palette.trim);
+function drawFoundation(x, y, w, h, palette, style) {
+  fill(style === 'greek' ? palette.stone || palette.trim : palette.trim);
   noStroke();
   rect(x, y, w, h, 1);
 }
@@ -277,8 +362,8 @@ function drawPorch(x, y, w, h, palette) {
   noStroke();
 }
 
-function drawFloorLine(x, y, w, h, palette) {
-  fill(palette.trim);
+function drawFloorLine(x, y, w, h, palette, style) {
+  fill(style === 'greek' ? palette.trim : palette.trim);
   noStroke();
   rect(x, y, w, h);
 }
@@ -290,6 +375,109 @@ function drawSill(x, y, w, h, palette) {
 }
 
 function drawTrim(x, y, w, h, palette) {
+  fill(palette.trim);
+  noStroke();
+  rect(x, y, w, h);
+}
+
+function drawWing(x, y, w, h, palette) {
+  fill(palette.wall);
+  noStroke();
+  rect(x, y, w, h, 2);
+  stroke(palette.trim);
+  strokeWeight(max(1, w * 0.02));
+  noFill();
+  rect(x + w * 0.06, y + h * 0.04, w * 0.88, h * 0.92, 1);
+}
+
+function drawParapet(x, y, w, h, palette) {
+  fill(palette.roof);
+  noStroke();
+  rect(x, y + h * 0.25, w, h * 0.75, 1);
+  fill(palette.wall);
+  rect(x + w * 0.02, y, w * 0.96, h * 0.35, 1);
+}
+
+function drawBalcony(x, y, w, h, palette) {
+  fill(palette.wall);
+  noStroke();
+  rect(x, y, w, h * 0.55, 1);
+  stroke(palette.door);
+  strokeWeight(max(1.2, w * 0.012));
+  const railY = y - h * 1.6;
+  line(x, railY, x, y);
+  line(x + w, railY, x + w, y);
+  line(x, railY, x + w, railY);
+  for (let i = 1; i < 6; i++) {
+    const rx = x + (w / 6) * i;
+    line(rx, railY, rx, y);
+  }
+}
+
+function drawStairs(x, y, w, h, palette, params) {
+  const steps = params.steps || 4;
+  fill(palette.wall);
+  noStroke();
+  for (let i = 0; i < steps; i++) {
+    const t = i / steps;
+    const sy = y + h * t;
+    const sh = h / steps + 1;
+    const inset = params.side === 'left' ? 0 : w * 0.15 * t;
+    rect(x + inset, sy, w - inset, sh, 1);
+  }
+  stroke(palette.trim);
+  strokeWeight(max(1, w * 0.06));
+  line(x, y, x, y + h);
+}
+
+function drawColumn(x, y, w, h, palette) {
+  fill(palette.wall);
+  stroke(palette.trim);
+  strokeWeight(max(1, w * 0.08));
+  rect(x, y, w, h, 1);
+  noStroke();
+  fill(palette.trim);
+  rect(x - w * 0.15, y, w * 1.3, h * 0.08, 1);
+  rect(x - w * 0.1, y + h - h * 0.06, w * 1.2, h * 0.06, 1);
+}
+
+function drawDome(x, y, w, h, palette) {
+  fill(palette.door);
+  noStroke();
+  arc(x + w / 2, y + h, w, h * 2, PI, TWO_PI);
+  fill(palette.accent);
+  rect(x + w * 0.15, y + h * 1.55, w * 0.7, h * 0.25, 1);
+}
+
+function drawPot(x, y, w, h, palette) {
+  fill(palette.pot || '#b85c38');
+  noStroke();
+  arc(x + w / 2, y + h * 0.55, w, h * 0.9, 0, PI);
+  rect(x + w * 0.1, y + h * 0.55, w * 0.8, h * 0.35);
+  fill('#5a8a48');
+  ellipse(x + w / 2, y + h * 0.25, w * 0.9, h * 0.7);
+  fill(palette.plant || '#c94b7b');
+  circle(x + w * 0.35, y + h * 0.15, w * 0.35);
+  circle(x + w * 0.65, y + h * 0.1, w * 0.3);
+}
+
+function drawVine(x, y, w, h, palette, params) {
+  noStroke();
+  fill(palette.plant || '#c94b7b');
+  const blobs = params.corner === 'left'
+    ? [[0.15, 0.2, 0.28], [0.45, 0.35, 0.22], [0.25, 0.65, 0.3], [0.6, 0.15, 0.2], [0.1, 0.8, 0.24]]
+    : [[0.75, 0.2, 0.28], [0.45, 0.35, 0.22], [0.65, 0.65, 0.3], [0.3, 0.15, 0.2], [0.8, 0.8, 0.24]];
+  for (const [bx, by, br] of blobs) {
+    circle(x + w * bx, y + h * by, w * br);
+  }
+  fill('#5a8a48');
+  stroke('#4a7840');
+  strokeWeight(1);
+  const sx = params.corner === 'left' ? x + w * 0.8 : x + w * 0.1;
+  line(sx, y + h, sx, y + h * 0.2);
+}
+
+function drawTerrace(x, y, w, h, palette) {
   fill(palette.trim);
   noStroke();
   rect(x, y, w, h);
