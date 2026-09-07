@@ -53,24 +53,34 @@ const TERMINAL_TYPES = new Set([
   'Porch',
   'Step',
   'Trim',
+  'FloorLine',
   'Sill',
 ]);
 
+function getDoorLayout(style) {
+  const doorW = style === 'barn' ? 0.34 : style === 'modern' ? 0.14 : 0.18;
+  const doorH = style === 'barn' ? 0.4 : style === 'modern' ? 0.22 : 0.24;
+  const doorX = style === 'barn' ? 0.33 : 0.5 - doorW / 2;
+  return { doorW, doorH, doorX };
+}
+
 function createHouseGrammar(style, floors, rng) {
+  const floorCount = constrain(floors, 1, 3);
+  const baseHeights = { cottage: 0.26, townhouse: 0.28, modern: 0.24, barn: 0.24 };
+  const perFloorHeights = { cottage: 0.12, townhouse: 0.1, modern: 0.11, barn: 0.1 };
+  const base = baseHeights[style] || 0.26;
+  const perFloor = perFloorHeights[style] || 0.11;
+
   const params = {
     style,
-    floors: constrain(floors, 1, 3),
+    floors: floorCount,
     roofStyle: style === 'modern' ? 'flat' : style === 'barn' ? 'barn' : 'gable',
     palette: pickPalette(style, rng),
-    windowCols: style === 'townhouse' ? rng.int(2, 3) : rng.int(1, 3),
+    windowCols: style === 'townhouse' ? rng.int(2, 3) : 2,
     hasChimney: style !== 'modern' && rng.chance(0.55),
     hasPorch: (style === 'cottage' || style === 'barn') && rng.chance(0.45),
-    bodyWidth: style === 'modern' ? rng.range(0.42, 0.58) : rng.range(0.32, 0.48),
-    bodyHeight: style === 'townhouse'
-      ? rng.range(0.28, 0.38) + (floors - 1) * 0.08
-      : style === 'barn'
-        ? rng.range(0.22, 0.3)
-        : rng.range(0.24, 0.34),
+    bodyWidth: style === 'modern' ? rng.range(0.42, 0.58) : rng.range(0.34, 0.46),
+    bodyHeight: base + (floorCount - 1) * perFloor,
   };
 
   return new ShapeNode('House', params);
@@ -128,6 +138,7 @@ const GRAMMAR_RULES = {
     const p = node.params;
     const roofH = p.roofH / (p.bodyHeight + p.roofH);
     const bodyH = 1 - roofH;
+    const door = getDoorLayout(p.style);
     const children = [
       new ShapeNode(
         'Body',
@@ -156,11 +167,14 @@ const GRAMMAR_RULES = {
     }
 
     if (p.hasPorch) {
+      const porchPad = 0.06;
+      const porchW = door.doorW + porchPad * 2;
+      const porchX = door.doorX - porchPad;
       children.push(
         new ShapeNode(
           'Porch',
-          { palette: p.palette },
-          { x: 0.18, y: bodyH + roofH - 0.02, w: 0.28, h: 0.08 }
+          { palette: p.palette, doorCenter: door.doorX + door.doorW / 2 },
+          { x: porchX, y: 1 - 0.025, w: porchW, h: 0.06 }
         )
       );
     }
@@ -169,7 +183,7 @@ const GRAMMAR_RULES = {
       new ShapeNode(
         'Foundation',
         { palette: p.palette },
-        { x: -0.02, y: bodyH + roofH - 0.015, w: 1.04, h: 0.03 }
+        { x: -0.02, y: 1 - 0.012, w: 1.04, h: 0.025 }
       )
     );
 
@@ -179,49 +193,74 @@ const GRAMMAR_RULES = {
   Body(node, rng) {
     const p = node.params;
     const children = [];
-    const doorW = p.style === 'barn' ? 0.34 : p.style === 'modern' ? 0.14 : 0.16;
-    const doorH = p.style === 'barn' ? 0.55 : 0.28;
-    const doorX = p.style === 'barn' ? 0.33 : 0.5 - doorW / 2;
+    const floors = p.floors;
+    const door = getDoorLayout(p.style);
+    const cols = p.style === 'townhouse' ? Math.max(2, p.windowCols) : 2;
+    const sideMargin = 0.1;
+    const floorH = 1 / floors;
 
     children.push(
       new ShapeNode(
         'Door',
         { palette: p.palette, style: p.style },
-        { x: doorX, y: 1 - doorH, w: doorW, h: doorH }
+        { x: door.doorX, y: 1 - door.doorH, w: door.doorW, h: door.doorH }
       )
     );
 
-    const cols = p.style === 'townhouse' ? Math.max(2, p.windowCols) : p.windowCols;
-    const rows = p.floors;
-    const topMargin = 0.08;
-    const bottomMargin = doorH + 0.06;
-    const sideMargin = 0.08;
-    const usableW = 1 - sideMargin * 2;
-    const usableH = 1 - topMargin - bottomMargin;
-    const gapX = usableW / cols;
-    const gapY = usableH / rows;
-    const winW = Math.min(gapX * 0.55, p.style === 'modern' ? 0.18 : 0.12);
-    const winH = Math.min(gapY * 0.62, p.style === 'modern' ? 0.16 : 0.11);
+    if (floors > 1) {
+      for (let floor = 1; floor < floors; floor++) {
+        const y = floor * floorH;
+        children.push(
+          new ShapeNode(
+            'FloorLine',
+            { palette: p.palette },
+            { x: 0.03, y: y - 0.004, w: 0.94, h: 0.008 }
+          )
+        );
+      }
+    }
 
-    for (let row = 0; row < rows; row++) {
+    const winW = p.style === 'modern' ? 0.16 : 0.13;
+    const winH = Math.min(floorH * 0.42, p.style === 'modern' ? 0.14 : 0.11);
+
+    for (let floor = 0; floor < floors; floor++) {
+      const bandTop = floor * floorH;
+      const cy = bandTop + floorH * 0.42;
+      const isGroundFloor = floor === floors - 1;
+
       for (let col = 0; col < cols; col++) {
-        const cx = sideMargin + gapX * (col + 0.5);
-        const cy = topMargin + gapY * (row + 0.5);
-        if (rectsOverlap(cx - winW / 2, cy - winH / 2, winW, winH, doorX - 0.02, 1 - doorH - 0.02, doorW + 0.04, doorH + 0.02)) {
+        const cx = sideMargin + ((col + 0.5) / cols) * (1 - sideMargin * 2);
+        const wx = cx - winW / 2;
+        const wy = cy - winH / 2;
+
+        if (
+          isGroundFloor &&
+          rectsOverlap(
+            wx,
+            wy,
+            winW,
+            winH,
+            door.doorX - 0.02,
+            1 - door.doorH - 0.02,
+            door.doorW + 0.04,
+            door.doorH + 0.04
+          )
+        ) {
           continue;
         }
+
         children.push(
           new ShapeNode(
             'Window',
-            { palette: p.palette, style: p.style, row, col },
-            { x: cx - winW / 2, y: cy - winH / 2, w: winW, h: winH }
+            { palette: p.palette, style: p.style, floor, col },
+            { x: wx, y: wy, w: winW, h: winH }
           )
         );
         children.push(
           new ShapeNode(
             'Sill',
             { palette: p.palette },
-            { x: cx - winW / 2 - 0.01, y: cy + winH / 2 - 0.008, w: winW + 0.02, h: 0.015 }
+            { x: wx - 0.008, y: wy + winH - 0.006, w: winW + 0.016, h: 0.012 }
           )
         );
       }
@@ -232,7 +271,7 @@ const GRAMMAR_RULES = {
         new ShapeNode(
           'Trim',
           { palette: p.palette },
-          { x: 0, y: 0, w: 1, h: 0.025 }
+          { x: 0, y: 0, w: 1, h: 0.02 }
         )
       );
     }

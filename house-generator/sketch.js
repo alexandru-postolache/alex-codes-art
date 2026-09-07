@@ -148,6 +148,9 @@ function drawShape(node, sceneW, sceneH, reveal) {
     case 'Trim':
       drawTrim(x, y, w, h, palette);
       break;
+    case 'FloorLine':
+      drawFloorLine(x, y, w, h, palette);
+      break;
     default:
       break;
   }
@@ -228,10 +231,12 @@ function drawDoor(x, y, w, h, palette, style) {
     rect(x + w * 0.08, y + h * 0.28, w * 0.84, h * 0.08);
     rect(x + w * 0.08, y + h * 0.44, w * 0.84, h * 0.08);
   } else {
-    arc(x, y + h * 0.15, w, h * 0.35, PI, TWO_PI);
-    rect(x, y + h * 0.28, w, h * 0.72);
+    const archH = w * 0.52;
+    const bodyTop = y + archH * 0.5;
+    rect(x, bodyTop, w, h - archH * 0.5);
+    arc(x + w / 2, bodyTop, w, archH, PI, TWO_PI);
     fill(palette.accent);
-    circle(x + w * 0.78, y + h * 0.55, w * 0.08);
+    circle(x + w * 0.78, y + h * 0.62, w * 0.08);
   }
 }
 
@@ -259,14 +264,23 @@ function drawFoundation(x, y, w, h, palette) {
 }
 
 function drawPorch(x, y, w, h, palette) {
+  const postH = h * 4.5;
   fill(palette.trim);
   noStroke();
-  rect(x, y, w, h * 0.35, 2);
+  rect(x, y, w, h * 0.45, 2);
   stroke(palette.trim);
-  strokeWeight(max(1, w * 0.04));
-  line(x + w * 0.12, y, x + w * 0.12, y - h * 1.8);
-  line(x + w * 0.88, y, x + w * 0.88, y - h * 1.8);
-  line(x + w * 0.12, y - h * 1.8, x + w * 0.88, y - h * 1.8);
+  strokeWeight(max(1.5, w * 0.035));
+  const inset = w * 0.1;
+  line(x + inset, y, x + inset, y - postH);
+  line(x + w - inset, y, x + w - inset, y - postH);
+  line(x + inset, y - postH, x + w - inset, y - postH);
+  noStroke();
+}
+
+function drawFloorLine(x, y, w, h, palette) {
+  fill(palette.trim);
+  noStroke();
+  rect(x, y, w, h);
 }
 
 function drawSill(x, y, w, h, palette) {
