@@ -234,13 +234,16 @@ function buildGreekBuilding(node, rng) {
     }
   }
 
-  if (p.hasBalcony) {
-    const balconyY = parapetH + bodyH * (1 - 1 / p.floors - 0.08);
+  if (p.hasBalcony && p.floors > 1) {
+    const floorH = 1 / p.floors;
+    const balconyBand = p.floors - 1;
+    const bodyRelY = balconyBand * floorH;
+    const balconyY = parapetH + bodyH * bodyRelY;
     children.push(
       new ShapeNode(
         'Balcony',
-        { palette: p.palette, floor: p.floors - 2 },
-        { x: 0.12, y: balconyY, w: 0.76, h: 0.045 }
+        { palette: p.palette, floors: p.floors },
+        { x: 0.1, y: balconyY - 0.004, w: 0.8, h: bodyH * floorH * 0.14 }
       )
     );
   }
@@ -266,11 +269,13 @@ function buildGreekBuilding(node, rng) {
   }
 
   if (p.hasVines) {
+    const corner = p.hasWing && p.wingSide === 'left' ? 'right' : 'left';
+    const vineX = corner === 'left' ? -0.01 : 0.9;
     children.push(
       new ShapeNode(
         'Vine',
-        { palette: p.palette, corner: rng.pick(['left', 'right']) },
-        { x: p.hasWing && p.wingSide === 'left' ? -0.02 : 0.82, y: parapetH + bodyH * 0.45, w: 0.2, h: 0.35 }
+        { palette: p.palette, corner },
+        { x: vineX, y: parapetH + bodyH * 0.58, w: 0.12, h: bodyH * 0.4 }
       )
     );
   }
@@ -281,16 +286,23 @@ function buildGreekBuilding(node, rng) {
 function buildGreekHouseExtras(node) {
   const p = node.params;
   const extras = [];
+  const horizon = 0.68;
+  const bodyX = 0.5 - p.bodyWidth / 2;
 
   if (p.hasStairs) {
-    const stairW = 0.09;
-    const stairH = p.bodyHeight * 0.55;
-    const stairX = p.stairSide === 'left' ? -0.07 : p.bodyWidth + 0.02;
+    const stairW = 0.075;
+    const stairH = p.bodyHeight * (0.38 + p.floors * 0.07);
+    const stairTop = horizon - stairH;
+    const stairX =
+      p.stairSide === 'left'
+        ? bodyX - stairW * 0.92
+        : bodyX + p.bodyWidth + stairW * 0.08;
+
     extras.push(
       new ShapeNode(
         'Stairs',
-        { palette: p.palette, side: p.stairSide, steps: p.floors + 2 },
-        { x: stairX, y: 0.68 - stairH, w: stairW, h: stairH }
+        { palette: p.palette, side: p.stairSide, steps: p.floors + 3 },
+        { x: stairX, y: stairTop, w: stairW, h: stairH }
       )
     );
   }
@@ -460,6 +472,12 @@ const GRAMMAR_RULES = {
           ? 0.16
           : 0.12;
 
+    const buildingNode = new ShapeNode(
+      'Building',
+      { ...p, roofH },
+      { x: bodyX, y: bodyY - roofH, w: bodyW, h: bodyH + roofH }
+    );
+
     const children = [
       new ShapeNode(
         'Sky',
@@ -471,16 +489,13 @@ const GRAMMAR_RULES = {
         { palette: p.palette, style: p.style },
         { x: 0, y: horizon, w: 1, h: 1 - horizon }
       ),
-      new ShapeNode(
-        'Building',
-        { ...p, roofH },
-        { x: bodyX, y: bodyY - roofH, w: bodyW, h: bodyH + roofH }
-      ),
     ];
 
     if (isGreek(p.style)) {
       children.push(...buildGreekHouseExtras(node));
     }
+
+    children.push(buildingNode);
 
     return children;
   },

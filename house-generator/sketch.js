@@ -163,7 +163,7 @@ function drawShape(node, sceneW, sceneH, reveal) {
       drawParapet(x, y, w, h, palette);
       break;
     case 'Balcony':
-      drawBalcony(x, y, w, h, palette);
+      drawBalcony(x, y, w, h, palette, node.params);
       break;
     case 'Stairs':
       drawStairs(x, y, w, h, palette, node.params);
@@ -398,36 +398,60 @@ function drawParapet(x, y, w, h, palette) {
   rect(x + w * 0.02, y, w * 0.96, h * 0.35, 1);
 }
 
-function drawBalcony(x, y, w, h, palette) {
-  fill(palette.wall);
+function drawBalcony(x, y, w, h, palette, params) {
+  const slabH = max(4, h * 0.28);
+  const railH = max(12, h * 1.5);
+  const baseY = y - slabH;
+
   noStroke();
-  rect(x, y, w, h * 0.55, 1);
+  fill(palette.trim);
+  rect(x, baseY, w, slabH, 1);
+
   stroke(palette.door);
-  strokeWeight(max(1.2, w * 0.012));
-  const railY = y - h * 1.6;
-  line(x, railY, x, y);
-  line(x + w, railY, x + w, y);
-  line(x, railY, x + w, railY);
-  for (let i = 1; i < 6; i++) {
-    const rx = x + (w / 6) * i;
-    line(rx, railY, rx, y);
+  strokeWeight(max(1.4, w * 0.013));
+  const topY = baseY - railH;
+  line(x, topY, x + w, topY);
+  line(x, topY, x, baseY);
+  line(x + w, topY, x + w, baseY);
+
+  const balusters = 7;
+  for (let i = 1; i < balusters; i++) {
+    const bx = x + (w / balusters) * i;
+    line(bx, topY, bx, baseY);
   }
+  noStroke();
 }
 
 function drawStairs(x, y, w, h, palette, params) {
-  const steps = params.steps || 4;
-  fill(palette.wall);
+  const steps = params.steps || 5;
+  const side = params.side;
+
   noStroke();
   for (let i = 0; i < steps; i++) {
-    const t = i / steps;
-    const sy = y + h * t;
-    const sh = h / steps + 1;
-    const inset = params.side === 'left' ? 0 : w * 0.15 * t;
-    rect(x + inset, sy, w - inset, sh, 1);
+    const stepTop = y + (h / steps) * i;
+    const stepBottom = y + (h / steps) * (i + 1);
+    const stepH = stepBottom - stepTop + 0.5;
+    const progress = (i + 1) / steps;
+    const treadW = w * (0.5 + progress * 0.5);
+
+    fill(lerpColor(color(palette.trim), color(palette.wall), 0.25));
+    if (side === 'left') {
+      rect(x, stepTop, treadW, stepH, 1);
+    } else {
+      rect(x + w - treadW, stepTop, treadW, stepH, 1);
+    }
   }
-  stroke(palette.trim);
-  strokeWeight(max(1, w * 0.06));
-  line(x, y, x, y + h);
+
+  stroke(palette.stone || palette.trim);
+  strokeWeight(max(1.2, w * 0.07));
+  if (side === 'left') {
+    line(x, y, x, y + h);
+    line(x, y + h, x + w, y + h);
+  } else {
+    line(x + w, y, x + w, y + h);
+    line(x, y + h, x + w, y + h);
+  }
+  noStroke();
 }
 
 function drawColumn(x, y, w, h, palette) {
@@ -462,19 +486,27 @@ function drawPot(x, y, w, h, palette) {
 }
 
 function drawVine(x, y, w, h, palette, params) {
+  const onLeft = params.corner === 'left';
+  const stemX = onLeft ? x + w * 0.82 : x + w * 0.18;
+
+  stroke('#4a7838');
+  strokeWeight(max(2, w * 0.14));
+  noFill();
+  line(stemX, y + h, stemX + (onLeft ? 1 : -1) * w * 0.08, y + h * 0.72);
+  line(stemX + (onLeft ? 1 : -1) * w * 0.08, y + h * 0.72, stemX, y + h * 0.42);
+  line(stemX, y + h * 0.42, stemX + (onLeft ? 1 : -1) * w * 0.06, y + h * 0.15);
+
   noStroke();
-  fill(palette.plant || '#c94b7b');
-  const blobs = params.corner === 'left'
-    ? [[0.15, 0.2, 0.28], [0.45, 0.35, 0.22], [0.25, 0.65, 0.3], [0.6, 0.15, 0.2], [0.1, 0.8, 0.24]]
-    : [[0.75, 0.2, 0.28], [0.45, 0.35, 0.22], [0.65, 0.65, 0.3], [0.3, 0.15, 0.2], [0.8, 0.8, 0.24]];
-  for (const [bx, by, br] of blobs) {
-    circle(x + w * bx, y + h * by, w * br);
-  }
   fill('#5a8a48');
-  stroke('#4a7840');
-  strokeWeight(1);
-  const sx = params.corner === 'left' ? x + w * 0.8 : x + w * 0.1;
-  line(sx, y + h, sx, y + h * 0.2);
+  ellipse(stemX + (onLeft ? -1 : 1) * w * 0.22, y + h * 0.62, w * 0.38, h * 0.12);
+  ellipse(stemX + (onLeft ? 1 : -1) * w * 0.18, y + h * 0.38, w * 0.34, h * 0.11);
+  ellipse(stemX + (onLeft ? -1 : 1) * w * 0.12, y + h * 0.2, w * 0.3, h * 0.1);
+
+  fill(palette.plant || '#c94b7b');
+  circle(stemX + (onLeft ? -1 : 1) * w * 0.28, y + h * 0.72, w * 0.34);
+  circle(stemX + (onLeft ? 1 : -1) * w * 0.24, y + h * 0.5, w * 0.28);
+  circle(stemX + (onLeft ? -1 : 1) * w * 0.18, y + h * 0.28, w * 0.24);
+  circle(stemX, y + h * 0.58, w * 0.2);
 }
 
 function drawTerrace(x, y, w, h, palette) {
