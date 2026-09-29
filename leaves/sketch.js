@@ -651,13 +651,26 @@ function updateSettingsInUrl() {
     const [name, value]
     of Object.entries(parameterValues)
   ) {
-    url.searchParams.set(name, value);
+    url.searchParams.set(
+      name,
+      formatSettingValue(value)
+    );
   }
 
   history.replaceState(
     null,
     "",
     url
+  );
+}
+
+function formatSettingValue(value) {
+  if (typeof value !== "number") {
+    return value;
+  }
+
+  return String(
+    Number(value.toFixed(6))
   );
 }
 
