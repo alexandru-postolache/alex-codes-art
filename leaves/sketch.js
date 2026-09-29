@@ -16,14 +16,73 @@ const COLLISION_PADDING = 2;
 const OVERLAP_PENALTY = 110;
 const EDGE_PENALTY = 5;
 
-const settings = {
-  seed: getSeedFromUrl(),
+const PALETTES = {
+  Forest: [
+    "#82a96b",
+    "#648f61",
+    "#99b96c",
+    "#5f8970",
+    "#a4b978",
+    "#718d55",
+    "#779f7a",
+    "#9ca963",
+    "#668268",
+    "#78986b",
+    "#58785c",
+    "#8a9f5b",
+    "#728a70",
+    "#b3a46c"
+  ],
+  Spring: [
+    "#a8c686",
+    "#d3dc8e",
+    "#85b79d",
+    "#f0b7a4",
+    "#e8cf7a",
+    "#97c77f",
+    "#c6b4d8"
+  ],
+  Autumn: [
+    "#c56b3e",
+    "#d6923f",
+    "#a94b32",
+    "#e0ad57",
+    "#8b5e3c",
+    "#b47b42",
+    "#7f713f"
+  ],
+  Twilight: [
+    "#52657a",
+    "#6f6680",
+    "#496f6a",
+    "#887078",
+    "#405b66",
+    "#7d8291",
+    "#5c536f"
+  ]
+};
+
+const DEFAULT_SETTINGS = {
+  seed: DEFAULT_SEED,
   leafCount: 20,
   flowScale: 0.0095,
   rotationJitter: 0.1,
   spacing: 0.82,
-  background: "#f2eee7"
+  leafSize: 1,
+  bend: 1,
+  lanceWeight: 0.3,
+  ovalWeight: 0.3,
+  teardropWeight: 0.23,
+  inverseWeight: 0.17,
+  palette: "Forest",
+  background: "#f2eee7",
+  opacity: 120,
+  bleed: 0.11,
+  texture: 0.36,
+  veinDensity: 1
 };
+
+const settings = createSettingsFromUrl();
 
 // ==================================================
 // STATE
@@ -53,10 +112,13 @@ function regenerate() {
   settings.seed =
     normalizeSeed(settings.seed);
 
-  updateSeedInUrl();
+  updateSettingsInUrl();
 
   randomSeed(settings.seed);
   noiseSeed(settings.seed);
+
+  document.body.style.backgroundColor =
+    settings.background;
 
   background(settings.background);
 
@@ -124,17 +186,21 @@ function setupControls() {
     step: 1
   });
 
-  pane.addInput(settings, "leafCount", {
-    label: "leaves",
-    min: 5,
-    max: 40,
-    step: 1
-  });
-
   const compositionFolder =
     pane.addFolder({
       title: "Composition"
     });
+
+  compositionFolder.addInput(
+    settings,
+    "leafCount",
+    {
+      label: "leaves",
+      min: 5,
+      max: 40,
+      step: 1
+    }
+  );
 
   compositionFolder.addInput(
     settings,
@@ -169,9 +235,131 @@ function setupControls() {
     }
   );
 
-  pane.addInput(settings, "background", {
-    label: "paper"
-  });
+  const shapeFolder =
+    pane.addFolder({
+      title: "Leaf shape",
+      expanded: false
+    });
+
+  shapeFolder.addInput(
+    settings,
+    "leafSize",
+    {
+      label: "size",
+      min: 0.6,
+      max: 1.5,
+      step: 0.01
+    }
+  );
+
+  shapeFolder.addInput(
+    settings,
+    "bend",
+    {
+      label: "bend",
+      min: 0,
+      max: 2,
+      step: 0.05
+    }
+  );
+
+  const familyFolder =
+    pane.addFolder({
+      title: "Family mix",
+      expanded: false
+    });
+
+  addFamilyWeightControl(
+    familyFolder,
+    "lanceWeight",
+    "lance"
+  );
+
+  addFamilyWeightControl(
+    familyFolder,
+    "ovalWeight",
+    "oval"
+  );
+
+  addFamilyWeightControl(
+    familyFolder,
+    "teardropWeight",
+    "teardrop"
+  );
+
+  addFamilyWeightControl(
+    familyFolder,
+    "inverseWeight",
+    "inverse"
+  );
+
+  const watercolorFolder =
+    pane.addFolder({
+      title: "Watercolor",
+      expanded: false
+    });
+
+  watercolorFolder.addInput(
+    settings,
+    "palette",
+    {
+      options: {
+        Forest: "Forest",
+        Spring: "Spring",
+        Autumn: "Autumn",
+        Twilight: "Twilight"
+      }
+    }
+  );
+
+  watercolorFolder.addInput(
+    settings,
+    "background",
+    {
+      label: "paper"
+    }
+  );
+
+  watercolorFolder.addInput(
+    settings,
+    "opacity",
+    {
+      min: 50,
+      max: 220,
+      step: 1
+    }
+  );
+
+  watercolorFolder.addInput(
+    settings,
+    "bleed",
+    {
+      min: 0.02,
+      max: 0.25,
+      step: 0.01
+    }
+  );
+
+  watercolorFolder.addInput(
+    settings,
+    "texture",
+    {
+      min: 0.05,
+      max: 0.8,
+      step: 0.01
+    }
+  );
+
+  watercolorFolder.addInput(
+    settings,
+    "veinDensity",
+    {
+      label: "veins",
+      min: 0.4,
+      max: 2,
+      step: 0.05
+    }
+  );
 
   pane.addButton({
     title: "New seed"
@@ -194,7 +382,24 @@ function setupControls() {
 
   window.addEventListener(
     "popstate",
-    loadSeedFromUrl
+    loadSettingsFromUrl
+  );
+}
+
+function addFamilyWeightControl(
+  folder,
+  property,
+  label
+) {
+  folder.addInput(
+    settings,
+    property,
+    {
+      label,
+      min: 0,
+      max: 1,
+      step: 0.01
+    }
   );
 }
 
@@ -219,22 +424,188 @@ function useNewSeed() {
 }
 
 function copyShareLink() {
-  updateSeedInUrl();
+  updateSettingsInUrl();
 
   navigator.clipboard.writeText(
     window.location.href
   );
 }
 
-function getSeedFromUrl() {
+function createSettingsFromUrl() {
   const parameters =
     new URLSearchParams(
       window.location.search
     );
 
-  return normalizeSeed(
-    parameters.get("seed")
-  );
+  return {
+    seed: normalizeSeed(
+      parameters.get("seed")
+    ),
+    leafCount: getNumberParameter(
+      parameters,
+      "leaves",
+      DEFAULT_SETTINGS.leafCount,
+      5,
+      40,
+      true
+    ),
+    flowScale: getNumberParameter(
+      parameters,
+      "flow",
+      DEFAULT_SETTINGS.flowScale,
+      0.001,
+      0.03
+    ),
+    rotationJitter: getNumberParameter(
+      parameters,
+      "jitter",
+      DEFAULT_SETTINGS.rotationJitter,
+      0,
+      0.5
+    ),
+    spacing: getNumberParameter(
+      parameters,
+      "spacing",
+      DEFAULT_SETTINGS.spacing,
+      0.65,
+      1.1
+    ),
+    leafSize: getNumberParameter(
+      parameters,
+      "size",
+      DEFAULT_SETTINGS.leafSize,
+      0.6,
+      1.5
+    ),
+    bend: getNumberParameter(
+      parameters,
+      "bend",
+      DEFAULT_SETTINGS.bend,
+      0,
+      2
+    ),
+    lanceWeight: getNumberParameter(
+      parameters,
+      "lance",
+      DEFAULT_SETTINGS.lanceWeight,
+      0,
+      1
+    ),
+    ovalWeight: getNumberParameter(
+      parameters,
+      "oval",
+      DEFAULT_SETTINGS.ovalWeight,
+      0,
+      1
+    ),
+    teardropWeight: getNumberParameter(
+      parameters,
+      "teardrop",
+      DEFAULT_SETTINGS.teardropWeight,
+      0,
+      1
+    ),
+    inverseWeight: getNumberParameter(
+      parameters,
+      "inverse",
+      DEFAULT_SETTINGS.inverseWeight,
+      0,
+      1
+    ),
+    palette: getPaletteParameter(
+      parameters
+    ),
+    background: getColorParameter(
+      parameters,
+      "paper",
+      DEFAULT_SETTINGS.background
+    ),
+    opacity: getNumberParameter(
+      parameters,
+      "opacity",
+      DEFAULT_SETTINGS.opacity,
+      50,
+      220,
+      true
+    ),
+    bleed: getNumberParameter(
+      parameters,
+      "bleed",
+      DEFAULT_SETTINGS.bleed,
+      0.02,
+      0.25
+    ),
+    texture: getNumberParameter(
+      parameters,
+      "texture",
+      DEFAULT_SETTINGS.texture,
+      0.05,
+      0.8
+    ),
+    veinDensity: getNumberParameter(
+      parameters,
+      "veins",
+      DEFAULT_SETTINGS.veinDensity,
+      0.4,
+      2
+    )
+  };
+}
+
+function getNumberParameter(
+  parameters,
+  name,
+  fallback,
+  minimum,
+  maximum,
+  useInteger = false
+) {
+  const value =
+    Number(parameters.get(name));
+
+  if (
+    parameters.get(name) === null ||
+    !Number.isFinite(value)
+  ) {
+    return fallback;
+  }
+
+  const constrained =
+    Math.min(
+      maximum,
+      Math.max(minimum, value)
+    );
+
+  return useInteger
+    ? Math.round(constrained)
+    : constrained;
+}
+
+function getPaletteParameter(parameters) {
+  const palette =
+    parameters.get("palette");
+
+  return Object.hasOwn(
+    PALETTES,
+    palette
+  )
+    ? palette
+    : DEFAULT_SETTINGS.palette;
+}
+
+function getColorParameter(
+  parameters,
+  name,
+  fallback
+) {
+  const colorValue =
+    parameters.get(name);
+
+  return /^#[0-9a-f]{6}$/i.test(
+    colorValue || ""
+  )
+    ? colorValue
+    : fallback;
 }
 
 function normalizeSeed(value) {
@@ -252,14 +623,36 @@ function normalizeSeed(value) {
   );
 }
 
-function updateSeedInUrl() {
+function updateSettingsInUrl() {
   const url =
     new URL(window.location.href);
 
-  url.searchParams.set(
-    "seed",
-    settings.seed
-  );
+  const parameterValues = {
+    seed: settings.seed,
+    leaves: settings.leafCount,
+    flow: settings.flowScale,
+    jitter: settings.rotationJitter,
+    spacing: settings.spacing,
+    size: settings.leafSize,
+    bend: settings.bend,
+    lance: settings.lanceWeight,
+    oval: settings.ovalWeight,
+    teardrop: settings.teardropWeight,
+    inverse: settings.inverseWeight,
+    palette: settings.palette,
+    paper: settings.background,
+    opacity: settings.opacity,
+    bleed: settings.bleed,
+    texture: settings.texture,
+    veins: settings.veinDensity
+  };
+
+  for (
+    const [name, value]
+    of Object.entries(parameterValues)
+  ) {
+    url.searchParams.set(name, value);
+  }
 
   history.replaceState(
     null,
@@ -268,8 +661,11 @@ function updateSeedInUrl() {
   );
 }
 
-function loadSeedFromUrl() {
-  settings.seed = getSeedFromUrl();
+function loadSettingsFromUrl() {
+  Object.assign(
+    settings,
+    createSettingsFromUrl()
+  );
 
   pane.refresh();
   regenerate();
@@ -290,10 +686,12 @@ function createLeaves() {
     const family = chooseLeafFamily();
     const scale = createLeafScale(i);
 
-    const length = random(
-      family.length[0],
-      family.length[1]
-    );
+    const length =
+      random(
+        family.length[0],
+        family.length[1]
+      ) *
+      settings.leafSize;
 
     const width =
       length *
@@ -311,6 +709,7 @@ function createLeaves() {
         family.bendRatio[0],
         family.bendRatio[1]
       ) *
+      settings.bend *
       random([-1, 1]);
 
     const leaf = {
@@ -398,7 +797,8 @@ function createLeaves() {
         random(
           family.veinCount[0],
           family.veinCount[1] + 1
-        )
+        ) *
+        settings.veinDensity
       ),
 
       veinTipBias: random(
@@ -415,13 +815,25 @@ function createLeaves() {
 
       // Watercolor appearance.
       fillColor: randomLeafColor(),
-      fillOpacity: random(95, 145),
+      fillOpacity: constrain(
+        random(
+          settings.opacity - 20,
+          settings.opacity + 20
+        ),
+        0,
+        255
+      ),
 
       strokeColor: null,
       veinColor: null,
 
-      bleed: random(0.07, 0.15),
-      texture: random(0.25, 0.48),
+      bleed:
+        settings.bleed *
+        random(0.75, 1.25),
+
+      texture:
+        settings.texture *
+        random(0.75, 1.25),
 
       // Generated geometry.
       geometry: null,
@@ -480,7 +892,7 @@ function chooseLeafFamily() {
   const families = [
     {
       name: "lance",
-      weight: 0.3,
+      weight: settings.lanceWeight,
 
       length: [105, 150],
       widthRatio: [0.13, 0.2],
@@ -501,7 +913,7 @@ function chooseLeafFamily() {
 
     {
       name: "oval",
-      weight: 0.3,
+      weight: settings.ovalWeight,
 
       length: [80, 115],
       widthRatio: [0.26, 0.36],
@@ -522,7 +934,7 @@ function chooseLeafFamily() {
 
     {
       name: "teardrop",
-      weight: 0.23,
+      weight: settings.teardropWeight,
 
       length: [90, 130],
       widthRatio: [0.22, 0.33],
@@ -543,7 +955,7 @@ function chooseLeafFamily() {
 
     {
       name: "inverseTeardrop",
-      weight: 0.17,
+      weight: settings.inverseWeight,
 
       length: [85, 125],
       widthRatio: [0.22, 0.33],
@@ -563,7 +975,19 @@ function chooseLeafFamily() {
     }
   ];
 
-  const value = random();
+  const totalWeight =
+    families.reduce(
+      (total, family) =>
+        total + family.weight,
+      0
+    );
+
+  if (totalWeight <= 0) {
+    return random(families);
+  }
+
+  const value =
+    random(totalWeight);
 
   let accumulatedWeight = 0;
 
@@ -2029,24 +2453,9 @@ function cross2D(
 // ==================================================
 
 function randomLeafColor() {
-  const colors = [
-    "#82a96b",
-    "#648f61",
-    "#99b96c",
-    "#5f8970",
-    "#a4b978",
-    "#718d55",
-    "#779f7a",
-    "#9ca963",
-    "#668268",
-    "#78986b",
-    "#58785c",
-    "#8a9f5b",
-    "#728a70",
-    "#b3a46c"
-  ];
-
-  return random(colors);
+  return random(
+    PALETTES[settings.palette]
+  );
 }
 
 function darkenHex(hex, amount) {

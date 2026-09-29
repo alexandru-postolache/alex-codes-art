@@ -16,7 +16,13 @@ The sketch loads pinned versions of p5.js, p5.brush, and Tweakpane from jsDelivr
 
 ## Controls
 
-Use the Tweakpane panel to change the seed, leaf count, directional flow, rotation jitter, spacing, and paper color. The seed is stored in the page URL, making a composition reproducible and shareable.
+Use the Tweakpane panel to change:
+
+- composition: seed, leaf count, directional flow, rotation jitter, and spacing
+- leaf shape: global size, bend, and the mix of four leaf families
+- watercolor: palette, paper color, opacity, bleed, texture, and vein density
+
+Every visible setting is stored in the page URL, making the complete composition reproducible and shareable.
 
 - `R`: create a new seed
 - `D`: show or hide collision geometry
