@@ -2,9 +2,9 @@
 // CONFIGURATION
 // ==================================================
 
-// Composition.
-const NUMBER_OF_LEAVES = 20;
 const CANDIDATES_PER_LEAF = 180;
+const DEFAULT_SEED = 12345;
+const MAX_SEED = 2147483647;
 
 // Geometry.
 const OUTLINE_RESOLUTION = 80;
@@ -12,26 +12,27 @@ const VEIN_RESOLUTION = 10;
 const COLLISION_SAMPLE_COUNT = 11;
 
 // Placement.
-const COLLISION_SCALE = 0.82;
 const COLLISION_PADDING = 2;
 const OVERLAP_PENALTY = 110;
 const EDGE_PENALTY = 5;
 
-// Directional flow.
-const FLOW_FIELD_SCALE = 0.0095;
-const ROTATION_JITTER = 0.1;
-
-// Rendering.
-const BACKGROUND_COLOR = "#f2eee7";
+const settings = {
+  seed: getSeedFromUrl(),
+  leafCount: 20,
+  flowScale: 0.0095,
+  rotationJitter: 0.1,
+  spacing: 0.82,
+  background: "#f2eee7"
+};
 
 // ==================================================
 // STATE
 // ==================================================
 
 let leaves = [];
-
-let compositionSeed = 12345;
 let showDebug = false;
+let pane = null;
+let regenerateTimer = null;
 
 // ==================================================
 // SETUP
@@ -42,16 +43,22 @@ function setup() {
 
   brush.scaleBrushes(3);
 
+  setupControls();
   regenerate();
 
   noLoop();
 }
 
 function regenerate() {
-  randomSeed(compositionSeed);
-  noiseSeed(compositionSeed);
+  settings.seed =
+    normalizeSeed(settings.seed);
 
-  background(BACKGROUND_COLOR);
+  updateSeedInUrl();
+
+  randomSeed(settings.seed);
+  noiseSeed(settings.seed);
+
+  background(settings.background);
 
   createLeaves();
   placeLeaves();
@@ -82,11 +89,7 @@ function regenerate() {
 function keyPressed() {
   // Generate a different composition.
   if (key === "r" || key === "R") {
-    compositionSeed = floor(
-      millis() + random(1000000)
-    );
-
-    regenerate();
+    useNewSeed();
   }
 
   // Show collision circles.
@@ -99,10 +102,177 @@ function keyPressed() {
   // Save the result.
   if (key === "s" || key === "S") {
     saveCanvas(
-      `stylized-leaves-${compositionSeed}`,
+      `stylized-leaves-${settings.seed}`,
       "png"
     );
   }
+}
+
+// ==================================================
+// CONTROLS AND SHAREABLE SEEDS
+// ==================================================
+
+function setupControls() {
+  pane = new Tweakpane.Pane({
+    title: "Watercolor Leaves"
+  });
+
+  pane.addInput(settings, "seed", {
+    label: "seed",
+    min: 0,
+    max: MAX_SEED,
+    step: 1
+  });
+
+  pane.addInput(settings, "leafCount", {
+    label: "leaves",
+    min: 5,
+    max: 40,
+    step: 1
+  });
+
+  const compositionFolder =
+    pane.addFolder({
+      title: "Composition"
+    });
+
+  compositionFolder.addInput(
+    settings,
+    "flowScale",
+    {
+      label: "flow",
+      min: 0.001,
+      max: 0.03,
+      step: 0.0005
+    }
+  );
+
+  compositionFolder.addInput(
+    settings,
+    "rotationJitter",
+    {
+      label: "jitter",
+      min: 0,
+      max: 0.5,
+      step: 0.01
+    }
+  );
+
+  compositionFolder.addInput(
+    settings,
+    "spacing",
+    {
+      label: "spacing",
+      min: 0.65,
+      max: 1.1,
+      step: 0.01
+    }
+  );
+
+  pane.addInput(settings, "background", {
+    label: "paper"
+  });
+
+  pane.addButton({
+    title: "New seed"
+  }).on("click", useNewSeed);
+
+  pane.addButton({
+    title: "Copy share link"
+  }).on("click", copyShareLink);
+
+  pane.addButton({
+    title: "Save PNG"
+  }).on("click", () => {
+    saveCanvas(
+      `stylized-leaves-${settings.seed}`,
+      "png"
+    );
+  });
+
+  pane.on("change", scheduleRegenerate);
+
+  window.addEventListener(
+    "popstate",
+    loadSeedFromUrl
+  );
+}
+
+function scheduleRegenerate() {
+  clearTimeout(regenerateTimer);
+
+  regenerateTimer =
+    setTimeout(regenerate, 80);
+}
+
+function useNewSeed() {
+  const randomValues =
+    new Uint32Array(1);
+
+  crypto.getRandomValues(randomValues);
+
+  settings.seed =
+    randomValues[0] % MAX_SEED;
+
+  pane.refresh();
+  regenerate();
+}
+
+function copyShareLink() {
+  updateSeedInUrl();
+
+  navigator.clipboard.writeText(
+    window.location.href
+  );
+}
+
+function getSeedFromUrl() {
+  const parameters =
+    new URLSearchParams(
+      window.location.search
+    );
+
+  return normalizeSeed(
+    parameters.get("seed")
+  );
+}
+
+function normalizeSeed(value) {
+  if (
+    value === null ||
+    value === "" ||
+    !Number.isFinite(Number(value))
+  ) {
+    return DEFAULT_SEED;
+  }
+
+  return (
+    Math.abs(Math.trunc(Number(value))) %
+    MAX_SEED
+  );
+}
+
+function updateSeedInUrl() {
+  const url =
+    new URL(window.location.href);
+
+  url.searchParams.set(
+    "seed",
+    settings.seed
+  );
+
+  history.replaceState(
+    null,
+    "",
+    url
+  );
+}
+
+function loadSeedFromUrl() {
+  settings.seed = getSeedFromUrl();
+
+  pane.refresh();
+  regenerate();
 }
 
 // ==================================================
@@ -114,7 +284,7 @@ function createLeaves() {
 
   for (
     let i = 0;
-    i < NUMBER_OF_LEAVES;
+    i < settings.leafCount;
     i++
   ) {
     const family = chooseLeafFamily();
@@ -416,10 +586,10 @@ function chooseLeafFamily() {
 
 function createLeafScale(index) {
   const progress =
-    NUMBER_OF_LEAVES <= 1
+    settings.leafCount <= 1
       ? 0
       : index /
-        (NUMBER_OF_LEAVES - 1);
+        (settings.leafCount - 1);
 
   if (progress < 0.15) {
     return random(1.15, 1.4);
@@ -1195,8 +1365,8 @@ function placeLeaves() {
       const rotation =
         flowRotation +
         random(
-          -ROTATION_JITTER,
-          ROTATION_JITTER
+          -settings.rotationJitter,
+          settings.rotationJitter
         );
 
       const circles =
@@ -1281,7 +1451,7 @@ function transformCollisionCircles(
       radius:
         circle.radius *
         leaf.scale *
-        COLLISION_SCALE +
+        settings.spacing +
         COLLISION_PADDING
     });
   }
@@ -1444,8 +1614,8 @@ function getCircleGroupCenter(circles) {
 function getFlowRotation(x, y) {
   const noiseValue =
     noise(
-      x * FLOW_FIELD_SCALE,
-      y * FLOW_FIELD_SCALE
+      x * settings.flowScale,
+      y * settings.flowScale
     );
 
   return map(
