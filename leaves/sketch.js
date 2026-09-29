@@ -109,8 +109,7 @@ function setup() {
 }
 
 function regenerate() {
-  settings.seed =
-    normalizeSeed(settings.seed);
+  normalizeSettings();
 
   updateSettingsInUrl();
 
@@ -142,6 +141,42 @@ function regenerate() {
   }
 
   pop();
+}
+
+function normalizeSettings() {
+  settings.seed =
+    normalizeSeed(settings.seed);
+
+  settings.leafCount =
+    Math.round(settings.leafCount);
+
+  settings.opacity =
+    Math.round(settings.opacity);
+
+  const decimalProperties = [
+    "flowScale",
+    "rotationJitter",
+    "spacing",
+    "leafSize",
+    "bend",
+    "lanceWeight",
+    "ovalWeight",
+    "teardropWeight",
+    "inverseWeight",
+    "bleed",
+    "texture",
+    "veinDensity"
+  ];
+
+  for (
+    const property
+    of decimalProperties
+  ) {
+    settings[property] =
+      Number(
+        settings[property].toFixed(6)
+      );
+  }
 }
 
 // ==================================================
