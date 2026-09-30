@@ -19,8 +19,7 @@ const EDGE_PENALTY = 5;
 const COMPOSITION_PRESETS = [
   "Scatter",
   "Wreath",
-  "Specimen",
-  "Drift"
+  "Specimen"
 ];
 
 const PALETTES = {
@@ -88,8 +87,6 @@ const DEFAULT_SETTINGS = {
   bleed: 0.11,
   texture: 0.36,
   veinDensity: 1,
-  depth: 0.65,
-  shadow: 0.55,
   paperTexture: 0.45
 };
 
@@ -179,8 +176,6 @@ function normalizeSettings() {
     "bleed",
     "texture",
     "veinDensity",
-    "depth",
-    "shadow",
     "paperTexture"
   ];
 
@@ -250,8 +245,7 @@ function setupControls() {
       options: {
         Scatter: "Scatter",
         Wreath: "Wreath",
-        Specimen: "Specimen",
-        Drift: "Drift"
+        Specimen: "Specimen"
       }
     }
   );
@@ -426,35 +420,13 @@ function setupControls() {
     }
   );
 
-  const depthFolder =
+  const paperFolder =
     pane.addFolder({
-      title: "Depth & paper",
+      title: "Paper",
       expanded: false
     });
 
-  depthFolder.addInput(
-    settings,
-    "depth",
-    {
-      label: "depth",
-      min: 0,
-      max: 1,
-      step: 0.05
-    }
-  );
-
-  depthFolder.addInput(
-    settings,
-    "shadow",
-    {
-      label: "shadows",
-      min: 0,
-      max: 1,
-      step: 0.05
-    }
-  );
-
-  depthFolder.addInput(
+  paperFolder.addInput(
     settings,
     "paperTexture",
     {
@@ -659,20 +631,6 @@ function createSettingsFromUrl() {
       0.4,
       2
     ),
-    depth: getNumberParameter(
-      parameters,
-      "depth",
-      DEFAULT_SETTINGS.depth,
-      0,
-      1
-    ),
-    shadow: getNumberParameter(
-      parameters,
-      "shadow",
-      DEFAULT_SETTINGS.shadow,
-      0,
-      1
-    ),
     paperTexture: getNumberParameter(
       parameters,
       "grain",
@@ -772,6 +730,9 @@ function updateSettingsInUrl() {
   const url =
     new URL(window.location.href);
 
+  url.searchParams.delete("depth");
+  url.searchParams.delete("shadow");
+
   const parameterValues = {
     seed: settings.seed,
     layout: settings.composition,
@@ -791,8 +752,6 @@ function updateSettingsInUrl() {
     bleed: settings.bleed,
     texture: settings.texture,
     veins: settings.veinDensity,
-    depth: settings.depth,
-    shadow: settings.shadow,
     grain: settings.paperTexture
   };
 
@@ -1993,12 +1952,6 @@ function placeLeaves() {
     leaf.collisionCircles =
       bestCandidate.circles;
 
-    leaf.depth =
-      leaves.length <= 1
-        ? 1
-        : leafIndex /
-          (leaves.length - 1);
-
     placedLeaves.push(leaf);
   }
 }
@@ -2022,15 +1975,6 @@ function createPlacementCandidate(
   ) {
     return createSpecimenCandidate(
       leaf,
-      leafIndex
-    );
-  }
-
-  if (
-    settings.composition ===
-    "Drift"
-  ) {
-    return createDriftCandidate(
       leafIndex
     );
   }
@@ -2135,43 +2079,6 @@ function createSpecimenCandidate(
 
     rotation:
       random(-0.28, 0.28)
-  };
-}
-
-function createDriftCandidate(
-  leafIndex
-) {
-  const progress =
-    leaves.length <= 1
-      ? 0.5
-      : leafIndex /
-        (leaves.length - 1);
-
-  return {
-    x:
-      lerp(
-        width * 0.08,
-        width * 0.82,
-        progress
-      ) +
-      random(-85, 85),
-
-    y:
-      lerp(
-        height * 0.74,
-        height * 0.25,
-        progress
-      ) +
-      sin(progress * Math.PI * 2) *
-      45 +
-      random(-75, 75),
-
-    rotation:
-      -Math.PI / 3 +
-      random(
-        -settings.rotationJitter,
-        settings.rotationJitter
-      )
   };
 }
 
@@ -2421,9 +2328,39 @@ function drawPaperTexture() {
 
   noStroke();
 
+  const mottleCount =
+    round(
+      28 *
+      settings.paperTexture
+    );
+
+  for (
+    let i = 0;
+    i < mottleCount;
+    i++
+  ) {
+    const mottleColor =
+      random() < 0.65
+        ? darkGrain
+        : lightGrain;
+
+    mottleColor.setAlpha(
+      random(2, 6) *
+      settings.paperTexture
+    );
+
+    fill(mottleColor);
+
+    circle(
+      random(width),
+      random(height),
+      random(18, 75)
+    );
+  }
+
   const grainCount =
     round(
-      850 *
+      1350 *
       settings.paperTexture
     );
 
@@ -2438,7 +2375,7 @@ function drawPaperTexture() {
         : lightGrain;
 
     grainColor.setAlpha(
-      random(3, 10) *
+      random(8, 24) *
       settings.paperTexture
     );
 
@@ -2447,13 +2384,13 @@ function drawPaperTexture() {
     circle(
       random(width),
       random(height),
-      random(0.35, 1.8)
+      random(0.7, 2.8)
     );
   }
 
   const fiberCount =
     round(
-      95 *
+      160 *
       settings.paperTexture
     );
 
@@ -2463,17 +2400,17 @@ function drawPaperTexture() {
     i++
   ) {
     darkGrain.setAlpha(
-      random(3, 8) *
+      random(10, 28) *
       settings.paperTexture
     );
 
     stroke(darkGrain);
-    strokeWeight(random(0.2, 0.55));
+    strokeWeight(random(0.35, 0.9));
 
     const x = random(width);
     const y = random(height);
     const fiberLength =
-      random(5, 28);
+      random(8, 42);
     const angle =
       random(-0.35, 0.35);
 
@@ -2504,76 +2441,9 @@ function drawLeafInstance(leaf) {
     leaf.scale
   );
 
-  drawLeafShadow(leaf);
   drawStylizedLeaf(leaf);
 
   pop();
-}
-
-function drawLeafShadow(leaf) {
-  if (settings.shadow <= 0) {
-    return;
-  }
-
-  const outline =
-    createLeafOutline(
-      leaf.geometry
-    );
-
-  const shadowColor =
-    color(
-      darkenHex(
-        settings.background,
-        0.72
-      )
-    );
-
-  const depthAmount =
-    lerp(
-      0.45,
-      1,
-      leaf.depth
-    );
-
-  noStroke();
-
-  for (
-    let layer = 4;
-    layer >= 1;
-    layer--
-  ) {
-    const offset =
-      (
-        1.5 +
-        layer * 0.9
-      ) *
-      settings.shadow /
-      leaf.scale;
-
-    shadowColor.setAlpha(
-      settings.shadow *
-      depthAmount *
-      (7 - layer) *
-      1.8
-    );
-
-    fill(shadowColor);
-
-    push();
-    translate(offset, offset);
-    drawNativePolygon(outline);
-    pop();
-  }
-}
-
-function drawNativePolygon(points) {
-  beginShape();
-
-  for (const point of points) {
-    vertex(point[0], point[1]);
-  }
-
-  endShape(CLOSE);
 }
 
 function createLeafOutline(geometry) {
@@ -2597,36 +2467,6 @@ function drawStylizedLeaf(leaf) {
    */
   const outline =
     createLeafOutline(geometry);
-
-  const depthFade =
-    settings.depth *
-    (1 - leaf.depth) *
-    0.24;
-
-  const fillColor =
-    mixHex(
-      leaf.fillColor,
-      settings.background,
-      depthFade
-    );
-
-  const strokeColor =
-    mixHex(
-      leaf.strokeColor,
-      settings.background,
-      depthFade * 0.65
-    );
-
-  const veinColor =
-    mixHex(
-      leaf.veinColor,
-      settings.background,
-      depthFade * 0.55
-    );
-
-  const fillOpacity =
-    leaf.fillOpacity *
-    (1 - depthFade * 0.35);
 
   const outlineWeight =
     0.72 / leaf.scale;
@@ -2660,8 +2500,8 @@ function drawStylizedLeaf(leaf) {
   brush.noWash();
 
   brush.fill(
-    fillColor,
-    fillOpacity
+    leaf.fillColor,
+    leaf.fillOpacity
   );
 
   brush.fillBleed(
@@ -2677,7 +2517,7 @@ function drawStylizedLeaf(leaf) {
 
   brush.set(
     "HB",
-    strokeColor,
+    leaf.strokeColor,
     outlineWeight
   );
 
@@ -2697,7 +2537,7 @@ function drawStylizedLeaf(leaf) {
    */
   drawTaperedBrushPath(
     geometry.centerline,
-    veinColor,
+    leaf.veinColor,
     centerTipWeight,
     centerBaseWeight
   );
@@ -2719,7 +2559,7 @@ function drawStylizedLeaf(leaf) {
 
     drawTaperedBrushPath(
       curve,
-      veinColor,
+      leaf.veinColor,
 
       sideVeinBaseWeight *
       vein.weightMultiplier,
@@ -2745,7 +2585,7 @@ function drawStylizedLeaf(leaf) {
    */
   drawTaperedBrushPath(
     stemPoints,
-    veinColor,
+    leaf.veinColor,
     stemBaseWeight,
     stemEndWeight
   );
