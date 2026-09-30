@@ -16,6 +16,13 @@ const COLLISION_PADDING = 2;
 const OVERLAP_PENALTY = 110;
 const EDGE_PENALTY = 5;
 
+const COMPOSITION_PRESETS = [
+  "Scatter",
+  "Wreath",
+  "Specimen",
+  "Drift"
+];
+
 const PALETTES = {
   Forest: [
     "#82a96b",
@@ -64,6 +71,7 @@ const PALETTES = {
 
 const DEFAULT_SETTINGS = {
   seed: DEFAULT_SEED,
+  composition: "Scatter",
   leafCount: 20,
   flowScale: 0.0095,
   rotationJitter: 0.1,
@@ -79,7 +87,10 @@ const DEFAULT_SETTINGS = {
   opacity: 120,
   bleed: 0.11,
   texture: 0.36,
-  veinDensity: 1
+  veinDensity: 1,
+  depth: 0.65,
+  shadow: 0.55,
+  paperTexture: 0.45
 };
 
 const settings = createSettingsFromUrl();
@@ -132,6 +143,8 @@ function regenerate() {
     -height / 2
   );
 
+  drawPaperTexture();
+
   for (const leaf of leaves) {
     drawLeafInstance(leaf);
   }
@@ -165,7 +178,10 @@ function normalizeSettings() {
     "inverseWeight",
     "bleed",
     "texture",
-    "veinDensity"
+    "veinDensity",
+    "depth",
+    "shadow",
+    "paperTexture"
   ];
 
   for (
@@ -225,6 +241,20 @@ function setupControls() {
     pane.addFolder({
       title: "Composition"
     });
+
+  compositionFolder.addInput(
+    settings,
+    "composition",
+    {
+      label: "layout",
+      options: {
+        Scatter: "Scatter",
+        Wreath: "Wreath",
+        Specimen: "Specimen",
+        Drift: "Drift"
+      }
+    }
+  );
 
   compositionFolder.addInput(
     settings,
@@ -396,6 +426,45 @@ function setupControls() {
     }
   );
 
+  const depthFolder =
+    pane.addFolder({
+      title: "Depth & paper",
+      expanded: false
+    });
+
+  depthFolder.addInput(
+    settings,
+    "depth",
+    {
+      label: "depth",
+      min: 0,
+      max: 1,
+      step: 0.05
+    }
+  );
+
+  depthFolder.addInput(
+    settings,
+    "shadow",
+    {
+      label: "shadows",
+      min: 0,
+      max: 1,
+      step: 0.05
+    }
+  );
+
+  depthFolder.addInput(
+    settings,
+    "paperTexture",
+    {
+      label: "paper grain",
+      min: 0,
+      max: 1,
+      step: 0.05
+    }
+  );
+
   pane.addButton({
     title: "New seed"
   }).on("click", useNewSeed);
@@ -475,6 +544,12 @@ function createSettingsFromUrl() {
   return {
     seed: normalizeSeed(
       parameters.get("seed")
+    ),
+    composition: getChoiceParameter(
+      parameters,
+      "layout",
+      COMPOSITION_PRESETS,
+      DEFAULT_SETTINGS.composition
     ),
     leafCount: getNumberParameter(
       parameters,
@@ -583,6 +658,27 @@ function createSettingsFromUrl() {
       DEFAULT_SETTINGS.veinDensity,
       0.4,
       2
+    ),
+    depth: getNumberParameter(
+      parameters,
+      "depth",
+      DEFAULT_SETTINGS.depth,
+      0,
+      1
+    ),
+    shadow: getNumberParameter(
+      parameters,
+      "shadow",
+      DEFAULT_SETTINGS.shadow,
+      0,
+      1
+    ),
+    paperTexture: getNumberParameter(
+      parameters,
+      "grain",
+      DEFAULT_SETTINGS.paperTexture,
+      0,
+      1
     )
   };
 }
@@ -628,6 +724,20 @@ function getPaletteParameter(parameters) {
     : DEFAULT_SETTINGS.palette;
 }
 
+function getChoiceParameter(
+  parameters,
+  name,
+  choices,
+  fallback
+) {
+  const value =
+    parameters.get(name);
+
+  return choices.includes(value)
+    ? value
+    : fallback;
+}
+
 function getColorParameter(
   parameters,
   name,
@@ -664,6 +774,7 @@ function updateSettingsInUrl() {
 
   const parameterValues = {
     seed: settings.seed,
+    layout: settings.composition,
     leaves: settings.leafCount,
     flow: settings.flowScale,
     jitter: settings.rotationJitter,
@@ -679,7 +790,10 @@ function updateSettingsInUrl() {
     opacity: settings.opacity,
     bleed: settings.bleed,
     texture: settings.texture,
-    veins: settings.veinDensity
+    veins: settings.veinDensity,
+    depth: settings.depth,
+    shadow: settings.shadow,
+    grain: settings.paperTexture
   };
 
   for (
@@ -1819,7 +1933,13 @@ function createLocalCollisionCircles(
 function placeLeaves() {
   const placedLeaves = [];
 
-  for (const leaf of leaves) {
+  for (
+    let leafIndex = 0;
+    leafIndex < leaves.length;
+    leafIndex++
+  ) {
+    const leaf = leaves[leafIndex];
+
     let bestCandidate = null;
     let bestScore = -Infinity;
 
@@ -1828,25 +1948,18 @@ function placeLeaves() {
       attempt < CANDIDATES_PER_LEAF;
       attempt++
     ) {
-      const x = random(width);
-      const y = random(height);
-
-      const flowRotation =
-        getFlowRotation(x, y);
-
-      const rotation =
-        flowRotation +
-        random(
-          -settings.rotationJitter,
-          settings.rotationJitter
+      const placement =
+        createPlacementCandidate(
+          leaf,
+          leafIndex
         );
 
       const circles =
         transformCollisionCircles(
           leaf,
-          x,
-          y,
-          rotation
+          placement.x,
+          placement.y,
+          placement.rotation
         );
 
       const score =
@@ -1859,9 +1972,10 @@ function placeLeaves() {
         bestScore = score;
 
         bestCandidate = {
-          x,
-          y,
-          rotation,
+          x: placement.x,
+          y: placement.y,
+          rotation:
+            placement.rotation,
           circles
         };
       }
@@ -1879,8 +1993,186 @@ function placeLeaves() {
     leaf.collisionCircles =
       bestCandidate.circles;
 
+    leaf.depth =
+      leaves.length <= 1
+        ? 1
+        : leafIndex /
+          (leaves.length - 1);
+
     placedLeaves.push(leaf);
   }
+}
+
+function createPlacementCandidate(
+  leaf,
+  leafIndex
+) {
+  if (
+    settings.composition ===
+    "Wreath"
+  ) {
+    return createWreathCandidate(
+      leafIndex
+    );
+  }
+
+  if (
+    settings.composition ===
+    "Specimen"
+  ) {
+    return createSpecimenCandidate(
+      leaf,
+      leafIndex
+    );
+  }
+
+  if (
+    settings.composition ===
+    "Drift"
+  ) {
+    return createDriftCandidate(
+      leafIndex
+    );
+  }
+
+  return createScatterCandidate();
+}
+
+function createScatterCandidate() {
+  const x = random(width);
+  const y = random(height);
+
+  return {
+    x,
+    y,
+    rotation:
+      getFlowRotation(x, y) +
+      random(
+        -settings.rotationJitter,
+        settings.rotationJitter
+      )
+  };
+}
+
+function createWreathCandidate(
+  leafIndex
+) {
+  const progress =
+    leafIndex /
+    max(1, leaves.length);
+
+  const angle =
+    progress *
+    Math.PI *
+    2 +
+    random(-0.16, 0.16);
+
+  const radius =
+    min(width, height) *
+    random(0.29, 0.37);
+
+  return {
+    x:
+      width / 2 +
+      cos(angle) * radius,
+
+    y:
+      height / 2 +
+      sin(angle) * radius,
+
+    rotation:
+      angle +
+      random(
+        -settings.rotationJitter,
+        settings.rotationJitter
+      )
+  };
+}
+
+function createSpecimenCandidate(
+  leaf,
+  leafIndex
+) {
+  const columns =
+    ceil(sqrt(leaves.length));
+
+  const rows =
+    ceil(
+      leaves.length / columns
+    );
+
+  const column =
+    leafIndex % columns;
+
+  const row =
+    floor(leafIndex / columns);
+
+  const cellWidth =
+    width / columns;
+
+  const cellHeight =
+    height / rows;
+
+  return {
+    x:
+      (column + 0.5) *
+      cellWidth +
+      random(
+        -cellWidth * 0.1,
+        cellWidth * 0.1
+      ),
+
+    y:
+      (row + 0.5) *
+      cellHeight -
+      leaf.length *
+      leaf.scale *
+      0.45 +
+      random(
+        -cellHeight * 0.08,
+        cellHeight * 0.08
+      ),
+
+    rotation:
+      random(-0.28, 0.28)
+  };
+}
+
+function createDriftCandidate(
+  leafIndex
+) {
+  const progress =
+    leaves.length <= 1
+      ? 0.5
+      : leafIndex /
+        (leaves.length - 1);
+
+  return {
+    x:
+      lerp(
+        width * 0.08,
+        width * 0.82,
+        progress
+      ) +
+      random(-85, 85),
+
+    y:
+      lerp(
+        height * 0.74,
+        height * 0.25,
+        progress
+      ) +
+      sin(progress * Math.PI * 2) *
+      45 +
+      random(-75, 75),
+
+    rotation:
+      -Math.PI / 3 +
+      random(
+        -settings.rotationJitter,
+        settings.rotationJitter
+      )
+  };
 }
 
 function transformCollisionCircles(
@@ -2103,6 +2395,99 @@ function getFlowRotation(x, y) {
 // DRAWING
 // ==================================================
 
+function drawPaperTexture() {
+  if (settings.paperTexture <= 0) {
+    return;
+  }
+
+  push();
+
+  const darkGrain =
+    color(
+      darkenHex(
+        settings.background,
+        0.24
+      )
+    );
+
+  const lightGrain =
+    color(
+      mixHex(
+        settings.background,
+        "#ffffff",
+        0.7
+      )
+    );
+
+  noStroke();
+
+  const grainCount =
+    round(
+      850 *
+      settings.paperTexture
+    );
+
+  for (
+    let i = 0;
+    i < grainCount;
+    i++
+  ) {
+    const grainColor =
+      random() < 0.72
+        ? darkGrain
+        : lightGrain;
+
+    grainColor.setAlpha(
+      random(3, 10) *
+      settings.paperTexture
+    );
+
+    fill(grainColor);
+
+    circle(
+      random(width),
+      random(height),
+      random(0.35, 1.8)
+    );
+  }
+
+  const fiberCount =
+    round(
+      95 *
+      settings.paperTexture
+    );
+
+  for (
+    let i = 0;
+    i < fiberCount;
+    i++
+  ) {
+    darkGrain.setAlpha(
+      random(3, 8) *
+      settings.paperTexture
+    );
+
+    stroke(darkGrain);
+    strokeWeight(random(0.2, 0.55));
+
+    const x = random(width);
+    const y = random(height);
+    const fiberLength =
+      random(5, 28);
+    const angle =
+      random(-0.35, 0.35);
+
+    line(
+      x,
+      y,
+      x + cos(angle) * fiberLength,
+      y + sin(angle) * fiberLength
+    );
+  }
+
+  pop();
+}
+
 function drawLeafInstance(leaf) {
   push();
 
@@ -2119,9 +2504,86 @@ function drawLeafInstance(leaf) {
     leaf.scale
   );
 
+  drawLeafShadow(leaf);
   drawStylizedLeaf(leaf);
 
   pop();
+}
+
+function drawLeafShadow(leaf) {
+  if (settings.shadow <= 0) {
+    return;
+  }
+
+  const outline =
+    createLeafOutline(
+      leaf.geometry
+    );
+
+  const shadowColor =
+    color(
+      darkenHex(
+        settings.background,
+        0.72
+      )
+    );
+
+  const depthAmount =
+    lerp(
+      0.45,
+      1,
+      leaf.depth
+    );
+
+  noStroke();
+
+  for (
+    let layer = 4;
+    layer >= 1;
+    layer--
+  ) {
+    const offset =
+      (
+        1.5 +
+        layer * 0.9
+      ) *
+      settings.shadow /
+      leaf.scale;
+
+    shadowColor.setAlpha(
+      settings.shadow *
+      depthAmount *
+      (7 - layer) *
+      1.8
+    );
+
+    fill(shadowColor);
+
+    push();
+    translate(offset, offset);
+    drawNativePolygon(outline);
+    pop();
+  }
+}
+
+function drawNativePolygon(points) {
+  beginShape();
+
+  for (const point of points) {
+    vertex(point[0], point[1]);
+  }
+
+  endShape(CLOSE);
+}
+
+function createLeafOutline(geometry) {
+  return [
+    ...geometry.rightBorder,
+
+    ...geometry.leftBorder
+      .slice()
+      .reverse()
+  ];
 }
 
 function drawStylizedLeaf(leaf) {
@@ -2133,13 +2595,38 @@ function drawStylizedLeaf(leaf) {
    * silhouette. No inner wash or fold polygons are
    * drawn, so no extra longitudinal lines appear.
    */
-  const outline = [
-    ...geometry.rightBorder,
+  const outline =
+    createLeafOutline(geometry);
 
-    ...geometry.leftBorder
-      .slice()
-      .reverse()
-  ];
+  const depthFade =
+    settings.depth *
+    (1 - leaf.depth) *
+    0.24;
+
+  const fillColor =
+    mixHex(
+      leaf.fillColor,
+      settings.background,
+      depthFade
+    );
+
+  const strokeColor =
+    mixHex(
+      leaf.strokeColor,
+      settings.background,
+      depthFade * 0.65
+    );
+
+  const veinColor =
+    mixHex(
+      leaf.veinColor,
+      settings.background,
+      depthFade * 0.55
+    );
+
+  const fillOpacity =
+    leaf.fillOpacity *
+    (1 - depthFade * 0.35);
 
   const outlineWeight =
     0.72 / leaf.scale;
@@ -2173,8 +2660,8 @@ function drawStylizedLeaf(leaf) {
   brush.noWash();
 
   brush.fill(
-    leaf.fillColor,
-    leaf.fillOpacity
+    fillColor,
+    fillOpacity
   );
 
   brush.fillBleed(
@@ -2190,7 +2677,7 @@ function drawStylizedLeaf(leaf) {
 
   brush.set(
     "HB",
-    leaf.strokeColor,
+    strokeColor,
     outlineWeight
   );
 
@@ -2210,7 +2697,7 @@ function drawStylizedLeaf(leaf) {
    */
   drawTaperedBrushPath(
     geometry.centerline,
-    leaf.veinColor,
+    veinColor,
     centerTipWeight,
     centerBaseWeight
   );
@@ -2232,7 +2719,7 @@ function drawStylizedLeaf(leaf) {
 
     drawTaperedBrushPath(
       curve,
-      leaf.veinColor,
+      veinColor,
 
       sideVeinBaseWeight *
       vein.weightMultiplier,
@@ -2258,7 +2745,7 @@ function drawStylizedLeaf(leaf) {
    */
   drawTaperedBrushPath(
     stemPoints,
-    leaf.veinColor,
+    veinColor,
     stemBaseWeight,
     stemEndWeight
   );
