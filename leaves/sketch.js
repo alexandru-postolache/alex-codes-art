@@ -2345,7 +2345,7 @@ function drawPaperTexture() {
         : lightGrain;
 
     mottleColor.setAlpha(
-      random(2, 6) *
+      random(4, 12) *
       settings.paperTexture
     );
 
@@ -2360,7 +2360,7 @@ function drawPaperTexture() {
 
   const grainCount =
     round(
-      1350 *
+      1600 *
       settings.paperTexture
     );
 
@@ -2375,7 +2375,7 @@ function drawPaperTexture() {
         : lightGrain;
 
     grainColor.setAlpha(
-      random(8, 24) *
+      random(18, 52) *
       settings.paperTexture
     );
 
@@ -2384,13 +2384,13 @@ function drawPaperTexture() {
     circle(
       random(width),
       random(height),
-      random(0.7, 2.8)
+      random(0.8, 3.5)
     );
   }
 
   const fiberCount =
     round(
-      160 *
+      210 *
       settings.paperTexture
     );
 
@@ -2400,12 +2400,12 @@ function drawPaperTexture() {
     i++
   ) {
     darkGrain.setAlpha(
-      random(10, 28) *
+      random(20, 55) *
       settings.paperTexture
     );
 
     stroke(darkGrain);
-    strokeWeight(random(0.35, 0.9));
+    strokeWeight(random(0.4, 1.2));
 
     const x = random(width);
     const y = random(height);
