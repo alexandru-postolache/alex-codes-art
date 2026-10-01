@@ -204,6 +204,20 @@ function regenerate() {
 
   background(settings.background);
 
+  if (
+    settings.composition ===
+    "Branch"
+  ) {
+    randomSeed(settings.seed + 7919);
+    noiseSeed(settings.seed + 7919);
+
+    branchStructure =
+      createBranchStructure();
+
+    randomSeed(settings.seed);
+    noiseSeed(settings.seed);
+  }
+
   createLeaves();
   placeLeaves();
 
@@ -2457,8 +2471,10 @@ function placeLeaves() {
     settings.composition ===
     "Branch"
   ) {
-    branchStructure =
-      createBranchStructure();
+    if (branchStructure === null) {
+      branchStructure =
+        createBranchStructure();
+    }
 
     placeLeavesOnBranch();
     return;
