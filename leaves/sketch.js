@@ -23,6 +23,13 @@ const COMPOSITION_PRESETS = [
   "Branch"
 ];
 
+const BRANCH_LEAF_FAMILIES = [
+  "lance",
+  "oval",
+  "teardrop",
+  "inverseTeardrop"
+];
+
 const PALETTES = {
   Forest: [
     "#82a96b",
@@ -89,6 +96,7 @@ const DEFAULT_SETTINGS = {
   texture: 0.36,
   veinDensity: 1,
   paperTexture: 0.45,
+  branchFamily: "oval",
   branchCount: 3,
   branchCurvature: 0.55,
   branchThickness: 6,
@@ -343,6 +351,21 @@ function setupControls() {
       title: "Branch",
       expanded: false
     });
+
+  branchFolder.addInput(
+    settings,
+    "branchFamily",
+    {
+      label: "leaf family",
+      options: {
+        Lance: "lance",
+        Oval: "oval",
+        Teardrop: "teardrop",
+        "Inverse teardrop":
+          "inverseTeardrop"
+      }
+    }
+  );
 
   branchFolder.addInput(
     settings,
@@ -751,6 +774,12 @@ function createSettingsFromUrl() {
       0,
       1
     ),
+    branchFamily: getChoiceParameter(
+      parameters,
+      "branchFamily",
+      BRANCH_LEAF_FAMILIES,
+      DEFAULT_SETTINGS.branchFamily
+    ),
     branchCount: getNumberParameter(
       parameters,
       "branches",
@@ -907,6 +936,7 @@ function updateSettingsInUrl() {
     texture: settings.texture,
     veins: settings.veinDensity,
     grain: settings.paperTexture,
+    branchFamily: settings.branchFamily,
     branches: settings.branchCount,
     branchCurve:
       settings.branchCurvature,
@@ -1151,17 +1181,27 @@ function createLeaves() {
 
   // Place the largest leaves first.
   leaves.sort((a, b) => {
+    const scaleA =
+      settings.composition ===
+      "Branch"
+        ? 1
+        : a.scale * a.scale;
+
+    const scaleB =
+      settings.composition ===
+      "Branch"
+        ? 1
+        : b.scale * b.scale;
+
     const areaA =
       a.length *
       a.width *
-      a.scale *
-      a.scale;
+      scaleA;
 
     const areaB =
       b.length *
       b.width *
-      b.scale *
-      b.scale;
+      scaleB;
 
     return areaB - areaA;
   });
@@ -1257,6 +1297,17 @@ function chooseLeafFamily() {
       veinCurvature: [0.06, 0.16]
     }
   ];
+
+  if (
+    settings.composition ===
+    "Branch"
+  ) {
+    return families.find(
+      family =>
+        family.name ===
+        settings.branchFamily
+    );
+  }
 
   const totalWeight =
     families.reduce(
@@ -2583,6 +2634,20 @@ function placeLeavesOnBranch() {
   ) {
     const leaf = leaves[leafIndex];
 
+    const branchProgress =
+      (leafIndex + 0.5) /
+      leaves.length;
+
+    leaf.scale =
+      lerp(
+        1.12,
+        0.56,
+        pow(branchProgress, 0.82)
+      );
+
+    leaf.branchProgress =
+      branchProgress;
+
     let bestCandidate = null;
     let bestScore = -Infinity;
 
@@ -2591,13 +2656,9 @@ function placeLeavesOnBranch() {
       attempt < 80;
       attempt++
     ) {
-      const baseProgress =
-        (leafIndex + 0.5) /
-        leaves.length;
-
       const progress =
         constrain(
-          baseProgress +
+          branchProgress +
           random(-0.38, 0.38) /
             leaves.length,
           0.01,
