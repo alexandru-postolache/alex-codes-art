@@ -2556,8 +2556,8 @@ function drawStylizedLeaf(leaf) {
   drawTaperedBrushPath(
     geometry.stemCenterline,
     leaf.veinColor,
-    0.62 / leaf.scale,
-    2.15 / leaf.scale
+    0.42 / leaf.scale,
+    1.2 / leaf.scale
   );
 
   // ----------------------------------------------
