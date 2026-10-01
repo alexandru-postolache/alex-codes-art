@@ -49,6 +49,37 @@ const GROWTH_DENSITIES = [
   "Dense"
 ];
 
+const SEASONS = [
+  "Spring",
+  "Summer",
+  "Autumn",
+  "Winter"
+];
+
+const SEASON_LEAF_COLORS = {
+  Spring: [
+    "#b7d58a",
+    "#d1df91",
+    "#91c58d",
+    "#c4dca2",
+    "#a5cf78"
+  ],
+  Summer: null,
+  Autumn: [
+    "#c56b3e",
+    "#d6923f",
+    "#a94b32",
+    "#e0ad57",
+    "#8b5e3c",
+    "#b47b42"
+  ],
+  Winter: [
+    "#8f765b",
+    "#aa8d68",
+    "#756b58"
+  ]
+};
+
 const PALETTES = {
   Forest: [
     "#82a96b",
@@ -119,6 +150,7 @@ const DEFAULT_SETTINGS = {
   branchEntry: "Right",
   leafArrangement: "Alternate",
   growthDensity: "Balanced",
+  season: "Summer",
   branchCount: 3,
   branchLevels: 3,
   branchCurvature: 0.55,
@@ -437,6 +469,19 @@ function setupControls() {
         Sparse: "Sparse",
         Balanced: "Balanced",
         Dense: "Dense"
+      }
+    }
+  );
+
+  branchFolder.addInput(
+    settings,
+    "season",
+    {
+      options: {
+        Spring: "Spring",
+        Summer: "Summer",
+        Autumn: "Autumn",
+        Winter: "Winter"
       }
     }
   );
@@ -927,6 +972,12 @@ function createSettingsFromUrl() {
       GROWTH_DENSITIES,
       DEFAULT_SETTINGS.growthDensity
     ),
+    season: getChoiceParameter(
+      parameters,
+      "season",
+      SEASONS,
+      DEFAULT_SETTINGS.season
+    ),
     branchCount: getNumberParameter(
       parameters,
       "branches",
@@ -1123,6 +1174,7 @@ function updateSettingsInUrl() {
     branchEntry: settings.branchEntry,
     leafPattern: settings.leafArrangement,
     growth: settings.growthDensity,
+    season: settings.season,
     branches: settings.branchCount,
     branchLevels: settings.branchLevels,
     branchCurve:
@@ -1413,19 +1465,31 @@ function getTargetLeafCount() {
     return settings.leafCount;
   }
 
-  const multiplier =
+  const densityMultiplier =
     settings.growthDensity === "Sparse"
       ? 0.7
       : settings.growthDensity === "Dense"
         ? 1.3
         : 1;
 
+  const seasonMultiplier =
+    settings.season === "Spring"
+      ? 0.78
+      : settings.season === "Autumn"
+        ? 0.68
+        : settings.season === "Winter"
+          ? 0.08
+          : 1;
+
   return constrain(
     round(
       settings.leafCount *
-      multiplier
+      densityMultiplier *
+      seasonMultiplier
     ),
-    5,
+    settings.season === "Winter"
+      ? 0
+      : 5,
     52
   );
 }
@@ -2533,6 +2597,7 @@ function createBranchStructure() {
     );
 
   mainSegment.branchIndex = 0;
+  mainSegment.parentIndex = null;
 
   const segments = [mainSegment];
 
@@ -2541,6 +2606,18 @@ function createBranchStructure() {
     1,
     segments
   );
+
+  for (const segment of segments) {
+    segment.isTerminal = true;
+  }
+
+  for (const segment of segments) {
+    if (segment.parentIndex !== null) {
+      segments[
+        segment.parentIndex
+      ].isTerminal = false;
+    }
+  }
 
   return {
     segments,
@@ -2816,6 +2893,9 @@ function growBranchChildren(
     childSegment.branchIndex =
       segments.length;
 
+    childSegment.parentIndex =
+      parentSegment.branchIndex;
+
     segments.push(childSegment);
 
     growBranchChildren(
@@ -3075,6 +3155,11 @@ function createBranchSegment(
     points,
     distances,
     length,
+    knotProgresses:
+      depth <= 1 &&
+      random() < 0.7
+        ? [random(0.24, 0.76)]
+        : [],
 
     outline: [
       ...firstSide,
@@ -3367,6 +3452,13 @@ function placeLeavesOnBranch() {
           assignment.maturity,
           0.78
         )
+      ) *
+      (
+        settings.season === "Spring"
+          ? 0.82
+          : settings.season === "Winter"
+            ? 0.68
+            : 1
       );
 
     leaf.branchProgress =
@@ -3865,11 +3957,16 @@ function drawBranchStructure() {
     const segment
     of orderedSegments
   ) {
+    const segmentFill =
+      getBranchSegmentColor(
+        segment
+      );
+
     brush.noHatch();
     brush.noWash();
 
     brush.fill(
-      settings.branchColor,
+      segmentFill,
       max(
         102,
         155 - segment.depth * 18
@@ -3923,9 +4020,237 @@ function drawBranchStructure() {
       ),
       0.08
     );
+
+    drawBranchBark(
+      segment,
+      branchStroke
+    );
+
+    drawBranchKnots(
+      segment,
+      branchStroke
+    );
+
+    if (
+      segment.isTerminal &&
+      (
+        settings.season === "Winter" ||
+        (
+          segment.branchIndex +
+          settings.seed
+        ) %
+        5 === 0
+      )
+    ) {
+      drawBrokenBranchTip(
+        segment,
+        branchStroke
+      );
+    }
   }
 
   drawBranchNodes(branchStroke);
+}
+
+function getBranchSegmentColor(segment) {
+  const youngWoodAmount =
+    constrain(
+      segment.depth * 0.12,
+      0,
+      0.32
+    );
+
+  let youngWood = "#9b8057";
+
+  if (settings.season === "Spring") {
+    youngWood = "#78825a";
+  }
+
+  if (settings.season === "Winter") {
+    youngWood = "#756754";
+  }
+
+  return mixHex(
+    settings.branchColor,
+    youngWood,
+    youngWoodAmount
+  );
+}
+
+function drawBranchBark(
+  segment,
+  branchStroke
+) {
+  const barkColor =
+    mixHex(
+      branchStroke,
+      getBranchSegmentColor(segment),
+      0.38
+    );
+
+  const offsets =
+    segment.depth === 0
+      ? [-0.42, 0, 0.4]
+      : [-0.28, 0.28];
+
+  for (const offset of offsets) {
+    const path = [];
+
+    for (
+      let i = 2;
+      i < segment.points.length - 2;
+      i++
+    ) {
+      const point = segment.points[i];
+      const progress =
+        segment.distances[i] /
+        segment.length;
+
+      const radius =
+        lerp(
+          segment.startRadius,
+          segment.endRadius,
+          pow(progress, 0.82)
+        );
+
+      path.push([
+        point[0] +
+          point.nx *
+          radius *
+          offset,
+
+        point[1] +
+          point.ny *
+          radius *
+          offset
+      ]);
+    }
+
+    drawTaperedBrushPath(
+      path,
+      barkColor,
+      segment.depth === 0
+        ? 0.16
+        : 0.1,
+      0.04
+    );
+  }
+}
+
+function drawBranchKnots(
+  segment,
+  branchStroke
+) {
+  for (
+    const progress
+    of segment.knotProgresses
+  ) {
+    const frame =
+      sampleBranchSegment(
+        segment,
+        progress
+      );
+
+    const radius =
+      lerp(
+        segment.startRadius,
+        segment.endRadius,
+        progress
+      );
+
+    const knot = [];
+
+    for (
+      let i = 0;
+      i <= 12;
+      i++
+    ) {
+      const angle =
+        i / 12 * Math.PI * 2;
+
+      knot.push([
+        frame.x +
+          frame.tx *
+          cos(angle) *
+          radius *
+          0.75 -
+          frame.ty *
+          sin(angle) *
+          radius *
+          0.42,
+
+        frame.y +
+          frame.ty *
+          cos(angle) *
+          radius *
+          0.75 +
+          frame.tx *
+          sin(angle) *
+          radius *
+          0.42
+      ]);
+    }
+
+    drawTaperedBrushPath(
+      knot,
+      branchStroke,
+      0.24,
+      0.24
+    );
+  }
+}
+
+function drawBrokenBranchTip(
+  segment,
+  branchStroke
+) {
+  const end =
+    segment.points[
+      segment.points.length - 1
+    ];
+
+  const size =
+    max(2.2, segment.endRadius * 2);
+
+  const firstCut = [
+    [end[0], end[1]],
+    [
+      end[0] -
+        end.tx * size +
+        end.nx * size * 0.5,
+
+      end[1] -
+        end.ty * size +
+        end.ny * size * 0.5
+    ]
+  ];
+
+  const secondCut = [
+    [end[0], end[1]],
+    [
+      end[0] -
+        end.tx * size -
+        end.nx * size * 0.45,
+
+      end[1] -
+        end.ty * size -
+        end.ny * size * 0.45
+    ]
+  ];
+
+  drawTaperedBrushPath(
+    firstCut,
+    branchStroke,
+    0.32,
+    0.08
+  );
+
+  drawTaperedBrushPath(
+    secondCut,
+    branchStroke,
+    0.32,
+    0.08
+  );
 }
 
 function drawBranchNodes(branchStroke) {
@@ -4494,6 +4819,18 @@ function cross2D(
 // ==================================================
 
 function randomLeafColor() {
+  if (
+    settings.composition ===
+    "Branch" &&
+    settings.season !== "Summer"
+  ) {
+    return random(
+      SEASON_LEAF_COLORS[
+        settings.season
+      ]
+    );
+  }
+
   return random(
     PALETTES[settings.palette]
   );
