@@ -28,9 +28,9 @@ Four composition presets are available:
 - `Scatter`: organic flow-field placement
 - `Wreath`: leaves arranged around a circular path
 - `Specimen`: a botanical study grid
-- `Branch`: leaves attached along a tapered main branch and secondary twigs
+- `Branch`: a mature tree limb with recursively tapered branches and leaves on smaller twigs
 
-The Branch folder selects one consistent leaf family and controls secondary branch count, curvature, thickness, leaf attachment angle, front/back layering, and branch color. Leaves decrease in size from the branch origin toward its terminal sections.
+The Branch folder selects one consistent leaf family and controls primary branch count, recursive branch levels, curvature, thickness, leaf attachment angle, front/back layering, and branch color. Leaf placement favors smaller twigs, and leaves decrease in size toward terminal sections.
 
 Every visible setting is stored in the page URL, making the complete composition reproducible and shareable.
 
