@@ -23,11 +23,14 @@ Use the Tweakpane panel to change:
 - watercolor: palette, paper color, opacity, bleed, texture, and vein density
 - paper: procedural mottling, grain, and fibers
 
-Three composition presets are available:
+Four composition presets are available:
 
 - `Scatter`: organic flow-field placement
 - `Wreath`: leaves arranged around a circular path
 - `Specimen`: a botanical study grid
+- `Branch`: leaves attached along a tapered main branch and secondary twigs
+
+The Branch folder controls secondary branch count, curvature, thickness, leaf attachment angle, front/back layering, and branch color.
 
 Every visible setting is stored in the page URL, making the complete composition reproducible and shareable.
 

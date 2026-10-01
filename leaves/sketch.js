@@ -19,7 +19,8 @@ const EDGE_PENALTY = 5;
 const COMPOSITION_PRESETS = [
   "Scatter",
   "Wreath",
-  "Specimen"
+  "Specimen",
+  "Branch"
 ];
 
 const PALETTES = {
@@ -87,7 +88,13 @@ const DEFAULT_SETTINGS = {
   bleed: 0.11,
   texture: 0.36,
   veinDensity: 1,
-  paperTexture: 0.45
+  paperTexture: 0.45,
+  branchCount: 3,
+  branchCurvature: 0.55,
+  branchThickness: 6,
+  leafAngle: 48,
+  rearLeaves: 0.25,
+  branchColor: "#735b3e"
 };
 
 const settings = createSettingsFromUrl();
@@ -97,6 +104,7 @@ const settings = createSettingsFromUrl();
 // ==================================================
 
 let leaves = [];
+let branchStructure = null;
 let showDebug = false;
 let pane = null;
 let regenerateTimer = null;
@@ -142,8 +150,36 @@ function regenerate() {
 
   drawPaperTexture();
 
-  for (const leaf of leaves) {
-    drawLeafInstance(leaf);
+  if (
+    settings.composition ===
+    "Branch" &&
+    branchStructure !== null
+  ) {
+    for (
+      const leaf
+      of leaves.filter(
+        item =>
+          item.branchLayer === "rear"
+      )
+    ) {
+      drawLeafInstance(leaf);
+    }
+
+    drawBranchStructure();
+
+    for (
+      const leaf
+      of leaves.filter(
+        item =>
+          item.branchLayer === "front"
+      )
+    ) {
+      drawLeafInstance(leaf);
+    }
+  } else {
+    for (const leaf of leaves) {
+      drawLeafInstance(leaf);
+    }
   }
 
   if (showDebug) {
@@ -163,6 +199,9 @@ function normalizeSettings() {
   settings.opacity =
     Math.round(settings.opacity);
 
+  settings.branchCount =
+    Math.round(settings.branchCount);
+
   const decimalProperties = [
     "flowScale",
     "rotationJitter",
@@ -176,7 +215,11 @@ function normalizeSettings() {
     "bleed",
     "texture",
     "veinDensity",
-    "paperTexture"
+    "paperTexture",
+    "branchCurvature",
+    "branchThickness",
+    "leafAngle",
+    "rearLeaves"
   ];
 
   for (
@@ -245,7 +288,8 @@ function setupControls() {
       options: {
         Scatter: "Scatter",
         Wreath: "Wreath",
-        Specimen: "Specimen"
+        Specimen: "Specimen",
+        Branch: "Branch"
       }
     }
   );
@@ -291,6 +335,75 @@ function setupControls() {
       min: 0.65,
       max: 1.1,
       step: 0.01
+    }
+  );
+
+  const branchFolder =
+    pane.addFolder({
+      title: "Branch",
+      expanded: false
+    });
+
+  branchFolder.addInput(
+    settings,
+    "branchCount",
+    {
+      label: "side branches",
+      min: 0,
+      max: 6,
+      step: 1
+    }
+  );
+
+  branchFolder.addInput(
+    settings,
+    "branchCurvature",
+    {
+      label: "curvature",
+      min: 0,
+      max: 1,
+      step: 0.05
+    }
+  );
+
+  branchFolder.addInput(
+    settings,
+    "branchThickness",
+    {
+      label: "thickness",
+      min: 3,
+      max: 12,
+      step: 0.5
+    }
+  );
+
+  branchFolder.addInput(
+    settings,
+    "leafAngle",
+    {
+      label: "leaf angle",
+      min: 20,
+      max: 80,
+      step: 1
+    }
+  );
+
+  branchFolder.addInput(
+    settings,
+    "rearLeaves",
+    {
+      label: "behind branch",
+      min: 0,
+      max: 0.6,
+      step: 0.05
+    }
+  );
+
+  branchFolder.addInput(
+    settings,
+    "branchColor",
+    {
+      label: "color"
     }
   );
 
@@ -637,6 +750,47 @@ function createSettingsFromUrl() {
       DEFAULT_SETTINGS.paperTexture,
       0,
       1
+    ),
+    branchCount: getNumberParameter(
+      parameters,
+      "branches",
+      DEFAULT_SETTINGS.branchCount,
+      0,
+      6,
+      true
+    ),
+    branchCurvature: getNumberParameter(
+      parameters,
+      "branchCurve",
+      DEFAULT_SETTINGS.branchCurvature,
+      0,
+      1
+    ),
+    branchThickness: getNumberParameter(
+      parameters,
+      "branchWidth",
+      DEFAULT_SETTINGS.branchThickness,
+      3,
+      12
+    ),
+    leafAngle: getNumberParameter(
+      parameters,
+      "leafAngle",
+      DEFAULT_SETTINGS.leafAngle,
+      20,
+      80
+    ),
+    rearLeaves: getNumberParameter(
+      parameters,
+      "rearLeaves",
+      DEFAULT_SETTINGS.rearLeaves,
+      0,
+      0.6
+    ),
+    branchColor: getColorParameter(
+      parameters,
+      "branchColor",
+      DEFAULT_SETTINGS.branchColor
     )
   };
 }
@@ -752,7 +906,15 @@ function updateSettingsInUrl() {
     bleed: settings.bleed,
     texture: settings.texture,
     veins: settings.veinDensity,
-    grain: settings.paperTexture
+    grain: settings.paperTexture,
+    branches: settings.branchCount,
+    branchCurve:
+      settings.branchCurvature,
+    branchWidth:
+      settings.branchThickness,
+    leafAngle: settings.leafAngle,
+    rearLeaves: settings.rearLeaves,
+    branchColor: settings.branchColor
   };
 
   for (
@@ -1950,6 +2112,19 @@ function createLocalCollisionCircles(
 // ==================================================
 
 function placeLeaves() {
+  if (
+    settings.composition ===
+    "Branch"
+  ) {
+    branchStructure =
+      createBranchStructure();
+
+    placeLeavesOnBranch();
+    return;
+  }
+
+  branchStructure = null;
+
   const placedLeaves = [];
 
   for (
@@ -2011,6 +2186,519 @@ function placeLeaves() {
 
     leaf.collisionCircles =
       bestCandidate.circles;
+
+    placedLeaves.push(leaf);
+  }
+}
+
+function createBranchStructure() {
+  const start = [
+    width * random(0.07, 0.12),
+    height * random(0.84, 0.91)
+  ];
+
+  const end = [
+    width * random(0.86, 0.93),
+    height * random(0.09, 0.16)
+  ];
+
+  const curveAmount =
+    settings.branchCurvature;
+
+  const control1 = [
+    width *
+      lerp(0.24, 0.16, curveAmount),
+
+    height *
+      lerp(0.69, 0.84, curveAmount)
+  ];
+
+  const control2 = [
+    width *
+      lerp(0.7, 0.82, curveAmount),
+
+    height *
+      lerp(0.31, 0.18, curveAmount)
+  ];
+
+  const mainSegment =
+    createBranchSegment(
+      start,
+      control1,
+      control2,
+      end,
+      settings.branchThickness,
+      max(
+        0.85,
+        settings.branchThickness * 0.16
+      ),
+      0
+    );
+
+  const segments = [mainSegment];
+
+  for (
+    let i = 0;
+    i < settings.branchCount;
+    i++
+  ) {
+    const progress =
+      constrain(
+        lerp(
+          0.2,
+          0.78,
+          (i + 1) /
+            (settings.branchCount + 1)
+        ) +
+        random(-0.035, 0.035),
+        0.16,
+        0.84
+      );
+
+    const attachment =
+      sampleBranchSegment(
+        mainSegment,
+        progress
+      );
+
+    const side =
+      i % 2 === 0 ? -1 : 1;
+
+    const parentAngle =
+      Math.atan2(
+        attachment.ty,
+        attachment.tx
+      );
+
+    const splitAngle =
+      parentAngle +
+      side *
+      random(0.55, 0.95);
+
+    const segmentLength =
+      random(92, 148) *
+      lerp(0.86, 1.08, curveAmount);
+
+    const branchEnd = [
+      constrain(
+        attachment.x +
+          cos(splitAngle) *
+          segmentLength,
+        28,
+        width - 28
+      ),
+
+      constrain(
+        attachment.y +
+          sin(splitAngle) *
+          segmentLength,
+        28,
+        height - 28
+      )
+    ];
+
+    const branchControl1 = [
+      attachment.x +
+        attachment.tx *
+        segmentLength *
+        0.2,
+
+      attachment.y +
+        attachment.ty *
+        segmentLength *
+        0.2
+    ];
+
+    const branchControl2 = [
+      lerp(
+        attachment.x,
+        branchEnd[0],
+        0.7
+      ) +
+        side *
+        attachment.ty *
+        segmentLength *
+        0.08 *
+        curveAmount,
+
+      lerp(
+        attachment.y,
+        branchEnd[1],
+        0.7
+      ) -
+        side *
+        attachment.tx *
+        segmentLength *
+        0.08 *
+        curveAmount
+    ];
+
+    const parentRadius =
+      lerp(
+        mainSegment.startRadius,
+        mainSegment.endRadius,
+        progress
+      );
+
+    segments.push(
+      createBranchSegment(
+        [attachment.x, attachment.y],
+        branchControl1,
+        branchControl2,
+        branchEnd,
+        max(1.2, parentRadius * 0.62),
+        0.55,
+        1
+      )
+    );
+  }
+
+  return {
+    segments,
+
+    attachmentLength:
+      segments.reduce(
+        (total, segment) =>
+          total +
+          segment.length * 0.76,
+        0
+      )
+  };
+}
+
+function createBranchSegment(
+  start,
+  control1,
+  control2,
+  end,
+  startRadius,
+  endRadius,
+  depth
+) {
+  const points =
+    sampleCubicBezierWithFrames(
+      start,
+      control1,
+      control2,
+      end,
+      48
+    );
+
+  const distances = [0];
+  let length = 0;
+
+  for (
+    let i = 1;
+    i < points.length;
+    i++
+  ) {
+    length +=
+      dist(
+        points[i - 1][0],
+        points[i - 1][1],
+        points[i][0],
+        points[i][1]
+      );
+
+    distances.push(length);
+  }
+
+  const firstSide = [];
+  const secondSide = [];
+
+  for (
+    let i = 0;
+    i < points.length;
+    i++
+  ) {
+    const progress =
+      distances[i] / length;
+
+    const radius =
+      lerp(
+        startRadius,
+        endRadius,
+        pow(progress, 0.82)
+      );
+
+    firstSide.push([
+      points[i][0] +
+        points[i].nx * radius,
+
+      points[i][1] +
+        points[i].ny * radius
+    ]);
+
+    secondSide.push([
+      points[i][0] -
+        points[i].nx * radius,
+
+      points[i][1] -
+        points[i].ny * radius
+    ]);
+  }
+
+  return {
+    start,
+    end,
+    control1,
+    control2,
+    startRadius,
+    endRadius,
+    depth,
+    points,
+    distances,
+    length,
+
+    outline: [
+      ...firstSide,
+      ...secondSide.reverse()
+    ]
+  };
+}
+
+function sampleBranchSegment(
+  segment,
+  progress
+) {
+  const targetDistance =
+    constrain(progress, 0, 1) *
+    segment.length;
+
+  let upperIndex = 1;
+
+  while (
+    upperIndex <
+      segment.distances.length - 1 &&
+    segment.distances[upperIndex] <
+      targetDistance
+  ) {
+    upperIndex++;
+  }
+
+  const lowerIndex =
+    max(0, upperIndex - 1);
+
+  const lowerDistance =
+    segment.distances[lowerIndex];
+
+  const upperDistance =
+    segment.distances[upperIndex];
+
+  const amount =
+    upperDistance === lowerDistance
+      ? 0
+      : (
+          targetDistance -
+          lowerDistance
+        ) /
+        (
+          upperDistance -
+          lowerDistance
+        );
+
+  const lower =
+    segment.points[lowerIndex];
+
+  const upper =
+    segment.points[upperIndex];
+
+  let tx =
+    lerp(lower.tx, upper.tx, amount);
+
+  let ty =
+    lerp(lower.ty, upper.ty, amount);
+
+  const tangentLength =
+    Math.hypot(tx, ty) || 1;
+
+  tx /= tangentLength;
+  ty /= tangentLength;
+
+  return {
+    x: lerp(lower[0], upper[0], amount),
+    y: lerp(lower[1], upper[1], amount),
+    tx,
+    ty
+  };
+}
+
+function sampleBranchStructure(progress) {
+  let targetDistance =
+    constrain(progress, 0, 1) *
+    branchStructure.attachmentLength;
+
+  for (
+    const segment
+    of branchStructure.segments
+  ) {
+    const availableLength =
+      segment.length * 0.76;
+
+    if (
+      targetDistance <=
+      availableLength
+    ) {
+      return {
+        ...sampleBranchSegment(
+          segment,
+          lerp(
+            0.12,
+            0.88,
+            targetDistance /
+              availableLength
+          )
+        ),
+
+        segment
+      };
+    }
+
+    targetDistance -=
+      availableLength;
+  }
+
+  const lastSegment =
+    branchStructure.segments[
+      branchStructure.segments.length - 1
+    ];
+
+  return {
+    ...sampleBranchSegment(
+      lastSegment,
+      0.88
+    ),
+
+    segment: lastSegment
+  };
+}
+
+function placeLeavesOnBranch() {
+  const placedLeaves = [];
+
+  for (
+    let leafIndex = 0;
+    leafIndex < leaves.length;
+    leafIndex++
+  ) {
+    const leaf = leaves[leafIndex];
+
+    let bestCandidate = null;
+    let bestScore = -Infinity;
+
+    for (
+      let attempt = 0;
+      attempt < 80;
+      attempt++
+    ) {
+      const baseProgress =
+        (leafIndex + 0.5) /
+        leaves.length;
+
+      const progress =
+        constrain(
+          baseProgress +
+          random(-0.38, 0.38) /
+            leaves.length,
+          0.01,
+          0.99
+        );
+
+      const attachment =
+        sampleBranchStructure(
+          progress
+        );
+
+      const side =
+        leafIndex % 2 === 0
+          ? -1
+          : 1;
+
+      const tangentAngle =
+        Math.atan2(
+          attachment.ty,
+          attachment.tx
+        );
+
+      const outwardAngle =
+        tangentAngle +
+        side *
+        radians(
+          settings.leafAngle +
+          random(-10, 10)
+        );
+
+      const rotation =
+        outwardAngle +
+        Math.PI / 2;
+
+      const stemX =
+        leaf.geometry.stemEnd[0] *
+        leaf.scale;
+
+      const stemY =
+        leaf.geometry.stemEnd[1] *
+        leaf.scale;
+
+      const cosine = cos(rotation);
+      const sine = sin(rotation);
+
+      const x =
+        attachment.x -
+        (
+          stemX * cosine -
+          stemY * sine
+        );
+
+      const y =
+        attachment.y -
+        (
+          stemX * sine +
+          stemY * cosine
+        );
+
+      const circles =
+        transformCollisionCircles(
+          leaf,
+          x,
+          y,
+          rotation
+        );
+
+      const score =
+        scorePlacementCandidate(
+          circles,
+          placedLeaves
+        );
+
+      if (score > bestScore) {
+        bestScore = score;
+
+        bestCandidate = {
+          x,
+          y,
+          rotation,
+          circles,
+          attachment
+        };
+      }
+    }
+
+    leaf.x = bestCandidate.x;
+    leaf.y = bestCandidate.y;
+    leaf.rotation =
+      bestCandidate.rotation;
+
+    leaf.collisionCircles =
+      bestCandidate.circles;
+
+    leaf.branchAttachment =
+      bestCandidate.attachment;
+
+    leaf.branchLayer =
+      random() < settings.rearLeaves
+        ? "rear"
+        : "front";
 
     placedLeaves.push(leaf);
   }
@@ -2361,6 +3049,74 @@ function getFlowRotation(x, y) {
 // ==================================================
 // DRAWING
 // ==================================================
+
+function drawBranchStructure() {
+  const branchStroke =
+    darkenHex(
+      settings.branchColor,
+      0.42
+    );
+
+  const orderedSegments = [
+    ...branchStructure.segments
+  ].sort(
+    (first, second) =>
+      second.depth - first.depth
+  );
+
+  for (
+    const segment
+    of orderedSegments
+  ) {
+    brush.noHatch();
+    brush.noWash();
+
+    brush.fill(
+      settings.branchColor,
+      segment.depth === 0
+        ? 155
+        : 138
+    );
+
+    brush.fillBleed(
+      segment.depth === 0
+        ? 0.075
+        : 0.045,
+      "out"
+    );
+
+    brush.fillTexture(
+      0.4,
+      0.28,
+      true
+    );
+
+    brush.set(
+      "HB",
+      branchStroke,
+      segment.depth === 0
+        ? 0.7
+        : 0.45
+    );
+
+    drawBrushPolygon(
+      segment.outline
+    );
+
+    brush.noFill();
+    brush.noWash();
+    brush.noHatch();
+
+    drawTaperedBrushPath(
+      segment.points,
+      branchStroke,
+      segment.depth === 0
+        ? 0.45
+        : 0.28,
+      0.08
+    );
+  }
+}
 
 function drawPaperTexture() {
   if (settings.paperTexture <= 0) {
