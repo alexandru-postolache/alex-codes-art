@@ -30,6 +30,25 @@ const BRANCH_LEAF_FAMILIES = [
   "inverseTeardrop"
 ];
 
+const BRANCH_ENTRIES = [
+  "Right",
+  "Left",
+  "Top",
+  "Bottom"
+];
+
+const LEAF_ARRANGEMENTS = [
+  "Alternate",
+  "Opposite",
+  "Whorled"
+];
+
+const GROWTH_DENSITIES = [
+  "Sparse",
+  "Balanced",
+  "Dense"
+];
+
 const PALETTES = {
   Forest: [
     "#82a96b",
@@ -97,10 +116,17 @@ const DEFAULT_SETTINGS = {
   veinDensity: 1,
   paperTexture: 0.45,
   branchFamily: "oval",
+  branchEntry: "Right",
+  leafArrangement: "Alternate",
+  growthDensity: "Balanced",
   branchCount: 3,
   branchLevels: 3,
   branchCurvature: 0.55,
   branchThickness: 6,
+  branchSpread: 0.7,
+  branchGravity: 0.12,
+  branchWind: 0,
+  tipClustering: 0.68,
   leafAngle: 48,
   rearLeaves: 0.25,
   branchColor: "#735b3e"
@@ -230,6 +256,10 @@ function normalizeSettings() {
     "paperTexture",
     "branchCurvature",
     "branchThickness",
+    "branchSpread",
+    "branchGravity",
+    "branchWind",
+    "tipClustering",
     "leafAngle",
     "rearLeaves"
   ];
@@ -373,6 +403,46 @@ function setupControls() {
 
   branchFolder.addInput(
     settings,
+    "branchEntry",
+    {
+      label: "entry side",
+      options: {
+        Right: "Right",
+        Left: "Left",
+        Top: "Top",
+        Bottom: "Bottom"
+      }
+    }
+  );
+
+  branchFolder.addInput(
+    settings,
+    "leafArrangement",
+    {
+      label: "leaf pattern",
+      options: {
+        Alternate: "Alternate",
+        Opposite: "Opposite",
+        Whorled: "Whorled"
+      }
+    }
+  );
+
+  branchFolder.addInput(
+    settings,
+    "growthDensity",
+    {
+      label: "growth",
+      options: {
+        Sparse: "Sparse",
+        Balanced: "Balanced",
+        Dense: "Dense"
+      }
+    }
+  );
+
+  branchFolder.addInput(
+    settings,
     "branchCount",
     {
       label: "primary branches",
@@ -412,6 +482,50 @@ function setupControls() {
       min: 3,
       max: 12,
       step: 0.5
+    }
+  );
+
+  branchFolder.addInput(
+    settings,
+    "branchSpread",
+    {
+      label: "spread",
+      min: 0.35,
+      max: 1.25,
+      step: 0.05
+    }
+  );
+
+  branchFolder.addInput(
+    settings,
+    "branchGravity",
+    {
+      label: "gravity",
+      min: -1,
+      max: 1,
+      step: 0.05
+    }
+  );
+
+  branchFolder.addInput(
+    settings,
+    "branchWind",
+    {
+      label: "wind",
+      min: -1,
+      max: 1,
+      step: 0.05
+    }
+  );
+
+  branchFolder.addInput(
+    settings,
+    "tipClustering",
+    {
+      label: "tip clustering",
+      min: 0,
+      max: 1,
+      step: 0.05
     }
   );
 
@@ -795,6 +909,24 @@ function createSettingsFromUrl() {
       BRANCH_LEAF_FAMILIES,
       DEFAULT_SETTINGS.branchFamily
     ),
+    branchEntry: getChoiceParameter(
+      parameters,
+      "branchEntry",
+      BRANCH_ENTRIES,
+      DEFAULT_SETTINGS.branchEntry
+    ),
+    leafArrangement: getChoiceParameter(
+      parameters,
+      "leafPattern",
+      LEAF_ARRANGEMENTS,
+      DEFAULT_SETTINGS.leafArrangement
+    ),
+    growthDensity: getChoiceParameter(
+      parameters,
+      "growth",
+      GROWTH_DENSITIES,
+      DEFAULT_SETTINGS.growthDensity
+    ),
     branchCount: getNumberParameter(
       parameters,
       "branches",
@@ -824,6 +956,34 @@ function createSettingsFromUrl() {
       DEFAULT_SETTINGS.branchThickness,
       3,
       12
+    ),
+    branchSpread: getNumberParameter(
+      parameters,
+      "branchSpread",
+      DEFAULT_SETTINGS.branchSpread,
+      0.35,
+      1.25
+    ),
+    branchGravity: getNumberParameter(
+      parameters,
+      "gravity",
+      DEFAULT_SETTINGS.branchGravity,
+      -1,
+      1
+    ),
+    branchWind: getNumberParameter(
+      parameters,
+      "wind",
+      DEFAULT_SETTINGS.branchWind,
+      -1,
+      1
+    ),
+    tipClustering: getNumberParameter(
+      parameters,
+      "tipCluster",
+      DEFAULT_SETTINGS.tipClustering,
+      0,
+      1
     ),
     leafAngle: getNumberParameter(
       parameters,
@@ -960,12 +1120,19 @@ function updateSettingsInUrl() {
     veins: settings.veinDensity,
     grain: settings.paperTexture,
     branchFamily: settings.branchFamily,
+    branchEntry: settings.branchEntry,
+    leafPattern: settings.leafArrangement,
+    growth: settings.growthDensity,
     branches: settings.branchCount,
     branchLevels: settings.branchLevels,
     branchCurve:
       settings.branchCurvature,
     branchWidth:
       settings.branchThickness,
+    branchSpread: settings.branchSpread,
+    gravity: settings.branchGravity,
+    wind: settings.branchWind,
+    tipCluster: settings.tipClustering,
     leafAngle: settings.leafAngle,
     rearLeaves: settings.rearLeaves,
     branchColor: settings.branchColor
@@ -1015,13 +1182,20 @@ function loadSettingsFromUrl() {
 function createLeaves() {
   leaves = [];
 
+  const targetLeafCount =
+    getTargetLeafCount();
+
   for (
     let i = 0;
-    i < settings.leafCount;
+    i < targetLeafCount;
     i++
   ) {
     const family = chooseLeafFamily();
-    const scale = createLeafScale(i);
+    const scale =
+      createLeafScale(
+        i,
+        targetLeafCount
+      );
 
     const length =
       random(
@@ -1231,6 +1405,31 @@ function createLeaves() {
   });
 }
 
+function getTargetLeafCount() {
+  if (
+    settings.composition !==
+    "Branch"
+  ) {
+    return settings.leafCount;
+  }
+
+  const multiplier =
+    settings.growthDensity === "Sparse"
+      ? 0.7
+      : settings.growthDensity === "Dense"
+        ? 1.3
+        : 1;
+
+  return constrain(
+    round(
+      settings.leafCount *
+      multiplier
+    ),
+    5,
+    52
+  );
+}
+
 // ==================================================
 // LEAF FAMILIES
 // ==================================================
@@ -1366,12 +1565,15 @@ function chooseLeafFamily() {
 // SCALE DISTRIBUTION
 // ==================================================
 
-function createLeafScale(index) {
+function createLeafScale(
+  index,
+  totalCount
+) {
   const progress =
-    settings.leafCount <= 1
+    totalCount <= 1
       ? 0
       : index /
-        (settings.leafCount - 1);
+        (totalCount - 1);
 
   if (progress < 0.15) {
     return random(1.15, 1.4);
@@ -2267,12 +2469,12 @@ function placeLeaves() {
 }
 
 function createBranchStructure() {
-  const start = [
+  const canonicalStart = [
     width + 42,
     height * random(0.17, 0.24)
   ];
 
-  const end = [
+  const canonicalEnd = [
     width * random(0.07, 0.13),
     height * random(0.4, 0.5)
   ];
@@ -2280,7 +2482,7 @@ function createBranchStructure() {
   const curveAmount =
     settings.branchCurvature;
 
-  const control1 = [
+  const canonicalControl1 = [
     width *
       lerp(0.82, 0.74, curveAmount),
 
@@ -2288,13 +2490,33 @@ function createBranchStructure() {
       lerp(0.2, 0.29, curveAmount)
   ];
 
-  const control2 = [
+  const canonicalControl2 = [
     width *
       lerp(0.45, 0.58, curveAmount),
 
     height *
       lerp(0.37, 0.51, curveAmount)
   ];
+
+  const start =
+    transformBranchEntryPoint(
+      canonicalStart
+    );
+
+  const end =
+    transformBranchEntryPoint(
+      canonicalEnd
+    );
+
+  const control1 =
+    transformBranchEntryPoint(
+      canonicalControl1
+    );
+
+  const control2 =
+    transformBranchEntryPoint(
+      canonicalControl2
+    );
 
   const mainSegment =
     createBranchSegment(
@@ -2331,6 +2553,31 @@ function createBranchStructure() {
   };
 }
 
+function transformBranchEntryPoint(point) {
+  if (settings.branchEntry === "Left") {
+    return [
+      width - point[0],
+      point[1]
+    ];
+  }
+
+  if (settings.branchEntry === "Top") {
+    return [
+      point[1],
+      width - point[0]
+    ];
+  }
+
+  if (settings.branchEntry === "Bottom") {
+    return [
+      height - point[1],
+      point[0]
+    ];
+  }
+
+  return [...point];
+}
+
 function growBranchChildren(
   parentSegment,
   level,
@@ -2340,29 +2587,57 @@ function growBranchChildren(
     return;
   }
 
+  const densityAdjustment =
+    settings.growthDensity === "Sparse"
+      ? -1
+      : settings.growthDensity === "Dense"
+        ? 1
+        : 0;
+
   const childCount =
     level === 1
-      ? settings.branchCount
-      : random() < 0.58
-        ? 2
-        : 1;
+      ? max(
+          1,
+          settings.branchCount +
+            densityAdjustment
+        )
+      : constrain(
+          (
+            random() < 0.58
+              ? 2
+              : 1
+          ) +
+            densityAdjustment,
+          1,
+          3
+        );
 
   for (
     let i = 0;
     i < childCount;
     i++
   ) {
+    const isContinuation = i === 0;
+
     const progress =
       constrain(
-        lerp(
-          level === 1 ? 0.2 : 0.34,
-          level === 1 ? 0.82 : 0.78,
-          (i + 1) /
-            (childCount + 1)
+        (
+          isContinuation
+            ? random(0.94, 0.98)
+            : lerp(
+                level === 1
+                  ? 0.2
+                  : 0.34,
+                level === 1
+                  ? 0.7
+                  : 0.72,
+                i /
+                  max(1, childCount - 1)
+              )
         ) +
         random(-0.045, 0.045),
         0.16,
-        0.86
+        0.99
       );
 
     const attachment =
@@ -2372,13 +2647,15 @@ function growBranchChildren(
       );
 
     const side =
-      (
-        i +
-        parentSegment.branchIndex
-      ) %
-      2 === 0
-        ? -1
-        : 1;
+      isContinuation
+        ? 0
+        : (
+            i +
+            parentSegment.branchIndex
+          ) %
+          2 === 0
+          ? -1
+          : 1;
 
     const parentAngle =
       Math.atan2(
@@ -2388,16 +2665,27 @@ function growBranchChildren(
 
     const splitAngle =
       parentAngle +
-      side *
-      random(
-        level === 1 ? 0.52 : 0.62,
-        level === 1 ? 1.02 : 1.12
-      );
+      (
+        isContinuation
+          ? random(-0.13, 0.13)
+          : side *
+            random(
+              level === 1
+                ? 0.52
+                : 0.62,
+              level === 1
+                ? 1.02
+                : 1.12
+            )
+      ) *
+      settings.branchSpread;
 
     const lengthRatio =
-      level === 1
-        ? random(0.3, 0.48)
-        : random(0.42, 0.62);
+      isContinuation
+        ? random(0.5, 0.66)
+        : level === 1
+          ? random(0.28, 0.44)
+          : random(0.38, 0.58);
 
     const segmentLength =
       parentSegment.length *
@@ -2412,7 +2700,10 @@ function growBranchChildren(
       constrain(
         attachment.x +
           cos(splitAngle) *
-          segmentLength,
+          segmentLength +
+          settings.branchWind *
+          segmentLength *
+          0.16,
         18,
         width - 18
       ),
@@ -2420,7 +2711,10 @@ function growBranchChildren(
       constrain(
         attachment.y +
           sin(splitAngle) *
-          segmentLength,
+          segmentLength +
+          settings.branchGravity *
+          segmentLength *
+          0.2,
         22,
         height - 22
       )
@@ -2488,15 +2782,35 @@ function growBranchChildren(
         branchControl2,
         branchEnd,
         max(
-          0.65,
+          0.5,
           parentRadius *
-            random(0.5, 0.68)
+            (
+              isContinuation
+                ? 0.72
+                : random(0.38, 0.52)
+            )
         ),
         max(
-          0.24,
-          parentRadius * 0.12
+          0.2,
+          parentRadius * 0.1
         ),
         level
+      );
+
+    if (
+      branchConflictsWithTree(
+        childSegment,
+        segments,
+        attachment
+      )
+    ) {
+      continue;
+    }
+
+    childSegment.junctionOutline =
+      createBranchJunctionOutline(
+        attachment,
+        childSegment.startRadius
       );
 
     childSegment.branchIndex =
@@ -2510,6 +2824,172 @@ function growBranchChildren(
       segments
     );
   }
+}
+
+function branchConflictsWithTree(
+  candidate,
+  segments,
+  attachment
+) {
+  for (
+    let candidateIndex = 3;
+    candidateIndex <
+      candidate.points.length;
+    candidateIndex += 2
+  ) {
+    const candidateStart =
+      candidate.points[
+        candidateIndex - 2
+      ];
+
+    const candidateEnd =
+      candidate.points[
+        candidateIndex
+      ];
+
+    if (
+      dist(
+        candidateEnd[0],
+        candidateEnd[1],
+        attachment.x,
+        attachment.y
+      ) < 24
+    ) {
+      continue;
+    }
+
+    for (
+      const segment
+      of segments
+    ) {
+      for (
+        let segmentIndex = 2;
+        segmentIndex <
+          segment.points.length;
+        segmentIndex += 2
+      ) {
+        const segmentStart =
+          segment.points[
+            segmentIndex - 2
+          ];
+
+        const segmentEnd =
+          segment.points[
+            segmentIndex
+          ];
+
+        if (
+          lineSegmentsIntersect(
+            candidateStart,
+            candidateEnd,
+            segmentStart,
+            segmentEnd
+          )
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+function lineSegmentsIntersect(
+  firstStart,
+  firstEnd,
+  secondStart,
+  secondEnd
+) {
+  const firstDirection = [
+    firstEnd[0] - firstStart[0],
+    firstEnd[1] - firstStart[1]
+  ];
+
+  const secondDirection = [
+    secondEnd[0] - secondStart[0],
+    secondEnd[1] - secondStart[1]
+  ];
+
+  const denominator =
+    cross2D(
+      firstDirection[0],
+      firstDirection[1],
+      secondDirection[0],
+      secondDirection[1]
+    );
+
+  if (abs(denominator) < 0.0001) {
+    return false;
+  }
+
+  const difference = [
+    secondStart[0] - firstStart[0],
+    secondStart[1] - firstStart[1]
+  ];
+
+  const firstAmount =
+    cross2D(
+      difference[0],
+      difference[1],
+      secondDirection[0],
+      secondDirection[1]
+    ) /
+    denominator;
+
+  const secondAmount =
+    cross2D(
+      difference[0],
+      difference[1],
+      firstDirection[0],
+      firstDirection[1]
+    ) /
+    denominator;
+
+  return (
+    firstAmount > 0.02 &&
+    firstAmount < 0.98 &&
+    secondAmount > 0.02 &&
+    secondAmount < 0.98
+  );
+}
+
+function createBranchJunctionOutline(
+  attachment,
+  radius
+) {
+  const points = [];
+
+  for (
+    let i = 0;
+    i < 16;
+    i++
+  ) {
+    const angle =
+      i / 16 * Math.PI * 2;
+
+    const along =
+      cos(angle) *
+      radius *
+      1.65;
+
+    const across =
+      sin(angle) *
+      radius *
+      0.92;
+
+    points.push([
+      attachment.x +
+        attachment.tx * along -
+        attachment.ty * across,
+
+      attachment.y +
+        attachment.ty * along +
+        attachment.tx * across
+    ]);
+  }
+
+  return points;
 }
 
 function createBranchSegment(
@@ -2672,6 +3152,18 @@ function sampleBranchSegment(
 function createBranchLeafAssignments(
   count
 ) {
+  const arrangementSize =
+    settings.leafArrangement ===
+    "Opposite"
+      ? 2
+      : settings.leafArrangement ===
+          "Whorled"
+        ? 3
+        : 1;
+
+  const clusterCount =
+    ceil(count / arrangementSize);
+
   const weightedSegments =
     branchStructure.segments.map(
       segment => {
@@ -2701,13 +3193,13 @@ function createBranchLeafAssignments(
 
   for (
     let i = 0;
-    i < count;
+    i < clusterCount;
     i++
   ) {
     let target =
       (
         (i + 0.5) /
-        count
+        clusterCount
       ) *
       totalWeight;
 
@@ -2728,21 +3220,32 @@ function createBranchLeafAssignments(
       target -= item.weight;
     }
 
+    const evenProgress =
+      constrain(
+        target /
+          selected.weight,
+        0,
+        1
+      );
+
+    const clusteredProgress =
+      lerp(
+        evenProgress,
+        pow(evenProgress, 0.42),
+        settings.tipClustering
+      );
+
     const localProgress =
       lerp(
         0.12,
         0.9,
-        constrain(
-          target /
-            selected.weight,
-          0,
-          1
-        )
+        clusteredProgress
       );
 
     assignments.push({
       segment: selected.segment,
       progress: localProgress,
+      nodeOffset: random(-0.035, 0.035),
 
       maturity:
         (
@@ -2756,10 +3259,86 @@ function createBranchLeafAssignments(
     });
   }
 
-  return assignments.sort(
+  const orderedAssignments =
+    assignments.sort(
     (first, second) =>
       first.maturity -
       second.maturity
+  );
+
+  const expandedAssignments = [];
+
+  for (
+    const assignment
+    of orderedAssignments
+  ) {
+    for (
+      let arrangementIndex = 0;
+      arrangementIndex <
+        arrangementSize;
+      arrangementIndex++
+    ) {
+      expandedAssignments.push({
+        ...assignment,
+        arrangementIndex,
+        arrangementSize
+      });
+    }
+  }
+
+  return expandedAssignments.slice(
+    0,
+    count
+  );
+}
+
+function getLeafAttachmentAngle(
+  tangentAngle,
+  assignment,
+  leafIndex
+) {
+  const angle =
+    radians(settings.leafAngle);
+
+  if (
+    settings.leafArrangement ===
+    "Opposite"
+  ) {
+    return (
+      tangentAngle +
+      (
+        assignment.arrangementIndex === 0
+          ? -angle
+          : angle
+      )
+    );
+  }
+
+  if (
+    settings.leafArrangement ===
+    "Whorled"
+  ) {
+    const offsets = [
+      -angle,
+      angle,
+      Math.PI
+    ];
+
+    return (
+      tangentAngle +
+      offsets[
+        assignment.arrangementIndex
+      ]
+    );
+  }
+
+  return (
+    tangentAngle +
+    (
+      leafIndex % 2 === 0
+        ? -angle
+        : angle
+    )
   );
 }
 
@@ -2804,7 +3383,19 @@ function placeLeavesOnBranch() {
       const progress =
         constrain(
           assignment.progress +
-          random(-0.055, 0.055),
+          assignment.nodeOffset +
+          random(
+            -(
+              assignment.arrangementSize >
+              1
+                ? 0.01
+                : 0.045
+            ),
+            assignment.arrangementSize >
+            1
+              ? 0.01
+              : 0.045
+          ),
           0.08,
           0.94
         );
@@ -2820,11 +3411,6 @@ function placeLeavesOnBranch() {
             assignment.segment
         };
 
-      const side =
-        leafIndex % 2 === 0
-          ? -1
-          : 1;
-
       const tangentAngle =
         Math.atan2(
           attachment.ty,
@@ -2832,12 +3418,12 @@ function placeLeavesOnBranch() {
         );
 
       const outwardAngle =
-        tangentAngle +
-        side *
-        radians(
-          settings.leafAngle +
-          random(-10, 10)
-        );
+        getLeafAttachmentAngle(
+          tangentAngle,
+          assignment,
+          leafIndex
+        ) +
+        radians(random(-7, 7));
 
       const rotation =
         outwardAngle +
@@ -3314,6 +3900,12 @@ function drawBranchStructure() {
       )
     );
 
+    if (segment.junctionOutline) {
+      drawBrushPolygon(
+        segment.junctionOutline
+      );
+    }
+
     drawBrushPolygon(
       segment.outline
     );
@@ -3331,6 +3923,94 @@ function drawBranchStructure() {
       ),
       0.08
     );
+  }
+
+  drawBranchNodes(branchStroke);
+}
+
+function drawBranchNodes(branchStroke) {
+  const drawnNodes = new Set();
+
+  brush.noFill();
+  brush.noWash();
+  brush.noHatch();
+
+  for (
+    let i = 0;
+    i < leaves.length;
+    i++
+  ) {
+    const leaf = leaves[i];
+    const attachment =
+      leaf.branchAttachment;
+
+    const key =
+      `${round(attachment.x / 3)}:` +
+      `${round(attachment.y / 3)}`;
+
+    if (drawnNodes.has(key)) {
+      continue;
+    }
+
+    drawnNodes.add(key);
+
+    const nodeHalfWidth =
+      leaf.branchProgress > 0.62
+        ? 2.2
+        : 1.6;
+
+    const nodePath = [
+      [
+        attachment.x -
+          attachment.ty *
+          nodeHalfWidth,
+
+        attachment.y +
+          attachment.tx *
+          nodeHalfWidth
+      ],
+      [
+        attachment.x +
+          attachment.ty *
+          nodeHalfWidth,
+
+        attachment.y -
+          attachment.tx *
+          nodeHalfWidth
+      ]
+    ];
+
+    drawTaperedBrushPath(
+      nodePath,
+      branchStroke,
+      0.58,
+      0.32
+    );
+
+    if (
+      leaf.branchProgress > 0.72 &&
+      i % 4 === 0
+    ) {
+      const budPath = [
+        [attachment.x, attachment.y],
+        [
+          attachment.x -
+            attachment.ty * 4 -
+            attachment.tx * 1.5,
+
+          attachment.y +
+            attachment.tx * 4 -
+            attachment.ty * 1.5
+        ]
+      ];
+
+      drawTaperedBrushPath(
+        budPath,
+        branchStroke,
+        0.55,
+        0.12
+      );
+    }
   }
 }
 
