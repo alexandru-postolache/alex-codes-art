@@ -1294,6 +1294,13 @@ function buildStylizedLeafGeometry(leaf) {
       leaf.stemLength
   ];
 
+  const stemOutline =
+    buildStemOutline(
+      leaf,
+      base,
+      stemEnd
+    );
+
   return {
     tip,
     base,
@@ -1311,8 +1318,180 @@ function buildStylizedLeafGeometry(leaf) {
     leftBorder,
     centerline,
 
-    stemEnd
+    stemEnd,
+    stemOutline
   };
+}
+
+function buildStemOutline(
+  leaf,
+  base,
+  stemEnd
+) {
+  const directionX =
+    stemEnd[0] - base[0];
+
+  const directionY =
+    stemEnd[1] - base[1];
+
+  const directionLength =
+    Math.hypot(
+      directionX,
+      directionY
+    ) || 1;
+
+  const unitX =
+    directionX / directionLength;
+
+  const unitY =
+    directionY / directionLength;
+
+  const normalX = -unitY;
+  const normalY = unitX;
+
+  const curveOffset =
+    constrain(
+      leaf.bend * 0.08,
+      -leaf.stemLength * 0.12,
+      leaf.stemLength * 0.12
+    );
+
+  const control = [
+    lerp(base[0], stemEnd[0], 0.52) +
+      normalX * curveOffset,
+
+    lerp(base[1], stemEnd[1], 0.52) +
+      normalY * curveOffset
+  ];
+
+  const centerPoints =
+    sampleQuadraticBezier(
+      base,
+      control,
+      stemEnd,
+      18
+    );
+
+  const contactHalfWidth =
+    constrain(
+      leaf.width * 0.025,
+      0.55,
+      1.1
+    );
+
+  const freeHalfWidth =
+    constrain(
+      leaf.width * 0.11,
+      2.2,
+      4.6
+    );
+
+  const leftSide = [];
+  const rightSide = [];
+
+  for (
+    let i = 0;
+    i < centerPoints.length;
+    i++
+  ) {
+    const previous =
+      centerPoints[
+        max(0, i - 1)
+      ];
+
+    const next =
+      centerPoints[
+        min(
+          centerPoints.length - 1,
+          i + 1
+        )
+      ];
+
+    let tangentX =
+      next[0] - previous[0];
+
+    let tangentY =
+      next[1] - previous[1];
+
+    const tangentLength =
+      Math.hypot(
+        tangentX,
+        tangentY
+      ) || 1;
+
+    tangentX /= tangentLength;
+    tangentY /= tangentLength;
+
+    const sideX = -tangentY;
+    const sideY = tangentX;
+
+    const progress =
+      i /
+      (centerPoints.length - 1);
+
+    const easedProgress =
+      progress *
+      progress *
+      (3 - 2 * progress);
+
+    const halfWidth =
+      lerp(
+        contactHalfWidth,
+        freeHalfWidth,
+        easedProgress
+      );
+
+    leftSide.push([
+      centerPoints[i][0] +
+        sideX * halfWidth,
+
+      centerPoints[i][1] +
+        sideY * halfWidth
+    ]);
+
+    rightSide.push([
+      centerPoints[i][0] -
+        sideX * halfWidth,
+
+      centerPoints[i][1] -
+        sideY * halfWidth
+    ]);
+  }
+
+  const endAngle =
+    Math.atan2(unitY, unitX);
+
+  const endCap = [];
+
+  for (
+    let i = 1;
+    i < 6;
+    i++
+  ) {
+    const angle =
+      endAngle +
+      lerp(
+        Math.PI / 2,
+        -Math.PI / 2,
+        i / 6
+      );
+
+    endCap.push([
+      stemEnd[0] +
+        cos(angle) *
+        freeHalfWidth,
+
+      stemEnd[1] +
+        sin(angle) *
+        freeHalfWidth
+    ]);
+  }
+
+  return [
+    ...leftSide,
+    ...endCap,
+    ...rightSide.reverse()
+  ];
 }
 
 // ==================================================
@@ -2478,19 +2657,52 @@ function drawStylizedLeaf(leaf) {
   const centerBaseWeight =
     0.68 / leaf.scale;
 
-  // Wider external stem.
-  const stemBaseWeight =
-   0.4  / leaf.scale;
-
-  const stemEndWeight =
-    0.8 / leaf.scale;
-
   // Side vein weights.
   const sideVeinBaseWeight =
     0.36 / leaf.scale;
 
   const sideVeinEndWeight =
     0.055 / leaf.scale;
+
+  // ----------------------------------------------
+  // Broad, tapered petiole
+  // ----------------------------------------------
+
+  const stemFillColor =
+    mixHex(
+      leaf.fillColor,
+      leaf.veinColor,
+      0.42
+    );
+
+  brush.noHatch();
+  brush.noWash();
+
+  brush.fill(
+    stemFillColor,
+    min(210, leaf.fillOpacity + 28)
+  );
+
+  brush.fillBleed(
+    leaf.bleed * 0.7,
+    "out"
+  );
+
+  brush.fillTexture(
+    leaf.texture * 0.72,
+    0.22,
+    true
+  );
+
+  brush.set(
+    "HB",
+    leaf.veinColor,
+    0.55 / leaf.scale
+  );
+
+  drawBrushPolygon(
+    geometry.stemOutline
+  );
 
   // ----------------------------------------------
   // Main watercolor body
@@ -2568,27 +2780,6 @@ function drawStylizedLeaf(leaf) {
     );
   }
 
-  // ----------------------------------------------
-  // Wider, tapered external stem
-  // ----------------------------------------------
-
-  const stemPoints =
-    sampleStraightPath(
-      geometry.base,
-      geometry.stemEnd,
-      14
-    );
-
-  /*
-   * The stem is widest where it joins the blade,
-   * then tapers toward the free endpoint.
-   */
-  drawTaperedBrushPath(
-    stemPoints,
-    leaf.veinColor,
-    stemBaseWeight,
-    stemEndWeight
-  );
 }
 
 // ==================================================
@@ -2650,39 +2841,6 @@ function drawTaperedBrushPath(
       points[i + 1][1]
     );
   }
-}
-
-function sampleStraightPath(
-  start,
-  end,
-  resolution
-) {
-  const points = [];
-
-  for (
-    let i = 0;
-    i <= resolution;
-    i++
-  ) {
-    const amount =
-      i / resolution;
-
-    points.push([
-      lerp(
-        start[0],
-        end[0],
-        amount
-      ),
-
-      lerp(
-        start[1],
-        end[1],
-        amount
-      )
-    ]);
-  }
-
-  return points;
 }
 
 // ==================================================
