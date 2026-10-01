@@ -56,6 +56,12 @@ const SEASONS = [
   "Winter"
 ];
 
+const EXPORT_SIZES = [
+  "600",
+  "1800",
+  "3000"
+];
+
 const SEASON_LEAF_COLORS = {
   Spring: [
     "#b7d58a",
@@ -161,7 +167,9 @@ const DEFAULT_SETTINGS = {
   tipClustering: 0.68,
   leafAngle: 48,
   rearLeaves: 0.25,
-  branchColor: "#735b3e"
+  branchColor: "#735b3e",
+  transparentBackground: false,
+  exportSize: "1800"
 };
 
 const settings = createSettingsFromUrl();
@@ -202,7 +210,11 @@ function regenerate() {
   document.body.style.backgroundColor =
     settings.background;
 
-  background(settings.background);
+  if (settings.transparentBackground) {
+    clear();
+  } else {
+    background(settings.background);
+  }
 
   if (
     settings.composition ===
@@ -340,10 +352,7 @@ function keyPressed() {
 
   // Save the result.
   if (key === "s" || key === "S") {
-    saveCanvas(
-      `stylized-leaves-${settings.seed}`,
-      "png"
-    );
+    saveHighResolutionPNG();
   }
 }
 
@@ -761,6 +770,33 @@ function setupControls() {
     }
   );
 
+  const exportFolder =
+    pane.addFolder({
+      title: "Export",
+      expanded: false
+    });
+
+  exportFolder.addInput(
+    settings,
+    "exportSize",
+    {
+      label: "PNG size",
+      options: {
+        "Screen · 600 px": "600",
+        "Print · 1800 px": "1800",
+        "Poster · 3000 px": "3000"
+      }
+    }
+  );
+
+  exportFolder.addInput(
+    settings,
+    "transparentBackground",
+    {
+      label: "transparent"
+    }
+  );
+
   pane.addButton({
     title: "New seed"
   }).on("click", useNewSeed);
@@ -771,12 +807,11 @@ function setupControls() {
 
   pane.addButton({
     title: "Save PNG"
-  }).on("click", () => {
-    saveCanvas(
-      `stylized-leaves-${settings.seed}`,
-      "png"
-    );
-  });
+  }).on("click", saveHighResolutionPNG);
+
+  pane.addButton({
+    title: "Save SVG"
+  }).on("click", exportSVG);
 
   pane.on("change", scheduleRegenerate);
 
@@ -1068,6 +1103,19 @@ function createSettingsFromUrl() {
       parameters,
       "branchColor",
       DEFAULT_SETTINGS.branchColor
+    ),
+    transparentBackground:
+      getBooleanParameter(
+        parameters,
+        "transparent",
+        DEFAULT_SETTINGS
+          .transparentBackground
+      ),
+    exportSize: getChoiceParameter(
+      parameters,
+      "exportSize",
+      EXPORT_SIZES,
+      DEFAULT_SETTINGS.exportSize
     )
   };
 }
@@ -1111,6 +1159,21 @@ function getPaletteParameter(parameters) {
   )
     ? palette
     : DEFAULT_SETTINGS.palette;
+}
+
+function getBooleanParameter(
+  parameters,
+  name,
+  fallback
+) {
+  const value =
+    parameters.get(name);
+
+  if (value === null) {
+    return fallback;
+  }
+
+  return value === "true";
 }
 
 function getChoiceParameter(
@@ -1201,7 +1264,10 @@ function updateSettingsInUrl() {
     tipCluster: settings.tipClustering,
     leafAngle: settings.leafAngle,
     rearLeaves: settings.rearLeaves,
-    branchColor: settings.branchColor
+    branchColor: settings.branchColor,
+    transparent:
+      settings.transparentBackground,
+    exportSize: settings.exportSize
   };
 
   for (
@@ -1239,6 +1305,339 @@ function loadSettingsFromUrl() {
 
   pane.refresh();
   regenerate();
+}
+
+function saveHighResolutionPNG() {
+  const exportPixels =
+    Number(settings.exportSize);
+
+  const output =
+    document.createElement("canvas");
+
+  output.width = exportPixels;
+  output.height = exportPixels;
+
+  const context =
+    output.getContext("2d");
+
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+
+  if (!settings.transparentBackground) {
+    context.fillStyle =
+      settings.background;
+
+    context.fillRect(
+      0,
+      0,
+      exportPixels,
+      exportPixels
+    );
+  }
+
+  const sourceCanvases = [
+    ...document.querySelectorAll(
+      "canvas"
+    )
+  ].filter(source => {
+    const style =
+      getComputedStyle(source);
+
+    return (
+      style.display !== "none" &&
+      source.offsetWidth > 0 &&
+      source.offsetHeight > 0
+    );
+  });
+
+  for (const source of sourceCanvases) {
+    context.drawImage(
+      source,
+      0,
+      0,
+      exportPixels,
+      exportPixels
+    );
+  }
+
+  output.toBlob(blob => {
+    if (blob === null) {
+      return;
+    }
+
+    downloadBlob(
+      blob,
+      `watercolor-leaves-${settings.seed}` +
+      `-${exportPixels}px.png`
+    );
+  }, "image/png");
+}
+
+function exportSVG() {
+  const elements = [];
+
+  if (!settings.transparentBackground) {
+    elements.push(
+      `<rect width="600" height="600" ` +
+      `fill="${settings.background}"/>`
+    );
+  }
+
+  if (
+    settings.composition ===
+    "Branch" &&
+    branchStructure !== null
+  ) {
+    const rearLeaves =
+      leaves.filter(
+        leaf =>
+          leaf.branchLayer === "rear"
+      );
+
+    const frontLeaves =
+      leaves.filter(
+        leaf =>
+          leaf.branchLayer === "front"
+      );
+
+    for (const leaf of rearLeaves) {
+      elements.push(
+        createLeafSVG(leaf)
+      );
+    }
+
+    elements.push(
+      createBranchSVG()
+    );
+
+    for (const leaf of frontLeaves) {
+      elements.push(
+        createLeafSVG(leaf)
+      );
+    }
+  } else {
+    for (const leaf of leaves) {
+      elements.push(
+        createLeafSVG(leaf)
+      );
+    }
+  }
+
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" ` +
+    `viewBox="0 0 600 600" ` +
+    `width="600" height="600">` +
+    elements.join("") +
+    `</svg>`;
+
+  downloadBlob(
+    new Blob(
+      [svg],
+      {
+        type:
+          "image/svg+xml;charset=utf-8"
+      }
+    ),
+    `watercolor-leaves-${settings.seed}.svg`
+  );
+}
+
+function createBranchSVG() {
+  const elements = [];
+  const orderedSegments = [
+    ...branchStructure.segments
+  ].sort(
+    (first, second) =>
+      second.depth - first.depth
+  );
+
+  for (
+    const segment
+    of orderedSegments
+  ) {
+    const fillColor =
+      getBranchSegmentColor(segment);
+
+    if (segment.junctionOutline) {
+      elements.push(
+        createSVGPolygon(
+          segment.junctionOutline,
+          fillColor,
+          0.72,
+          darkenHex(fillColor, 0.35),
+          0.45
+        )
+      );
+    }
+
+    elements.push(
+      createSVGPolygon(
+        segment.outline,
+        fillColor,
+        0.74,
+        darkenHex(fillColor, 0.42),
+        max(
+          0.24,
+          0.7 -
+            segment.depth * 0.18
+        )
+      )
+    );
+  }
+
+  return elements.join("");
+}
+
+function createLeafSVG(leaf) {
+  const elements = [];
+
+  const transformPoints = points =>
+    points.map(
+      point =>
+        transformLeafPoint(
+          leaf,
+          point
+        )
+    );
+
+  elements.push(
+    createSVGPolyline(
+      transformPoints(
+        leaf.geometry.stemCenterline
+      ),
+      leaf.veinColor,
+      0.9
+    )
+  );
+
+  elements.push(
+    createSVGPolygon(
+      transformPoints(
+        createLeafOutline(
+          leaf.geometry
+        )
+      ),
+      leaf.fillColor,
+      leaf.fillOpacity / 255,
+      leaf.strokeColor,
+      0.72
+    )
+  );
+
+  elements.push(
+    createSVGPolyline(
+      transformPoints(
+        leaf.geometry.centerline
+      ),
+      leaf.veinColor,
+      0.5
+    )
+  );
+
+  for (const vein of leaf.veins) {
+    const curve =
+      calculateVeinCurve(
+        leaf,
+        vein
+      );
+
+    if (curve !== null) {
+      elements.push(
+        createSVGPolyline(
+          transformPoints(curve),
+          leaf.veinColor,
+          0.28
+        )
+      );
+    }
+  }
+
+  return elements.join("");
+}
+
+function transformLeafPoint(
+  leaf,
+  point
+) {
+  const scaledX =
+    point[0] * leaf.scale;
+
+  const scaledY =
+    point[1] * leaf.scale;
+
+  const cosine = cos(leaf.rotation);
+  const sine = sin(leaf.rotation);
+
+  return [
+    leaf.x +
+      scaledX * cosine -
+      scaledY * sine,
+
+    leaf.y +
+      scaledX * sine +
+      scaledY * cosine
+  ];
+}
+
+function createSVGPolygon(
+  points,
+  fillColor,
+  opacity,
+  strokeColor,
+  strokeWidth
+) {
+  return (
+    `<polygon points="` +
+    createSVGPointList(points) +
+    `" fill="${fillColor}" ` +
+    `fill-opacity="${opacity}" ` +
+    `stroke="${strokeColor}" ` +
+    `stroke-width="${strokeWidth}" ` +
+    `stroke-linejoin="round"/>`
+  );
+}
+
+function createSVGPolyline(
+  points,
+  colorValue,
+  strokeWidth
+) {
+  return (
+    `<polyline points="` +
+    createSVGPointList(points) +
+    `" fill="none" ` +
+    `stroke="${colorValue}" ` +
+    `stroke-width="${strokeWidth}" ` +
+    `stroke-linecap="round" ` +
+    `stroke-linejoin="round"/>`
+  );
+}
+
+function createSVGPointList(points) {
+  return points
+    .map(
+      point =>
+        `${point[0].toFixed(2)},` +
+        `${point[1].toFixed(2)}`
+    )
+    .join(" ");
+}
+
+function downloadBlob(blob, filename) {
+  const url =
+    URL.createObjectURL(blob);
+
+  const link =
+    document.createElement("a");
+
+  link.href = url;
+  link.download = filename;
+  link.click();
+
+  setTimeout(
+    () => URL.revokeObjectURL(url),
+    1000
+  );
 }
 
 // ==================================================
@@ -4356,7 +4755,10 @@ function drawBranchNodes(branchStroke) {
 }
 
 function drawPaperTexture() {
-  if (settings.paperTexture <= 0) {
+  if (
+    settings.paperTexture <= 0 ||
+    settings.transparentBackground
+  ) {
     return;
   }
 

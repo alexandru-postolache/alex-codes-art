@@ -30,7 +30,18 @@ Four composition presets are available:
 - `Specimen`: a botanical study grid
 - `Branch`: a mature tree limb with recursively tapered branches and leaves on smaller twigs
 
-The Branch folder selects one consistent leaf family and controls primary branch count, recursive branch levels, curvature, thickness, leaf attachment angle, front/back layering, and branch color. Leaf placement favors smaller twigs, and leaves decrease in size toward terminal sections.
+The Branch folder selects one consistent leaf family and controls:
+
+- alternate, opposite, or whorled leaf arrangements
+- right, left, top, or bottom canvas entry
+- sparse, balanced, or dense growth
+- recursive levels, spread, curvature, gravity, and wind
+- tip clustering, leaf angle, front/back layering, and branch color
+- Spring, Summer, Autumn, and Winter states
+
+Growth uses a dominant continuation branch, thinner lateral branches, crossing rejection, smooth junction collars, and progressively smaller terminal growth. Leaf placement favors smaller twigs. Branch rendering includes directional bark lines, knots, buds, scars, young-twig color variation, and occasional broken tips.
+
+The Export folder provides 600 px, 1800 px, and 3000 px PNG presets, transparent backgrounds, and SVG geometry export.
 
 Every visible setting is stored in the page URL, making the complete composition reproducible and shareable.
 
