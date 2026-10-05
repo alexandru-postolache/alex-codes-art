@@ -5,7 +5,8 @@ html, body {
   height: 100%;
   overflow: hidden;
 }
-canvas {
+/* Scope to the sketch canvas. Tweakpane's color picker is also a canvas. */
+canvas.p5Canvas {
   display: block;
   position: fixed;
   top: 0;
