@@ -1,6 +1,5 @@
 (function initContourParams() {
   const PARAM_DEFAULTS = {
-    fieldPreset: 'perlin',
     noiseScale: 0.01,
     noiseSeed: 42,
     noiseDetail: 4,
@@ -42,8 +41,6 @@
   window.contourParams = { ...PARAM_DEFAULTS };
   window.contourThresholdValues = computeThresholdValues(window.contourParams);
   window.computeContourThresholdValues = computeThresholdValues;
-
-  window.contourFieldPresets = ['perlin', 'linear', 'radial'];
 
   window.contourColorPalettes = [
     'tints',

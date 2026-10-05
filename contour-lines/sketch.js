@@ -201,110 +201,15 @@ function ensureGridBuffers(rows, cols) {
   invalidateFieldCache();
 }
 
-function seedHash(seed, channel = 0) {
-  const n = Math.sin((seed + 1) * 12.9898 + channel * 78.233) * 43758.5453;
-  return n - Math.floor(n);
-}
-
-function getPresetCenter(params, canvasWidth, canvasHeight) {
-  const seed = Math.floor(params.noiseSeed ?? 0);
-  return {
-    x: canvasWidth * (0.2 + seedHash(seed, 0) * 0.6),
-    y: canvasHeight * (0.2 + seedHash(seed, 1) * 0.6),
-  };
-}
-
-function getPresetPhase(params) {
-  return seedHash(Math.floor(params.noiseSeed ?? 0), 2) * TWO_PI;
-}
-
-function getLinearDirection(params) {
-  const angle = seedHash(Math.floor(params.noiseSeed ?? 0), 3) * TWO_PI;
-  return { x: Math.cos(angle), y: Math.sin(angle) };
-}
-
-function sampleFbm(gx, gy, z, detail, falloff, scale) {
-  let value = 0;
-  let amplitude = 1;
-  let frequency = 1;
-  let total = 0;
-
-  for (let octave = 0; octave < detail; octave++) {
-    value += noise(gx * scale * frequency, gy * scale * frequency, z + octave * 17.17) * amplitude;
-    total += amplitude;
-    amplitude *= falloff;
-    frequency *= 2;
-  }
-
-  return total > 0 ? value / total : 0;
-}
-
-function samplePerlinField(gx, gy, noiseScale, params) {
-  return noise(gx * noiseScale, gy * noiseScale, nz);
-}
-
-function sampleLinearField(px, py, noiseScale, params, animPhase) {
-  const direction = getLinearDirection(params);
-  const phase = getPresetPhase(params);
-  const frequency = noiseScale * 2;
-  const coord = (px * direction.x + py * direction.y) * frequency + phase + animPhase;
-  return 0.5 + 0.5 * Math.sin(coord);
-}
-
-function sampleRadialField(px, py, noiseScale, params, canvasWidth, canvasHeight, animPhase) {
-  const center = getPresetCenter(params, canvasWidth, canvasHeight);
-  const dx = px - center.x;
-  const dy = py - center.y;
-  const radius = Math.sqrt(dx * dx + dy * dy);
-  const phase = getPresetPhase(params);
-  const frequency = noiseScale * 2;
-  return 0.5 + 0.5 * Math.sin(radius * frequency + phase + animPhase);
-}
-
-function sampleStructuredDistortion(gx, gy, params, noiseScale) {
-  const detail = Math.max(1, Math.round(params.noiseDetail ?? 4));
-  if (detail <= 1) {
-    return 0;
-  }
-
-  const falloff = params.noiseFalloff ?? 0.5;
-  const fbm = sampleFbm(gx, gy, nz, detail, falloff, noiseScale);
-  const strength = falloff * 0.4 * (detail - 1) / 7;
-  return (fbm - 0.5) * 2 * strength;
-}
-
-function sampleBaseField(px, py, gx, gy, noiseScale, params, canvasWidth, canvasHeight) {
-  const preset = params.fieldPreset ?? 'perlin';
-  const animPhase = nz * TWO_PI;
-
-  switch (preset) {
-    case 'linear':
-      return sampleLinearField(px, py, noiseScale, params, animPhase);
-    case 'radial':
-      return sampleRadialField(px, py, noiseScale, params, canvasWidth, canvasHeight, animPhase);
-    case 'perlin':
-    default:
-      return samplePerlinField(gx, gy, noiseScale, params);
-  }
-}
-
-function sampleFieldValue(px, py, gx, gy, noiseScale, params, canvasWidth, canvasHeight) {
-  const preset = params.fieldPreset ?? 'perlin';
-  let value = sampleBaseField(px, py, gx, gy, noiseScale, params, canvasWidth, canvasHeight);
-
-  if (preset !== 'perlin') {
-    value += sampleStructuredDistortion(gx, gy, params, noiseScale);
-  }
-
-  return constrain(value, 0, 1);
+function sampleFieldValue(gx, gy, noiseScale) {
+  return constrain(noise(gx * noiseScale, gy * noiseScale, nz), 0, 1);
 }
 
 function buildFieldCacheKey(params, rows, cols, canvasWidth, canvasHeight) {
   const mouseKey = params.mouseInfluence
     ? `${mouseX}|${mouseY}|${params.mouseStrength}|${params.mouseRadius}`
     : 'off';
-  const preset = params.fieldPreset ?? 'perlin';
-  return `${preset}|${rows}|${cols}|${canvasWidth}|${canvasHeight}|${params.noiseScale}|${params.noiseSeed}|${params.noiseDetail}|${params.noiseFalloff}|${nz}|${mouseKey}`;
+  return `${rows}|${cols}|${canvasWidth}|${canvasHeight}|${params.noiseScale}|${params.noiseSeed}|${params.noiseDetail}|${params.noiseFalloff}|${nz}|${mouseKey}`;
 }
 
 function getOrBuildFieldGrid(rows, cols, noiseScale, cellWidth, cellHeight, params) {
@@ -322,7 +227,7 @@ function getOrBuildFieldGrid(rows, cols, noiseScale, cellWidth, cellHeight, para
     for (let x = 0; x < cols; x++) {
       const i = y * cols + x;
       const px = x * cellWidth;
-      const value = sampleFieldValue(px, py, x, y, noiseScale, params, width, height);
+      const value = sampleFieldValue(x, y, noiseScale);
       noiseGridBuffer[i] = value;
       fieldGridBuffer[i] = value + mouseInfluenceAt(px, py, params);
     }
