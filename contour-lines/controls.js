@@ -174,8 +174,21 @@ function isTypingTarget(target) {
   return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
 }
 
+function setHintsHidden(hidden) {
+  if (typeof window.setContourHintsVisible === 'function') {
+    window.setContourHintsVisible(!hidden);
+    return;
+  }
+
+  const hintsEl = document.getElementById('keyboard-hints');
+  if (hintsEl) {
+    hintsEl.classList.toggle('is-hidden', hidden);
+  }
+}
+
 function setPaneHidden(hidden) {
   pane.hidden = hidden;
+  setHintsHidden(hidden);
 }
 
 function toggleAnimationPause() {

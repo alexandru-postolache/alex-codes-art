@@ -59,6 +59,7 @@ main {
   backdrop-filter: blur(6px);
   pointer-events: none;
   user-select: none;
+  transition: opacity 0.2s ease, visibility 0s linear;
 }
 
 .keyboard-hints__title {
@@ -94,5 +95,6 @@ main {
 
 .keyboard-hints.is-hidden {
   opacity: 0;
-  transition: opacity 0.2s ease;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0s linear 0.2s;
 }
