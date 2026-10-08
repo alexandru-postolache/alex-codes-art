@@ -29,12 +29,21 @@ let rawSegments = [];
 let atomicEdges = [];
 let intersectionStations = [];
 
+let selectedSetIndex = 0;
+
 /* =========================================================
    SETUP AND DATA
    ========================================================= */
 
 function setup() {
-  createCanvas(600, 600);
+  const canvas = createCanvas(600, 600);
+
+  canvas.elt.addEventListener(
+    "contextmenu",
+    (event) => {
+      event.preventDefault();
+    }
+  );
 
   cellWidth = width / numberOfCols;
   cellHeight = height / numberOfRows;
@@ -137,6 +146,7 @@ function renderScene() {
   drawEndOfLineCaps();
   drawIntersectionStations();
   drawOriginalStations();
+  drawRouteLegend();
 }
 
 /* =========================================================
@@ -625,8 +635,8 @@ function drawBundledLines() {
    ========================================================= */
 
 /**
- * Draws a terminus cap at the first and last point of
- * every route.
+ * Draws a terminus cap just past the first and last
+ * station of every route.
  */
 function drawEndOfLineCaps() {
   for (
@@ -647,8 +657,9 @@ function drawEndOfLineCaps() {
       points[points.length - 1];
 
     drawEndOfLineCap(
-      firstStation,
-      setIndex
+      points,
+      setIndex,
+      true
     );
 
     /*
@@ -662,62 +673,59 @@ function drawEndOfLineCaps() {
       )
     ) {
       drawEndOfLineCap(
-        lastStation,
-        setIndex
+        points,
+        setIndex,
+        false
       );
     }
   }
 }
 
 /**
- * Draws one perpendicular terminus cap.
+ * Draws one perpendicular terminus cap a short distance
+ * past the station, with a stem connecting them.
  */
 function drawEndOfLineCap(
-  station,
-  setIndex
+  points,
+  setIndex,
+  atStart
 ) {
+  const station = atStart
+    ? points[0]
+    : points[points.length - 1];
+
+  const outward =
+    getTerminusDirection(
+      points,
+      atStart
+    );
+
+  if (outward === null) {
+    return;
+  }
+
   const terminalEdge =
     findTerminalEdge(
       station,
-      setIndex
+      setIndex,
+      outward
     );
-
-  if (terminalEdge === null) {
-    return;
-  }
-
-  const edge =
-    terminalEdge.edge;
-
-  const dx =
-    edge.x2 - edge.x1;
-
-  const dy =
-    edge.y2 - edge.y1;
-
-  const edgeLength =
-    sqrt(dx * dx + dy * dy);
-
-  if (edgeLength < EPSILON) {
-    return;
-  }
-
-  const perpendicularX =
-    -dy / edgeLength;
-
-  const perpendicularY =
-    dx / edgeLength;
 
   /*
    * Shared routes are offset into individual lanes.
    * Position the cap at this route's displayed lane.
    */
   const laneCenter =
-    getRouteLanePositionAtPoint(
-      station,
-      edge,
-      setIndex
-    );
+    terminalEdge === null
+      ? {
+          x: station.x,
+          y: station.y
+        }
+      : getRouteLanePositionAtPoint(
+          station,
+          terminalEdge.edge,
+          setIndex
+        );
 
   const stationRoutes =
     mergeRouteIndices(
@@ -731,9 +739,30 @@ function drawEndOfLineCap(
       stationRoutes
     );
 
+  const extension =
+    getEndOfLineExtension(
+      stationDiameter
+    );
+
+  const capCenter = {
+    x:
+      laneCenter.x +
+      outward.x * extension,
+
+    y:
+      laneCenter.y +
+      outward.y * extension
+  };
+
+  const perpendicularX =
+    -outward.y;
+
+  const perpendicularY =
+    outward.x;
+
   /*
    * Make the cap wider than the station so that both ends
-   * remain visible when the station is drawn on top.
+   * remain visible beside the route stem.
    */
   const capLength =
     stationDiameter * 1.45;
@@ -748,16 +777,23 @@ function drawEndOfLineCap(
   strokeCap(SQUARE);
 
   line(
-    laneCenter.x -
+    laneCenter.x,
+    laneCenter.y,
+    capCenter.x,
+    capCenter.y
+  );
+
+  line(
+    capCenter.x -
       perpendicularX * halfCapLength,
 
-    laneCenter.y -
+    capCenter.y -
       perpendicularY * halfCapLength,
 
-    laneCenter.x +
+    capCenter.x +
       perpendicularX * halfCapLength,
 
-    laneCenter.y +
+    capCenter.y +
       perpendicularY * halfCapLength
   );
 
@@ -765,13 +801,100 @@ function drawEndOfLineCap(
 }
 
 /**
+ * How far past the station center the terminus bar sits.
+ *
+ * The bar clears the station circle by about one route
+ * width.
+ */
+function getEndOfLineExtension(
+  stationDiameter
+) {
+  return (
+    stationDiameter / 2 +
+    getRouteWidth()
+  );
+}
+
+/**
+ * Unit vector pointing out of the route at one terminus.
+ */
+function getTerminusDirection(
+  points,
+  atStart
+) {
+  if (!points || points.length < 2) {
+    return null;
+  }
+
+  const origin = atStart
+    ? points[0]
+    : points[points.length - 2];
+
+  const destination = atStart
+    ? points[1]
+    : points[points.length - 1];
+
+  const segments =
+    createConnectionSegments(
+      origin.x,
+      origin.y,
+      destination.x,
+      destination.y,
+      0,
+      0
+    );
+
+  if (segments.length === 0) {
+    return null;
+  }
+
+  const segment = atStart
+    ? segments[0]
+    : segments[segments.length - 1];
+
+  let dx =
+    segment.x2 - segment.x1;
+
+  let dy =
+    segment.y2 - segment.y1;
+
+  const length =
+    sqrt(dx * dx + dy * dy);
+
+  if (length < EPSILON) {
+    return null;
+  }
+
+  dx /= length;
+  dy /= length;
+
+  if (atStart) {
+    return {
+      x: -dx,
+      y: -dy
+    };
+  }
+
+  return {
+    x: dx,
+    y: dy
+  };
+}
+
+/**
  * Finds an atomic edge used by a route that ends at the
  * supplied station.
+ *
+ * When several edges meet there, the one aligned with the
+ * outward terminus direction is preferred.
  */
 function findTerminalEdge(
   station,
-  setIndex
+  setIndex,
+  direction
 ) {
+  let fallback = null;
+
   for (const edge of atomicEdges) {
     if (
       !edge.setIndices.includes(setIndex)
@@ -801,16 +924,53 @@ function findTerminalEdge(
         edgeEnd
       );
 
-    if (matchesStart || matchesEnd) {
-      return {
-        edge,
-        matchesStart,
-        matchesEnd
-      };
+    if (!matchesStart && !matchesEnd) {
+      continue;
+    }
+
+    const candidate = {
+      edge,
+      matchesStart,
+      matchesEnd
+    };
+
+    if (fallback === null) {
+      fallback = candidate;
+    }
+
+    if (!direction) {
+      continue;
+    }
+
+    const edgeDx =
+      edge.x2 - edge.x1;
+
+    const edgeDy =
+      edge.y2 - edge.y1;
+
+    const edgeLength =
+      sqrt(
+        edgeDx * edgeDx +
+          edgeDy * edgeDy
+      );
+
+    if (edgeLength < EPSILON) {
+      continue;
+    }
+
+    const alignment = abs(
+      (edgeDx / edgeLength) *
+        direction.x +
+        (edgeDy / edgeLength) *
+          direction.y
+    );
+
+    if (alignment > 0.9) {
+      return candidate;
     }
   }
 
-  return null;
+  return fallback;
 }
 
 /**
@@ -1567,20 +1727,329 @@ function drawGrid(
 }
 
 /* =========================================================
+   ROUTE LEGEND
+   ========================================================= */
+
+/**
+ * Draws the line key used to choose which route receives
+ * new stations.
+ */
+function drawRouteLegend() {
+  const layout =
+    getLegendLayout();
+
+  push();
+
+  fill(255);
+  stroke(190);
+  strokeWeight(1);
+
+  rect(
+    layout.x,
+    layout.y,
+    layout.width,
+    layout.height,
+    10
+  );
+
+  for (
+    let setIndex = 0;
+    setIndex < sets.length;
+    setIndex++
+  ) {
+    const bounds =
+      getLegendItemBounds(
+        layout,
+        setIndex
+      );
+
+    const selected =
+      setIndex === selectedSetIndex;
+
+    if (selected) {
+      fill(255);
+      stroke(25);
+      strokeWeight(2);
+
+      rect(
+        bounds.x - 5,
+        bounds.y - 5,
+        bounds.width + 10,
+        bounds.height + 10,
+        8
+      );
+    }
+
+    noStroke();
+    fill(setColors[setIndex]);
+
+    rect(
+      bounds.x,
+      bounds.y,
+      bounds.width,
+      bounds.height,
+      bounds.height / 2
+    );
+
+    fill(255);
+
+    circle(
+      bounds.x + bounds.width / 2,
+      bounds.y + bounds.height / 2,
+      bounds.height * 0.7
+    );
+  }
+
+  pop();
+}
+
+/**
+ * Legend panel geometry. Swatches sit in one row.
+ */
+function getLegendLayout() {
+  const itemWidth = 36;
+  const itemHeight = 12;
+  const gap = 14;
+  const padX = 14;
+  const padY = 14;
+  const count = sets.length;
+
+  const panelWidth =
+    padX * 2 +
+    count * itemWidth +
+    max(0, count - 1) * gap;
+
+  const panelHeight =
+    padY * 2 + itemHeight;
+
+  return {
+    x: 16,
+    y: 16,
+    width: panelWidth,
+    height: panelHeight,
+    itemWidth,
+    itemHeight,
+    gap,
+    padX,
+    padY
+  };
+}
+
+/**
+ * Bounds of one color swatch inside the legend.
+ */
+function getLegendItemBounds(
+  layout,
+  setIndex
+) {
+  return {
+    x:
+      layout.x +
+      layout.padX +
+      setIndex *
+        (layout.itemWidth + layout.gap),
+
+    y:
+      layout.y + layout.padY,
+
+    width: layout.itemWidth,
+    height: layout.itemHeight
+  };
+}
+
+/**
+ * Returns the route under a legend click, or -1.
+ */
+function legendIndexAt(x, y) {
+  const layout =
+    getLegendLayout();
+
+  for (
+    let setIndex = 0;
+    setIndex < sets.length;
+    setIndex++
+  ) {
+    const bounds =
+      getLegendItemBounds(
+        layout,
+        setIndex
+      );
+
+    const hitPadding = 6;
+
+    const inside =
+      x >= bounds.x - hitPadding &&
+      x <=
+        bounds.x +
+          bounds.width +
+          hitPadding &&
+      y >= bounds.y - hitPadding &&
+      y <=
+        bounds.y +
+          bounds.height +
+          hitPadding;
+
+    if (inside) {
+      return setIndex;
+    }
+  }
+
+  return -1;
+}
+
+/**
+ * True when the pointer is over the legend panel.
+ */
+function isInsideLegend(x, y) {
+  const layout =
+    getLegendLayout();
+
+  return (
+    x >= layout.x &&
+    x <= layout.x + layout.width &&
+    y >= layout.y &&
+    y <= layout.y + layout.height
+  );
+}
+
+/* =========================================================
    INTERACTION
    ========================================================= */
 
 /**
- * Mouse clicks add stations to the first route.
+ * Left click selects a legend line or adds a station.
+ * Right click deletes a station on the selected line.
+ *
+ * p5 2 reports the pressed button on mouseButton.left
+ * and mouseButton.right.
  */
-function mouseClicked() {
-  const setIndex = 0;
+function mousePressed(event) {
+  if (
+    mouseX < 0 ||
+    mouseY < 0 ||
+    mouseX >= width ||
+    mouseY >= height
+  ) {
+    return;
+  }
+
+  if (isRightButton(event)) {
+    if (
+      !isInsideLegend(mouseX, mouseY) &&
+      deleteSelectedStationAt(
+        mouseX,
+        mouseY
+      )
+    ) {
+      renderScene();
+    }
+
+    return false;
+  }
+
+  if (!isLeftButton(event)) {
+    return false;
+  }
+
+  const legendIndex =
+    legendIndexAt(mouseX, mouseY);
+
+  if (legendIndex !== -1) {
+    selectedSetIndex = legendIndex;
+    renderScene();
+    return false;
+  }
+
+  if (isInsideLegend(mouseX, mouseY)) {
+    return false;
+  }
 
   addPoint(
     mouseX,
     mouseY,
-    setIndex
+    selectedSetIndex
   );
 
   renderScene();
+  return false;
+}
+
+/**
+ * True when this press is the right mouse button.
+ */
+function isRightButton(event) {
+  if (mouseButton && mouseButton.right) {
+    return true;
+  }
+
+  return !!event && event.button === 2;
+}
+
+/**
+ * True when this press is the left mouse button.
+ */
+function isLeftButton(event) {
+  if (mouseButton && mouseButton.left) {
+    return true;
+  }
+
+  return !!event && event.button === 0;
+}
+
+/**
+ * Removes the selected line's station closest to a point.
+ */
+function deleteSelectedStationAt(x, y) {
+  const points =
+    sets[selectedSetIndex];
+
+  if (!points || points.length === 0) {
+    return false;
+  }
+
+  let closestIndex = -1;
+  let closestDistance = Infinity;
+
+  for (
+    let pointIndex = 0;
+    pointIndex < points.length;
+    pointIndex++
+  ) {
+    const point = points[pointIndex];
+
+    const distance = dist(
+      x,
+      y,
+      point.x,
+      point.y
+    );
+
+    const hitRadius =
+      getStationHitRadius(point);
+
+    if (
+      distance <= hitRadius &&
+      distance < closestDistance
+    ) {
+      closestDistance = distance;
+      closestIndex = pointIndex;
+    }
+  }
+
+  if (closestIndex === -1) {
+    return false;
+  }
+
+  points.splice(closestIndex, 1);
+  return true;
+}
+
+/**
+ * Click target around a station, with a little extra slop.
+ */
+function getStationHitRadius(point) {
+  return (
+    getStationDiameter(point) / 2 +
+    4
+  );
 }
