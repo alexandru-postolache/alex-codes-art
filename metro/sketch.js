@@ -10,9 +10,10 @@ const params = {
 };
 
 const LAND_COLOR = "#e6e2d8";
-const WATER_COLOR = "#6eb0d0";
-const PARK_COLOR = "#9fbf78";
-const WALL_COLOR = "#9c9890";
+const WATER_COLOR = "#b7ddd4";
+const PARK_COLOR = "#d3e6d0";
+const WALL_COLOR = "#c5c9ce";
+const SECTOR_COLOR = "#9aa3ab";
 
 const METRO_PALETTE = [
   "#D32F2F", // red
@@ -186,6 +187,7 @@ function canPlaceStation(x, y) {
 
 function renderScene() {
   drawTerrain();
+  drawSectorLines();
 
   rawSegments = mergeCloseParallelSegments(
     createAllLineSegments()
@@ -2681,7 +2683,8 @@ function createTerrain() {
   terrain = {
     waters: [],
     parks: [],
-    walls: []
+    walls: [],
+    sectors: []
   };
 
   for (
@@ -2715,6 +2718,8 @@ function createTerrain() {
   ) {
     terrain.walls.push(createWall());
   }
+
+  terrain.sectors = createSectorLines();
 }
 
 /**
@@ -3401,6 +3406,144 @@ function randomOrigin(shapeWidth, shapeHeight) {
 }
 
 /**
+ * A few long boundaries that split the sheet into sectors.
+ *
+ * Each one runs from edge to edge, with the same straight
+ * and 45-degree bends as the routes. Northampton and
+ * Providence draw these as pale dotted lines.
+ */
+function createSectorLines() {
+  return [
+    createSectorCrossing(true),
+    createSectorCrossing(true),
+    createSectorCrossing(false),
+    createSectorCrossing(false)
+  ];
+}
+
+/**
+ * One divider. Horizontal crossings run left to right.
+ * Vertical crossings run top to bottom.
+ */
+function createSectorCrossing(horizontal) {
+  const cell = gridSize();
+  const span = horizontal ? width : height;
+  const cross = horizontal ? height : width;
+
+  let crossPos = snapToGrid(
+    random(cross * 0.22, cross * 0.78)
+  );
+
+  crossPos = constrain(
+    crossPos,
+    cell * 3,
+    cross - cell * 3
+  );
+
+  const points = [
+    axisPoint(0, crossPos, horizontal)
+  ];
+
+  let along = 0;
+
+  while (along < span - cell * 0.5) {
+    const remaining = span - along;
+    const run = min(
+      remaining,
+      cell * randomInt(7, 15)
+    );
+
+    const kind = random();
+
+    if (kind < 0.62 || remaining < cell * 8) {
+      along = min(span, along + run);
+
+      points.push(
+        axisPoint(along, crossPos, horizontal)
+      );
+
+      continue;
+    }
+
+    if (kind < 0.82) {
+      const shift =
+        cell *
+        randomInt(4, 9) *
+        (random() < 0.5 ? 1 : -1);
+
+      const nextCross = constrain(
+        crossPos + shift,
+        cell * 2,
+        cross - cell * 2
+      );
+
+      if (abs(nextCross - crossPos) >= cell * 3) {
+        points.push(
+          axisPoint(along, nextCross, horizontal)
+        );
+
+        crossPos = nextCross;
+      }
+
+      along = min(span, along + run);
+
+      points.push(
+        axisPoint(along, crossPos, horizontal)
+      );
+
+      continue;
+    }
+
+    const sign = random() < 0.5 ? 1 : -1;
+
+    const room = sign > 0
+      ? cross - cell * 2 - crossPos
+      : crossPos - cell * 2;
+
+    const diag = min(run, room, remaining);
+    const steps = floor(diag / cell) * cell;
+
+    if (steps >= cell * 3) {
+      along += steps;
+      crossPos += sign * steps;
+
+      points.push(
+        axisPoint(along, crossPos, horizontal)
+      );
+    } else {
+      along = min(span, along + run);
+
+      points.push(
+        axisPoint(along, crossPos, horizontal)
+      );
+    }
+  }
+
+  const last = points[points.length - 1];
+  const endAlong = horizontal ? last.x : last.y;
+
+  if (endAlong < span - 0.5) {
+    points.push(
+      axisPoint(span, crossPos, horizontal)
+    );
+  }
+
+  return points;
+}
+
+/**
+ * A point on a sector line. `along` is x when the line
+ * travels horizontally, and y when it travels vertically.
+ */
+function axisPoint(along, cross, horizontal) {
+  if (horizontal) {
+    return { x: along, y: cross };
+  }
+
+  return { x: cross, y: along };
+}
+
+/**
  * Draws land, walls, parks, then water.
  */
 function drawTerrain() {
@@ -3424,6 +3567,92 @@ function drawTerrain() {
 
   for (const water of terrain.waters) {
     drawPolygon(water);
+  }
+}
+
+/**
+ * Pale gray dots along the sector boundaries.
+ * Routes are drawn later, so they stay on top.
+ */
+function drawSectorLines() {
+  if (
+    !terrain.sectors ||
+    terrain.sectors.length === 0
+  ) {
+    return;
+  }
+
+  const diameter = max(
+    1.6,
+    gridSize() * 0.16
+  );
+
+  const spacing = diameter * 2.8;
+
+  push();
+
+  noStroke();
+  fill(SECTOR_COLOR);
+
+  for (const line of terrain.sectors) {
+    drawDottedPolyline(
+      line,
+      diameter,
+      spacing
+    );
+  }
+
+  pop();
+}
+
+/**
+ * Evenly spaced dots along a polyline.
+ * The gap continues across corners, so the rhythm
+ * does not restart at every bend.
+ */
+function drawDottedPolyline(
+  points,
+  diameter,
+  spacing
+) {
+  if (!points || points.length < 2) {
+    return;
+  }
+
+  let cursor = spacing * 0.5;
+
+  for (
+    let index = 1;
+    index < points.length;
+    index++
+  ) {
+    const start = points[index - 1];
+    const end = points[index];
+
+    const length = dist(
+      start.x,
+      start.y,
+      end.x,
+      end.y
+    );
+
+    if (length < EPSILON) {
+      continue;
+    }
+
+    while (cursor <= length) {
+      const t = cursor / length;
+
+      circle(
+        lerp(start.x, end.x, t),
+        lerp(start.y, end.y, t),
+        diameter
+      );
+
+      cursor += spacing;
+    }
+
+    cursor -= length;
   }
 }
 
