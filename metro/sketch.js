@@ -1,12 +1,12 @@
-const numberOfRows = 50;
-const numberOfCols = 50;
-
 const params = {
   lines: 3,
   points: 3,
   water: 2,
   parks: 4,
-  walls: 3
+  walls: 3,
+  showGrid: false,
+  cells: 50,
+  bend: "diagonal"
 };
 
 const LAND_COLOR = "#e6e2d8";
@@ -65,8 +65,7 @@ function setup() {
 
   canvas.parent("map");
 
-  cellWidth = width / numberOfCols;
-  cellHeight = height / numberOfRows;
+  updateCellSize();
 
   createTerrain();
   createSets();
@@ -195,6 +194,17 @@ function renderScene() {
   intersectionStations =
     network.intersections;
 
+  if (params.showGrid) {
+    drawGrid(
+      params.cells,
+      params.cells,
+      0,
+      0,
+      width,
+      height
+    );
+  }
+
   // Drawing order determines visual layering.
   drawBundledLines();
   drawEndOfLineCaps();
@@ -251,8 +261,10 @@ function createAllLineSegments() {
 }
 
 /**
- * Creates one 45-degree segment followed by one horizontal
- * or vertical segment.
+ * Joins two stations with a 45-degree run and a straight run.
+ *
+ * Diagonal first draws the angled piece, then the remaining
+ * horizontal or vertical piece. Straight first does the opposite.
  */
 function createConnectionSegments(
   x1,
@@ -275,15 +287,36 @@ function createConnectionSegments(
   const ySign = y2 >= y1 ? 1 : -1;
 
   const diagonalDistance = min(dx, dy);
+  const straightDistance = abs(dx - dy);
 
-  const cornerX =
-    x1 + xSign * diagonalDistance;
+  let cornerX;
+  let cornerY;
 
-  const cornerY =
-    y1 + ySign * diagonalDistance;
+  if (params.bend === "straight") {
+    if (dx >= dy) {
+      cornerX =
+        x1 + xSign * straightDistance;
 
-  // Add the diagonal section.
-  if (diagonalDistance > EPSILON) {
+      cornerY = y1;
+    } else {
+      cornerX = x1;
+
+      cornerY =
+        y1 + ySign * straightDistance;
+    }
+  } else {
+    cornerX =
+      x1 + xSign * diagonalDistance;
+
+    cornerY =
+      y1 + ySign * diagonalDistance;
+  }
+
+  // Add the first section.
+  if (
+    abs(cornerX - x1) > EPSILON ||
+    abs(cornerY - y1) > EPSILON
+  ) {
     segments.push({
       x1,
       y1,
@@ -294,7 +327,7 @@ function createConnectionSegments(
     });
   }
 
-  // Add the remaining horizontal or vertical section.
+  // Add the remaining straight or diagonal section.
   if (
     abs(cornerX - x2) > EPSILON ||
     abs(cornerY - y2) > EPSILON
@@ -2410,7 +2443,7 @@ function drawGrid(
 
   translate(startX, startY);
 
-  stroke(220);
+  stroke(90, 80, 60, 80);
   strokeWeight(1);
 
   const gridCellWidth =
@@ -2809,35 +2842,87 @@ function createPark() {
   const kind = floor(random(4));
 
   if (kind === 0) {
-    return randomRectangle(3, 6, 2, 4);
+    return randomRectangle(
+      cellsBetween(0.28, 0.34),
+      cellsBetween(0.42, 0.52),
+      cellsBetween(0.20, 0.26),
+      cellsBetween(0.34, 0.44)
+    );
   }
 
   if (kind === 1) {
-    return randomOctagon(3, 6, 3, 5);
+    return randomOctagon(
+      cellsBetween(0.26, 0.32),
+      cellsBetween(0.40, 0.50),
+      cellsBetween(0.22, 0.28),
+      cellsBetween(0.34, 0.44)
+    );
   }
 
   if (kind === 2) {
-    return randomLShape(4, 7, 2, 3);
+    return randomLShape(
+      cellsBetween(0.32, 0.38),
+      cellsBetween(0.48, 0.58),
+      cellsBetween(0.12, 0.16),
+      cellsBetween(0.18, 0.24)
+    );
   }
 
-  return randomDiamond(2, 4);
+  return randomDiamond(
+    cellsBetween(0.12, 0.16),
+    cellsBetween(0.20, 0.26)
+  );
 }
 
 /**
- * A gray wall: a block, an L, or a short angled bar.
+ * A gray wall: a large block, an L, or a wide angled bar.
  */
 function createWall() {
   const kind = floor(random(3));
 
   if (kind === 0) {
-    return randomRectangle(2, 9, 1, 2);
+    return randomRectangle(
+      cellsBetween(0.24, 0.30),
+      cellsBetween(0.42, 0.52),
+      cellsBetween(0.14, 0.18),
+      cellsBetween(0.26, 0.34)
+    );
   }
 
   if (kind === 1) {
-    return randomLShape(4, 8, 1, 2);
+    return randomLShape(
+      cellsBetween(0.30, 0.36),
+      cellsBetween(0.46, 0.56),
+      cellsBetween(0.10, 0.14),
+      cellsBetween(0.16, 0.22)
+    );
   }
 
-  return randomRibbon(2, 3, 1, 2);
+  return randomRibbon(
+    2,
+    3,
+    cellsBetween(0.05, 0.07),
+    cellsBetween(0.09, 0.13)
+  );
+}
+
+/**
+ * A cell count that stays a large fraction of the grid.
+ */
+function cellsBetween(minFraction, maxFraction) {
+  const limit = max(4, params.cells - 2);
+
+  const minCount = min(
+    limit,
+    max(4, round(params.cells * minFraction))
+  );
+
+  const maxCount = min(
+    limit,
+    max(minCount, round(params.cells * maxFraction))
+  );
+
+  return randomInt(minCount, maxCount);
 }
 
 function randomRectangle(
@@ -2922,8 +3007,12 @@ function randomDiamond(minRadius, maxRadius) {
  */
 function randomRibbon(minSeg, maxSeg, minHalf, maxHalf) {
   const cell = gridSize();
-  const step = cell * randomInt(3, 6);
-  const half = cell * randomInt(minHalf, maxHalf);
+  const halfCells = randomInt(minHalf, maxHalf);
+  const step = cell * max(
+    halfCells,
+    randomInt(6, 12)
+  );
+  const half = cell * halfCells;
   const count = randomInt(minSeg, maxSeg);
 
   const directions = [
@@ -3230,6 +3319,56 @@ function dedupePoints(points) {
   return result;
 }
 
+function updateCellSize() {
+  const count = max(2, params.cells);
+
+  cellWidth = width / count;
+  cellHeight = height / count;
+}
+
+/**
+ * Rebuilds the grid and keeps stations on the new cells.
+ */
+function applyCellCount() {
+  updateCellSize();
+  resnapStations();
+  createTerrain();
+  removeStationsInWater();
+  renderScene();
+}
+
+function resnapStations() {
+  for (const points of sets) {
+    if (!points) {
+      continue;
+    }
+
+    for (const point of points) {
+      point.x =
+        floor(point.x / cellWidth) *
+          cellWidth +
+        cellWidth / 2;
+
+      point.y =
+        floor(point.y / cellHeight) *
+          cellHeight +
+        cellHeight / 2;
+
+      point.x = constrain(
+        point.x,
+        cellWidth / 2,
+        width - cellWidth / 2
+      );
+
+      point.y = constrain(
+        point.y,
+        cellHeight / 2,
+        height - cellHeight / 2
+      );
+    }
+  }
+}
+
 function gridSize() {
   return min(cellWidth, cellHeight);
 }
@@ -3240,7 +3379,10 @@ function snapToGrid(value) {
 }
 
 function randomInt(minValue, maxValue) {
-  return floor(random(minValue, maxValue + 1));
+  const low = min(minValue, maxValue);
+  const high = max(minValue, maxValue);
+
+  return floor(random(low, high + 1));
 }
 
 function randomOrigin(shapeWidth, shapeHeight) {
@@ -3573,6 +3715,25 @@ function setupPane() {
     step: 1
   });
 
+  pane.addInput(params, "showGrid", {
+    label: "Grid"
+  });
+
+  pane.addInput(params, "cells", {
+    label: "Cells",
+    min: 12,
+    max: 80,
+    step: 1
+  });
+
+  pane.addInput(params, "bend", {
+    label: "Bend",
+    options: {
+      "Diagonal first": "diagonal",
+      "Straight first": "straight"
+    }
+  });
+
   pane
     .addButton({
       title: "New map"
@@ -3591,6 +3752,19 @@ function setupPane() {
       event.presetKey === "points"
     ) {
       rebuildRoutes();
+      return;
+    }
+
+    if (
+      event.presetKey === "showGrid" ||
+      event.presetKey === "bend"
+    ) {
+      renderScene();
+      return;
+    }
+
+    if (event.presetKey === "cells") {
+      applyCellCount();
       return;
     }
 
