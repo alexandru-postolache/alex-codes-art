@@ -8,9 +8,8 @@ body {
   align-items: flex-start;
   gap: 16px;
   padding: 16px;
-  background: #f4f5f6;
-  color: #1a1c1e;
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  background: #e6e2d8;
+  font-family: sans-serif;
 }
 
 canvas {
