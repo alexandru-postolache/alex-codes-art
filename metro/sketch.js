@@ -40,6 +40,10 @@ let atomicEdges = [];
 let intersectionStations = [];
 
 let selectedSetIndex = 0;
+let dragStationIndex = -1;
+let pressAddsStation = false;
+let pressX = 0;
+let pressY = 0;
 
 let terrain = {
   waters: [],
@@ -3809,12 +3813,16 @@ function rebuildMap() {
 
 /**
  * Left click selects a legend line or adds a station.
+ * Dragging a station on the selected line moves it.
  * Right click deletes a station on the selected line.
  *
  * p5 2 reports the pressed button on mouseButton.left
  * and mouseButton.right.
  */
 function mousePressed(event) {
+  dragStationIndex = -1;
+  pressAddsStation = false;
+
   if (
     mouseX < 0 ||
     mouseY < 0 ||
@@ -3855,9 +3863,98 @@ function mousePressed(event) {
     return false;
   }
 
+  pressX = mouseX;
+  pressY = mouseY;
+
+  const stationIndex =
+    stationIndexAt(mouseX, mouseY);
+
+  if (stationIndex !== -1) {
+    dragStationIndex = stationIndex;
+    cursor("grabbing");
+    return false;
+  }
+
+  pressAddsStation = true;
+  return false;
+}
+
+/**
+ * Moves the grabbed station onto the cell under the pointer.
+ */
+function mouseDragged() {
+  if (dragStationIndex < 0) {
+    return;
+  }
+
+  const points = sets[selectedSetIndex];
+
+  if (
+    !points ||
+    !points[dragStationIndex]
+  ) {
+    dragStationIndex = -1;
+    return;
+  }
+
+  const cell = stationCellAt(mouseX, mouseY);
+
+  if (cell === null) {
+    return;
+  }
+
+  const point = points[dragStationIndex];
+
+  if (
+    abs(point.x - cell.x) < EPSILON &&
+    abs(point.y - cell.y) < EPSILON
+  ) {
+    return;
+  }
+
+  if (!canPlaceStation(cell.x, cell.y)) {
+    return;
+  }
+
+  point.x = cell.x;
+  point.y = cell.y;
+  renderScene();
+}
+
+/**
+ * A click on empty land adds a station.
+ * A drag only moves the station that was grabbed.
+ */
+function mouseReleased() {
+  const shouldAdd = pressAddsStation;
+  const startX = pressX;
+  const startY = pressY;
+  const dragged = dragStationIndex !== -1;
+
+  dragStationIndex = -1;
+  pressAddsStation = false;
+  cursor(ARROW);
+
+  if (dragged || !shouldAdd) {
+    return false;
+  }
+
+  if (
+    dist(startX, startY, mouseX, mouseY) >
+    gridSize()
+  ) {
+    return false;
+  }
+
+  if (
+    isInsideLegend(startX, startY)
+  ) {
+    return false;
+  }
+
   const placed = addPoint(
-    mouseX,
-    mouseY,
+    startX,
+    startY,
     selectedSetIndex
   );
 
@@ -3866,6 +3963,33 @@ function mousePressed(event) {
   }
 
   return false;
+}
+
+/**
+ * Shows a grab cursor over a station that can be moved.
+ */
+function mouseMoved() {
+  if (dragStationIndex !== -1) {
+    return;
+  }
+
+  if (
+    mouseX < 0 ||
+    mouseY < 0 ||
+    mouseX >= width ||
+    mouseY >= height ||
+    isInsideLegend(mouseX, mouseY)
+  ) {
+    cursor(ARROW);
+    return;
+  }
+
+  if (stationIndexAt(mouseX, mouseY) !== -1) {
+    cursor("grab");
+    return;
+  }
+
+  cursor(ARROW);
 }
 
 /**
@@ -3894,11 +4018,30 @@ function isLeftButton(event) {
  * Removes the selected line's station closest to a point.
  */
 function deleteSelectedStationAt(x, y) {
+  const stationIndex =
+    stationIndexAt(x, y);
+
+  if (stationIndex === -1) {
+    return false;
+  }
+
+  sets[selectedSetIndex].splice(
+    stationIndex,
+    1
+  );
+
+  return true;
+}
+
+/**
+ * Index of the selected line's station under a point.
+ */
+function stationIndexAt(x, y) {
   const points =
     sets[selectedSetIndex];
 
   if (!points || points.length === 0) {
-    return false;
+    return -1;
   }
 
   let closestIndex = -1;
@@ -3930,12 +4073,31 @@ function deleteSelectedStationAt(x, y) {
     }
   }
 
-  if (closestIndex === -1) {
-    return false;
+  return closestIndex;
+}
+
+/**
+ * Grid-cell center under a pointer position.
+ */
+function stationCellAt(x, y) {
+  if (
+    x < 0 ||
+    y < 0 ||
+    x >= width ||
+    y >= height
+  ) {
+    return null;
   }
 
-  points.splice(closestIndex, 1);
-  return true;
+  return {
+    x:
+      floor(x / cellWidth) * cellWidth +
+      cellWidth / 2,
+
+    y:
+      floor(y / cellHeight) * cellHeight +
+      cellHeight / 2
+  };
 }
 
 /**
