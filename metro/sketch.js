@@ -9,22 +9,26 @@ const params = {
   bend: "diagonal"
 };
 
-const LAND_COLOR = "#e6e2d8";
-const WATER_COLOR = "#6eb0d0";
-const PARK_COLOR = "#9fbf78";
-const WALL_COLOR = "#9c9890";
+/*
+ * Poster palette taken from the Northampton, Providence,
+ * Petersburg, and Q-link maps: a cool paper ground, pale
+ * geographic washes, and saturated route colors on top.
+ */
+const LAND_COLOR = "#e4e7ea";
+const WATER_COLOR = "#b7ddd4";
+const PARK_COLOR = "#d3e6d0";
+const WALL_COLOR = "#c5c9ce";
+const INK_COLOR = "#1a1c1e";
 
 const METRO_PALETTE = [
-  "#D32F2F", // red
-  "#1976D2", // blue
-  "#00897B", // teal
-  "#7B1FA2", // purple
-  "#E67E00", // orange
-  "#C2185B", // magenta
-  "#546E7A", // slate
-  "#6D4C41", // brown
-  "#689F38", // green
-  "#D39E00"  // gold
+  "#e23b32", // red
+  "#1c74d9", // blue
+  "#14a38a", // teal
+  "#7b3eae", // purple
+  "#f08c12", // orange
+  "#d63878", // magenta
+  "#2e9e3a", // green
+  "#e2b423"  // yellow
 ];
 
 const EPSILON = 0.000001;
@@ -1311,12 +1315,38 @@ function drawBundledLines() {
   const routeWidth =
     getRouteWidth();
 
+  const chains =
+    buildRouteChains();
+
   push();
 
   noFill();
   strokeWeight(routeWidth);
   strokeCap(ROUND);
   strokeJoin(ROUND);
+
+  for (const chain of chains) {
+    stroke(setColors[chain.setIndex]);
+
+    drawRoundedPolyline(
+      chain.points,
+      max(20, routeWidth * 3.2)
+    );
+  }
+
+  pop();
+}
+
+/**
+ * Lane-offset copies of every atomic edge, joined into
+ * polylines where a route passes straight through a point.
+ *
+ * Joins only happen at exact shared endpoints, so a bend
+ * on a single route becomes one path and can take a
+ * rounded corner. Parallel lanes stay separate.
+ */
+function buildRouteChains() {
+  const pieces = [];
 
   for (const edge of atomicEdges) {
     const dx =
@@ -1346,33 +1376,396 @@ function drawBundledLines() {
       laneIndex < laneCount;
       laneIndex++
     ) {
-      const setIndex =
-        edge.setIndices[laneIndex];
-
-      const centeredLane =
-        laneIndex -
-        (laneCount - 1) / 2;
-
       const offset =
-        centeredLane * routeWidth;
+        getLaneOffset(
+          laneIndex,
+          laneCount
+        );
 
-      const offsetX =
-        perpendicularX * offset;
+      pieces.push({
+        setIndex:
+          edge.setIndices[laneIndex],
 
-      const offsetY =
-        perpendicularY * offset;
+        x1:
+          edge.x1 +
+          perpendicularX * offset,
 
-      drawColoredSegment(
-        edge.x1 + offsetX,
-        edge.y1 + offsetY,
-        edge.x2 + offsetX,
-        edge.y2 + offsetY,
-        setColors[setIndex]
+        y1:
+          edge.y1 +
+          perpendicularY * offset,
+
+        x2:
+          edge.x2 +
+          perpendicularX * offset,
+
+        y2:
+          edge.y2 +
+          perpendicularY * offset
+      });
+    }
+  }
+
+  const used =
+    new Array(pieces.length).fill(false);
+
+  const chains = [];
+
+  for (
+    let index = 0;
+    index < pieces.length;
+    index++
+  ) {
+    if (used[index]) {
+      continue;
+    }
+
+    used[index] = true;
+
+    const piece = pieces[index];
+
+    const points = [
+      { x: piece.x1, y: piece.y1 },
+      { x: piece.x2, y: piece.y2 }
+    ];
+
+    extendRouteChain(
+      pieces,
+      used,
+      piece.setIndex,
+      points,
+      true
+    );
+
+    extendRouteChain(
+      pieces,
+      used,
+      piece.setIndex,
+      points,
+      false
+    );
+
+    chains.push({
+      setIndex: piece.setIndex,
+      points
+    });
+  }
+
+  return chains;
+}
+
+/**
+ * Walks unused pieces onto one end of a chain.
+ *
+ * A point is a corner or a joint only when exactly two
+ * pieces of this route meet there. Crossings are left
+ * as separate strokes.
+ */
+function extendRouteChain(
+  pieces,
+  used,
+  setIndex,
+  points,
+  atTail
+) {
+  let guard = 0;
+
+  while (guard < pieces.length) {
+    guard++;
+
+    const end = atTail
+      ? points[points.length - 1]
+      : points[0];
+
+    if (
+      routeDegreeAt(
+        pieces,
+        setIndex,
+        end
+      ) !== 2
+    ) {
+      return;
+    }
+
+    const nextIndex =
+      unusedPieceTouching(
+        pieces,
+        used,
+        setIndex,
+        end
+      );
+
+    if (nextIndex === -1) {
+      return;
+    }
+
+    const next = pieces[nextIndex];
+    const headNear = pointsNear(
+      end,
+      { x: next.x1, y: next.y1 }
+    );
+
+    const far = headNear
+      ? { x: next.x2, y: next.y2 }
+      : { x: next.x1, y: next.y1 };
+
+    used[nextIndex] = true;
+
+    if (atTail) {
+      points.push(far);
+    } else {
+      points.unshift(far);
+    }
+  }
+}
+
+function routeDegreeAt(
+  pieces,
+  setIndex,
+  point
+) {
+  let degree = 0;
+
+  for (const piece of pieces) {
+    if (piece.setIndex !== setIndex) {
+      continue;
+    }
+
+    if (
+      pointsNear(
+        point,
+        { x: piece.x1, y: piece.y1 }
+      )
+    ) {
+      degree++;
+    }
+
+    if (
+      pointsNear(
+        point,
+        { x: piece.x2, y: piece.y2 }
+      )
+    ) {
+      degree++;
+    }
+  }
+
+  return degree;
+}
+
+function unusedPieceTouching(
+  pieces,
+  used,
+  setIndex,
+  point
+) {
+  for (
+    let index = 0;
+    index < pieces.length;
+    index++
+  ) {
+    if (used[index]) {
+      continue;
+    }
+
+    const piece = pieces[index];
+
+    if (piece.setIndex !== setIndex) {
+      continue;
+    }
+
+    if (
+      pointsNear(
+        point,
+        { x: piece.x1, y: piece.y1 }
+      ) ||
+      pointsNear(
+        point,
+        { x: piece.x2, y: piece.y2 }
+      )
+    ) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function pointsNear(first, second) {
+  const dx = first.x - second.x;
+  const dy = first.y - second.y;
+
+  return dx * dx + dy * dy < 0.75 * 0.75;
+}
+
+/**
+ * Strokes a polyline and rounds each corner.
+ *
+ * The fillet stays inside the octilinear bend. Its radius
+ * is the tight curve used on the poster maps, not a free
+ * spline.
+ */
+function drawRoundedPolyline(points, radius) {
+  if (!points || points.length < 2) {
+    return;
+  }
+
+  if (points.length === 2) {
+    line(
+      points[0].x,
+      points[0].y,
+      points[1].x,
+      points[1].y
+    );
+
+    return;
+  }
+
+  const path = [points[0]];
+
+  for (
+    let index = 1;
+    index < points.length - 1;
+    index++
+  ) {
+    const fillet = filletCorner(
+      points[index - 1],
+      points[index],
+      points[index + 1],
+      radius
+    );
+
+    if (fillet === null) {
+      path.push(points[index]);
+      continue;
+    }
+
+    path.push(fillet.start);
+
+    const steps = 7;
+
+    for (let step = 1; step <= steps; step++) {
+      path.push(
+        quadraticPoint(
+          fillet.start,
+          points[index],
+          fillet.end,
+          step / steps
+        )
       );
     }
   }
 
-  pop();
+  path.push(points[points.length - 1]);
+
+  for (
+    let index = 1;
+    index < path.length;
+    index++
+  ) {
+    line(
+      path[index - 1].x,
+      path[index - 1].y,
+      path[index].x,
+      path[index].y
+    );
+  }
+}
+
+/**
+ * A point on a quadratic curve from start to end,
+ * pulled toward the corner.
+ */
+function quadraticPoint(start, corner, end, t) {
+  const remain = 1 - t;
+
+  return {
+    x:
+      remain * remain * start.x +
+      2 * remain * t * corner.x +
+      t * t * end.x,
+
+    y:
+      remain * remain * start.y +
+      2 * remain * t * corner.y +
+      t * t * end.y
+  };
+}
+
+/**
+ * Tangent points of a rounded corner.
+ *
+ * Pullback follows a circular fillet, then the curve is
+ * drawn as a quadratic through the original corner.
+ */
+function filletCorner(prev, curr, next, radius) {
+  const inDx = curr.x - prev.x;
+  const inDy = curr.y - prev.y;
+  const inLen = sqrt(
+    inDx * inDx + inDy * inDy
+  );
+
+  const outDx = next.x - curr.x;
+  const outDy = next.y - curr.y;
+  const outLen = sqrt(
+    outDx * outDx + outDy * outDy
+  );
+
+  if (
+    inLen < EPSILON ||
+    outLen < EPSILON
+  ) {
+    return null;
+  }
+
+  const ux = inDx / inLen;
+  const uy = inDy / inLen;
+  const vx = outDx / outLen;
+  const vy = outDy / outLen;
+
+  const dot = constrain(
+    ux * vx + uy * vy,
+    -1,
+    1
+  );
+
+  /*
+   * Straight joints and hairpin reversals stay sharp.
+   * Only real bends are rounded.
+   */
+  if (dot > 0.985 || dot < -0.985) {
+    return null;
+  }
+
+  const deflection = acos(dot);
+  const pullback =
+    radius * tan(deflection / 2);
+
+  /*
+   * Cap the pullback at the radius. Sharp bends would
+   * otherwise swing into a hook.
+   */
+  const limited = min(
+    pullback,
+    radius,
+    inLen * 0.42,
+    outLen * 0.42
+  );
+
+  if (limited < 0.4) {
+    return null;
+  }
+
+  return {
+    start: {
+      x: curr.x - ux * limited,
+      y: curr.y - uy * limited
+    },
+
+    end: {
+      x: curr.x + vx * limited,
+      y: curr.y + vy * limited
+    }
+  };
 }
 
 /* =========================================================
@@ -1506,11 +1899,13 @@ function drawEndOfLineCap(
     outward.x;
 
   /*
-   * Make the cap wider than the station so that both ends
-   * remain visible beside the route stem.
+   * A short black bar, a little wider than the station,
+   * like the Northampton terminus.
    */
-  const capLength =
-    stationDiameter * 1.45;
+  const capLength = max(
+    stationDiameter * 1.2,
+    getRouteWidth() * 2.6
+  );
 
   const halfCapLength =
     capLength / 2;
@@ -1528,7 +1923,10 @@ function drawEndOfLineCap(
     setColors[setIndex]
   );
 
-  drawColoredSegment(
+  stroke(INK_COLOR);
+  strokeWeight(getRouteWidth() * 1.05);
+
+  line(
     capCenter.x -
       perpendicularX * halfCapLength,
 
@@ -1539,8 +1937,7 @@ function drawEndOfLineCap(
       perpendicularX * halfCapLength,
 
     capCenter.y +
-      perpendicularY * halfCapLength,
-    setColors[setIndex]
+      perpendicularY * halfCapLength
   );
 
   pop();
@@ -1762,12 +2159,11 @@ function getRouteLanePositionAtPoint(
   const laneCount =
     edge.setIndices.length;
 
-  const centeredLane =
-    laneIndex -
-    (laneCount - 1) / 2;
-
   const offset =
-    centeredLane * getRouteWidth();
+    getLaneOffset(
+      laneIndex,
+      laneCount
+    );
 
   return {
     x:
@@ -1818,7 +2214,7 @@ function drawIntersectionStations() {
       station.setIndices ??
       getRouteIndicesAtPoint(station);
 
-    drawMulticolorStation(
+    drawPosterStation(
       station,
       routes
     );
@@ -1900,7 +2296,7 @@ function drawOriginalStations() {
         passingRoutes
       );
 
-    drawMulticolorStation(
+    drawPosterStation(
       station,
       allRoutes
     );
@@ -1908,99 +2304,113 @@ function drawOriginalStations() {
 }
 
 /* =========================================================
-   CONCENTRIC STATION RINGS
+   POSTER STATIONS
    ========================================================= */
 
 /**
- * Draws one complete concentric ring for each route passing
- * through the station.
+ * White station with a black ring.
+ *
+ * A single route is a small stop. Several routes meeting
+ * at an angle are a larger interchange. Several routes
+ * running together become the long pill used on the
+ * Q-link map.
  */
-function drawMulticolorStation(
+function drawPosterStation(
   station,
   routeIndices
 ) {
-  const routes = Array
-    .from(new Set(routeIndices))
-    .sort((a, b) => a - b);
+  const metrics =
+    getStationMetrics(
+      station,
+      routeIndices
+    );
 
-  if (routes.length === 0) {
+  if (metrics === null) {
     return;
   }
 
-  const outerDiameter =
-    getStationDiameter(
-      station,
-      routes
+  push();
+
+  if (metrics.kind === "capsule") {
+    const angle = atan2(
+      metrics.direction.y,
+      metrics.direction.x
     );
 
-  const ringWidth =
-    getStationStrokeWidth();
+    translate(station.x, station.y);
+    rotate(angle);
+    rectMode(CENTER);
 
-  const ringGap =
-    getStationRingGap();
+    fill(255);
+    stroke(INK_COLOR);
+    strokeWeight(metrics.stroke);
 
-  /*
-   * Cover the route lines beneath the station.
-   */
-  push();
-
-  noStroke();
-  fill(255);
-
-  circle(
-    station.x,
-    station.y,
-    outerDiameter
-  );
-
-  pop();
-
-  /*
-   * Draw full route-colored rings from outside inward.
-   */
-  push();
-
-  noFill();
-  strokeWeight(ringWidth);
-
-  for (
-    let routeIndex = 0;
-    routeIndex < routes.length;
-    routeIndex++
-  ) {
-    const setIndex =
-      routes[routeIndex];
-
-    const ringDiameter =
-      outerDiameter -
-      ringWidth -
-      routeIndex *
-        2 *
-        (ringWidth + ringGap);
-
-    if (ringDiameter <= ringWidth) {
-      break;
-    }
-
-    stroke(setColors[setIndex]);
+    rect(
+      0,
+      0,
+      metrics.along,
+      metrics.across,
+      metrics.across / 2
+    );
+  } else {
+    fill(255);
+    stroke(INK_COLOR);
+    strokeWeight(metrics.stroke);
 
     circle(
       station.x,
       station.y,
-      ringDiameter
+      metrics.diameter - metrics.stroke
     );
+
+    /*
+     * Interchanges use the heavier double ring from the
+     * Northampton and Providence maps.
+     */
+    if (metrics.kind === "interchange") {
+      const inner =
+        metrics.diameter -
+        metrics.stroke * 3.6;
+
+      if (inner > metrics.stroke * 2) {
+        strokeWeight(metrics.stroke * 0.4);
+
+        circle(
+          station.x,
+          station.y,
+          inner
+        );
+      }
+    }
   }
 
   pop();
 }
 
 /**
- * Calculates the station diameter.
+ * Visual size of the station symbol.
  *
- * It must be large enough to cover the route bundle and
- * contain every concentric ring.
+ * The diameter is the circle, or the long side of a pill,
+ * so hit testing and the terminus bar clear the symbol.
  */
 function getStationDiameter(
+  point,
+  routeIndices = null
+) {
+  const metrics =
+    getStationMetrics(
+      point,
+      routeIndices
+    );
+
+  if (metrics === null) {
+    return getRouteWidth() * 2.2;
+  }
+
+  return metrics.diameter;
+}
+
+function getStationMetrics(
   point,
   routeIndices = null
 ) {
@@ -2011,51 +2421,111 @@ function getStationDiameter(
       getRouteIndicesAtPoint(point);
   }
 
-  routes = Array.from(
-    new Set(routes)
-  );
+  routes = Array.from(new Set(routes));
 
-  const routeCount =
-    max(1, routes.length);
+  if (routes.length === 0) {
+    return null;
+  }
 
-  const baseDiameter =
-    min(cellWidth, cellHeight);
-
+  const routeWidth = getRouteWidth();
   const bundleWidth =
     getWidestBundleAtPoint(point);
 
-  const ringWidth =
-    getStationStrokeWidth();
+  const corridor =
+    routes.length > 1
+      ? getCorridorDirection(point)
+      : null;
 
-  const ringGap =
-    getStationRingGap();
+  if (corridor !== null) {
+    const stroke = routeWidth * 0.34;
+    const across = max(
+      bundleWidth + routeWidth * 0.35,
+      routeWidth * 2.15
+    );
+    const along = max(
+      across * 1.9,
+      routeWidth * 3.5
+    );
 
-  const minimumInnerDiameter =
-    min(cellWidth, cellHeight) * 0.25;
+    return {
+      kind: "capsule",
+      direction: corridor,
+      along,
+      across,
+      stroke,
+      diameter: along
+    };
+  }
 
-  /*
-   * Space required by all concentric rings and the white
-   * center.
-   */
-  const ringsDiameter =
-    minimumInnerDiameter +
-    2 * ringWidth +
-    2 *
-      (routeCount - 1) *
-      (ringWidth + ringGap);
+  const interchange = routes.length > 1;
+  const stroke = interchange
+    ? routeWidth * 0.55
+    : routeWidth * 0.3;
 
-  /*
-   * Space required to cover the route bundle below.
-   */
-  const bundleDiameter =
-    bundleWidth +
-    ringWidth * 2;
-
-  return max(
-    baseDiameter,
-    ringsDiameter,
-    bundleDiameter
+  const diameter = max(
+    interchange
+      ? routeWidth * 5.4
+      : routeWidth * 2.45,
+    bundleWidth + stroke * 2
   );
+
+  return {
+    kind: interchange
+      ? "interchange"
+      : "stop",
+    diameter,
+    stroke
+  };
+}
+
+/**
+ * Direction of the tracks through a point, when every
+ * route there runs the same way.
+ */
+function getCorridorDirection(point) {
+  let direction = null;
+
+  for (const edge of atomicEdges) {
+    if (!pointOnSegment(point, edge)) {
+      continue;
+    }
+
+    const dx = edge.x2 - edge.x1;
+    const dy = edge.y2 - edge.y1;
+    const length = sqrt(dx * dx + dy * dy);
+
+    if (length < EPSILON) {
+      continue;
+    }
+
+    let ux = dx / length;
+    let uy = dy / length;
+
+    /*
+     * Treat a reversed copy of the same track as parallel.
+     */
+    if (
+      direction !== null &&
+      ux * direction.x + uy * direction.y < 0
+    ) {
+      ux = -ux;
+      uy = -uy;
+    }
+
+    if (direction === null) {
+      direction = { x: ux, y: uy };
+      continue;
+    }
+
+    const alignment =
+      ux * direction.x + uy * direction.y;
+
+    if (alignment < 0.92) {
+      return null;
+    }
+  }
+
+  return direction;
 }
 
 /**
@@ -2070,9 +2540,13 @@ function getWidestBundleAtPoint(point) {
 
   for (const edge of atomicEdges) {
     if (pointOnSegment(point, edge)) {
+      const laneCount =
+        edge.setIndices.length;
+
       const bundleWidth =
-        edge.setIndices.length *
-        routeWidth;
+        routeWidth +
+        max(0, laneCount - 1) *
+          getLanePitch();
 
       widestBundle = max(
         widestBundle,
@@ -2086,20 +2560,25 @@ function getWidestBundleAtPoint(point) {
 
 function getRouteWidth() {
   return (
-    min(cellWidth, cellHeight) * 0.6
+    min(cellWidth, cellHeight) * 0.42
   );
 }
 
-function getStationStrokeWidth() {
-  return (
-    min(cellWidth, cellHeight) * 0.2
-  );
+/**
+ * Center-to-center gap between parallel route colors.
+ *
+ * A little wider than the stroke, so each color stays
+ * readable the way bundled lines do on the Q-link map.
+ */
+function getLanePitch() {
+  return getRouteWidth() * 1.35;
 }
 
-function getStationRingGap() {
-  return (
-    getStationStrokeWidth() * 0.35
-  );
+function getLaneOffset(laneIndex, laneCount) {
+  const centeredLane =
+    laneIndex - (laneCount - 1) / 2;
+
+  return centeredLane * getLanePitch();
 }
 
 /* =========================================================
@@ -2447,7 +2926,7 @@ function drawGrid(
 
   translate(startX, startY);
 
-  stroke(90, 80, 60, 80);
+  stroke(150, 156, 162, 70);
   strokeWeight(1);
 
   const gridCellWidth =
@@ -2497,8 +2976,8 @@ function drawRouteLegend() {
 
   push();
 
-  fill(255);
-  stroke(190);
+  fill(255, 255, 255, 235);
+  stroke(210, 214, 218);
   strokeWeight(1);
 
   rect(
@@ -2506,7 +2985,7 @@ function drawRouteLegend() {
     layout.y,
     layout.width,
     layout.height,
-    10
+    8
   );
 
   for (
@@ -2523,37 +3002,45 @@ function drawRouteLegend() {
     const selected =
       setIndex === selectedSetIndex;
 
+    const midY =
+      bounds.y + bounds.height / 2;
+
     if (selected) {
-      fill(255);
-      stroke(25);
-      strokeWeight(2);
+      noFill();
+      stroke(INK_COLOR);
+      strokeWeight(1.5);
 
       rect(
         bounds.x - 5,
-        bounds.y - 5,
+        bounds.y - 4,
         bounds.width + 10,
-        bounds.height + 10,
-        8
+        bounds.height + 8,
+        7
       );
     }
 
-    noStroke();
-    fill(setColors[setIndex]);
+    stroke(setColors[setIndex]);
+    strokeWeight(3.5);
+    strokeCap(ROUND);
 
-    rect(
+    line(
       bounds.x,
-      bounds.y,
-      bounds.width,
-      bounds.height,
-      bounds.height / 2
+      midY,
+      bounds.x + bounds.width,
+      midY
     );
 
+    const dotX =
+      bounds.x + bounds.width / 2;
+
     fill(255);
+    stroke(INK_COLOR);
+    strokeWeight(selected ? 1.75 : 1.15);
 
     circle(
-      bounds.x + bounds.width / 2,
-      bounds.y + bounds.height / 2,
-      bounds.height * 0.7
+      dotX,
+      midY,
+      selected ? 11 : 9
     );
   }
 
@@ -3483,11 +3970,14 @@ function pointInPolygon(x, y, polygon) {
 }
 
 /* =========================================================
-   LAND AND WATER STROKES
+   ROUTE STROKES
    ========================================================= */
 
 /**
- * Draws a route solid on land and dotted over water.
+ * Draws a route as one solid stroke.
+ *
+ * The poster maps keep the line color across water. The
+ * pale wash is enough to show the crossing.
  */
 function drawColoredSegment(
   x1,
@@ -3496,176 +3986,9 @@ function drawColoredSegment(
   y2,
   paint
 ) {
-  const pieces =
-    splitSegmentByTerrain(x1, y1, x2, y2);
+  stroke(paint);
 
-  for (const piece of pieces) {
-    if (piece.water) {
-      drawDottedSegment(
-        piece.x1,
-        piece.y1,
-        piece.x2,
-        piece.y2,
-        paint
-      );
-    } else {
-      stroke(paint);
-
-      line(
-        piece.x1,
-        piece.y1,
-        piece.x2,
-        piece.y2
-      );
-    }
-  }
-}
-
-/**
- * Splits a segment where it enters or leaves water.
- */
-function splitSegmentByTerrain(x1, y1, x2, y2) {
-  const length = dist(x1, y1, x2, y2);
-
-  if (length < EPSILON) {
-    return [
-      {
-        x1,
-        y1,
-        x2,
-        y2,
-        water: pointInWater(x1, y1)
-      }
-    ];
-  }
-
-  const step =
-    min(cellWidth, cellHeight) * 0.35;
-
-  const samples = max(
-    2,
-    ceil(length / step)
-  );
-
-  const pieces = [];
-
-  let pieceStart = 0;
-  let water = pointInWater(x1, y1);
-
-  for (
-    let sample = 1;
-    sample <= samples;
-    sample++
-  ) {
-    const t = sample / samples;
-
-    const sampleWater = pointInWater(
-      lerp(x1, x2, t),
-      lerp(y1, y2, t)
-    );
-
-    if (sampleWater === water) {
-      continue;
-    }
-
-    const boundary =
-      (sample - 0.5) / samples;
-
-    pieces.push(
-      makeTerrainPiece(
-        x1,
-        y1,
-        x2,
-        y2,
-        pieceStart,
-        boundary,
-        water
-      )
-    );
-
-    pieceStart = boundary;
-    water = sampleWater;
-  }
-
-  pieces.push(
-    makeTerrainPiece(
-      x1,
-      y1,
-      x2,
-      y2,
-      pieceStart,
-      1,
-      water
-    )
-  );
-
-  return pieces;
-}
-
-function makeTerrainPiece(
-  x1,
-  y1,
-  x2,
-  y2,
-  startT,
-  endT,
-  water
-) {
-  return {
-    x1: lerp(x1, x2, startT),
-    y1: lerp(y1, y2, startT),
-    x2: lerp(x1, x2, endT),
-    y2: lerp(y1, y2, endT),
-    water
-  };
-}
-
-/**
- * Round dots in the route color, with water showing
- * between them.
- */
-function drawDottedSegment(
-  x1,
-  y1,
-  x2,
-  y2,
-  paint
-) {
-  const length = dist(x1, y1, x2, y2);
-  const diameter = getRouteWidth() * 0.7;
-  const spacing = getRouteWidth() * 1.65;
-
-  push();
-
-  noStroke();
-  fill(paint);
-
-  if (length <= spacing) {
-    circle(
-      (x1 + x2) / 2,
-      (y1 + y2) / 2,
-      diameter
-    );
-
-    pop();
-    return;
-  }
-
-  let distance = spacing * 0.5;
-
-  while (distance < length) {
-    const t = distance / length;
-
-    circle(
-      lerp(x1, x2, t),
-      lerp(y1, y2, t),
-      diameter
-    );
-
-    distance += spacing;
-  }
-
-  pop();
+  line(x1, y1, x2, y2);
 }
 
 /* =========================================================
