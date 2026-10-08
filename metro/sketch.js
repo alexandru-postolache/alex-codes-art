@@ -5,12 +5,14 @@ const params = {
   lines: 3,
   points: 3,
   water: 2,
-  parks: 4
+  parks: 4,
+  walls: 3
 };
 
 const LAND_COLOR = "#e6e2d8";
 const WATER_COLOR = "#6eb0d0";
 const PARK_COLOR = "#9fbf78";
+const WALL_COLOR = "#9c9890";
 
 const METRO_PALETTE = [
   "#D32F2F", // red
@@ -41,7 +43,8 @@ let selectedSetIndex = 0;
 
 let terrain = {
   waters: [],
-  parks: []
+  parks: [],
+  walls: []
 };
 
 let pane;
@@ -91,11 +94,21 @@ function createSets() {
     sets[setIndex] = [];
 
     for (let i = 0; i < params.points; i++) {
-      addPoint(
-        random(width),
-        random(height),
-        setIndex
-      );
+      for (
+        let attempt = 0;
+        attempt < 50;
+        attempt++
+      ) {
+        const placed = addPoint(
+          random(width),
+          random(height),
+          setIndex
+        );
+
+        if (placed) {
+          break;
+        }
+      }
     }
   }
 }
@@ -103,6 +116,8 @@ function createSets() {
 /**
  * Snaps a point to the center of a grid cell and adds it
  * as a station to the given route.
+ *
+ * Stations are not placed in water.
  */
 function addPoint(x, y, setIndex) {
   if (
@@ -111,7 +126,7 @@ function addPoint(x, y, setIndex) {
     y < 0 ||
     y >= height
   ) {
-    return;
+    return false;
   }
 
   if (!sets[setIndex]) {
@@ -126,10 +141,40 @@ function addPoint(x, y, setIndex) {
     floor(y / cellHeight) * cellHeight +
     cellHeight / 2;
 
+  if (!canPlaceStation(xGrid, yGrid)) {
+    return false;
+  }
+
   sets[setIndex].push({
     x: xGrid,
     y: yGrid
   });
+
+  return true;
+}
+
+/**
+ * True when a station circle would sit on dry land.
+ */
+function canPlaceStation(x, y) {
+  const margin =
+    min(cellWidth, cellHeight) * 0.55;
+
+  const samples = [
+    { x, y },
+    { x: x - margin, y },
+    { x: x + margin, y },
+    { x, y: y - margin },
+    { x, y: y + margin }
+  ];
+
+  for (const sample of samples) {
+    if (pointInWater(sample.x, sample.y)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /* =========================================================
@@ -1725,6 +1770,13 @@ function drawIntersectionStations() {
       continue;
     }
 
+    /*
+     * Crossings in the river are not stations.
+     */
+    if (pointInWater(station.x, station.y)) {
+      continue;
+    }
+
     const routes =
       station.setIndices ??
       getRouteIndicesAtPoint(station);
@@ -1794,6 +1846,10 @@ function drawOriginalStations() {
     getOriginalStationGroups();
 
   for (const station of stations) {
+    if (pointInWater(station.x, station.y)) {
+      continue;
+    }
+
     /*
      * Include both routes that explicitly have a station
      * here and routes that pass through this location.
@@ -2581,13 +2637,14 @@ function isInsideLegend(x, y) {
    ========================================================= */
 
 /**
- * Builds the neutral land, water, and parks for this map.
- * Land is the canvas color. Water and parks are shapes.
+ * Builds land, water, parks, and gray walls.
+ * Every outline uses horizontal, vertical, or 45-degree edges.
  */
 function createTerrain() {
   terrain = {
     waters: [],
-    parks: []
+    parks: [],
+    walls: []
   };
 
   for (
@@ -2613,158 +2670,614 @@ function createTerrain() {
   ) {
     terrain.parks.push(createPark());
   }
+
+  for (
+    let index = 0;
+    index < params.walls;
+    index++
+  ) {
+    terrain.walls.push(createWall());
+  }
 }
 
 /**
- * A wavy river crossing the map, stored as a polygon.
+ * Drops stations whose cells now fall in water.
+ */
+function removeStationsInWater() {
+  for (const points of sets) {
+    if (!points) {
+      continue;
+    }
+
+    for (
+      let index = points.length - 1;
+      index >= 0;
+      index--
+    ) {
+      const point = points[index];
+
+      if (
+        !canPlaceStation(point.x, point.y)
+      ) {
+        points.splice(index, 1);
+      }
+    }
+  }
+}
+
+/**
+ * A river of straight runs and 45-degree bends.
  */
 function createRiverPolygon() {
-  const steps = 18;
-  const half = random(
-    min(cellWidth, cellHeight) * 2.4,
-    min(cellWidth, cellHeight) * 4.6
+  const cell = gridSize();
+  const step = cell * randomInt(5, 8);
+  const half = cell * randomInt(2, 3);
+
+  const forward = [
+    { x: 1, y: 0 },
+    { x: 1, y: 1 },
+    { x: 1, y: -1 }
+  ];
+
+  let y = snapToGrid(
+    random(height * 0.28, height * 0.72)
   );
 
-  const yBase = random(
-    height * 0.3,
-    height * 0.7
+  y = constrain(
+    y,
+    half + cell * 2,
+    height - half - cell * 2
   );
 
-  const phase = random(TWO_PI);
-  const phase2 = random(TWO_PI);
+  const points = [{ x: 0, y }];
+  let x = 0;
+  let direction = forward[0];
 
-  const top = [];
-  const bottom = [];
+  while (x < width && points.length < 10) {
+    if (random() < 0.4) {
+      direction =
+        forward[floor(random(forward.length))];
+    }
 
-  for (let step = 0; step <= steps; step++) {
-    const t = step / steps;
-    const x = t * width;
+    let nextY = y + direction.y * step;
 
-    const wave =
-      sin(t * TWO_PI * 1.15 + phase) *
-        cellWidth *
-        2.4 +
-      cos(t * TWO_PI * 0.5 + phase2) *
-        cellWidth *
-        1.5;
+    if (
+      nextY < half + cell ||
+      nextY > height - half - cell
+    ) {
+      direction = forward[0];
+      nextY = y;
+    }
 
-    const y = constrain(
-      yBase + wave,
-      half + 10,
-      height - half - 10
-    );
+    const nextX = x + direction.x * step;
 
-    const widthScale =
-      1 +
-      0.16 *
-        sin(t * TWO_PI * 2 + phase2);
-
-    top.push({
-      x,
-      y: y - half * widthScale
+    points.push({
+      x: nextX,
+      y: nextY
     });
 
-    bottom.push({
-      x,
-      y: y + half * widthScale
+    x = nextX;
+    y = nextY;
+  }
+
+  const last = points[points.length - 1];
+
+  if (last.x !== width && points.length >= 2) {
+    const previous = points[points.length - 2];
+    const span = last.x - previous.x;
+
+    if (abs(span) > EPSILON) {
+      const t = constrain(
+        (width - previous.x) / span,
+        0,
+        1
+      );
+
+      points[points.length - 1] = {
+        x: previous.x + span * t,
+        y:
+          previous.y +
+          (last.y - previous.y) * t
+      };
+    }
+  }
+
+  return ribbonPolygon(points, half);
+}
+
+/**
+ * A lake with right-angle or 45-degree corners.
+ */
+function createLakePolygon() {
+  const kind = floor(random(3));
+
+  if (kind === 0) {
+    return randomRectangle(4, 8, 3, 6);
+  }
+
+  if (kind === 1) {
+    return randomOctagon(5, 9, 4, 7);
+  }
+
+  return randomRibbon(2, 4, 2, 3);
+}
+
+/**
+ * A park with the same corner language as the routes.
+ */
+function createPark() {
+  const kind = floor(random(4));
+
+  if (kind === 0) {
+    return randomRectangle(3, 6, 2, 4);
+  }
+
+  if (kind === 1) {
+    return randomOctagon(3, 6, 3, 5);
+  }
+
+  if (kind === 2) {
+    return randomLShape(4, 7, 2, 3);
+  }
+
+  return randomDiamond(2, 4);
+}
+
+/**
+ * A gray wall: a block, an L, or a short angled bar.
+ */
+function createWall() {
+  const kind = floor(random(3));
+
+  if (kind === 0) {
+    return randomRectangle(2, 9, 1, 2);
+  }
+
+  if (kind === 1) {
+    return randomLShape(4, 8, 1, 2);
+  }
+
+  return randomRibbon(2, 3, 1, 2);
+}
+
+function randomRectangle(
+  minW,
+  maxW,
+  minH,
+  maxH
+) {
+  const cell = gridSize();
+  const w = cell * randomInt(minW, maxW);
+  const h = cell * randomInt(minH, maxH);
+  const origin = randomOrigin(w, h);
+
+  return rectanglePolygon(
+    origin.x,
+    origin.y,
+    w,
+    h
+  );
+}
+
+function randomOctagon(minW, maxW, minH, maxH) {
+  const cell = gridSize();
+  const w = cell * randomInt(minW, maxW);
+  const h = cell * randomInt(minH, maxH);
+  const origin = randomOrigin(w, h);
+  const maxCut = max(
+    1,
+    floor(min(w, h) / cell / 2) - 1
+  );
+  const cut = cell * randomInt(1, maxCut);
+
+  return octagonPolygon(
+    origin.x,
+    origin.y,
+    w,
+    h,
+    cut
+  );
+}
+
+function randomLShape(
+  minOuter,
+  maxOuter,
+  minThick,
+  maxThick
+) {
+  const cell = gridSize();
+  const outerW = cell * randomInt(minOuter, maxOuter);
+  const outerH = cell * randomInt(minOuter, maxOuter);
+  const thick = cell * randomInt(minThick, maxThick);
+  const origin = randomOrigin(outerW, outerH);
+
+  return lPolygon(
+    origin.x,
+    origin.y,
+    outerW,
+    outerH,
+    min(thick, outerW - cell, outerH - cell),
+    random() < 0.5,
+    random() < 0.5
+  );
+}
+
+function randomDiamond(minRadius, maxRadius) {
+  const cell = gridSize();
+  const radius = cell * randomInt(minRadius, maxRadius);
+  const origin = randomOrigin(
+    radius * 2,
+    radius * 2
+  );
+
+  return diamondPolygon(
+    origin.x + radius,
+    origin.y + radius,
+    radius
+  );
+}
+
+/**
+ * A short corridor of straight and 45-degree runs.
+ */
+function randomRibbon(minSeg, maxSeg, minHalf, maxHalf) {
+  const cell = gridSize();
+  const step = cell * randomInt(3, 6);
+  const half = cell * randomInt(minHalf, maxHalf);
+  const count = randomInt(minSeg, maxSeg);
+
+  const directions = [
+    { x: 1, y: 0 },
+    { x: 1, y: 1 },
+    { x: 0, y: 1 },
+    { x: -1, y: 1 },
+    { x: -1, y: 0 },
+    { x: -1, y: -1 },
+    { x: 0, y: -1 },
+    { x: 1, y: -1 }
+  ];
+
+  let dir = floor(random(directions.length));
+
+  let point = {
+    x: snapToGrid(random(cell * 3, width - cell * 3)),
+    y: snapToGrid(random(cell * 3, height - cell * 3))
+  };
+
+  const points = [{ ...point }];
+
+  for (let index = 0; index < count; index++) {
+    const turn = random() < 0.5
+      ? 0
+      : (random() < 0.5 ? 1 : -1);
+
+    const nextDir = (dir + turn + 8) % 8;
+    const direction = directions[nextDir];
+
+    const next = {
+      x: point.x + direction.x * step,
+      y: point.y + direction.y * step
+    };
+
+    if (
+      next.x < half ||
+      next.y < half ||
+      next.x > width - half ||
+      next.y > height - half
+    ) {
+      continue;
+    }
+
+    points.push(next);
+    point = next;
+    dir = nextDir;
+  }
+
+  if (points.length < 2) {
+    return randomRectangle(
+      max(2, minHalf * 2),
+      max(4, maxHalf * 3),
+      max(2, minHalf),
+      max(3, maxHalf * 2)
+    );
+  }
+
+  return ribbonPolygon(points, half);
+}
+
+function rectanglePolygon(x, y, w, h) {
+  return [
+    { x, y },
+    { x: x + w, y },
+    { x: x + w, y: y + h },
+    { x, y: y + h }
+  ];
+}
+
+function octagonPolygon(x, y, w, h, cut) {
+  const inset = min(cut, w / 2, h / 2);
+
+  return [
+    { x: x + inset, y },
+    { x: x + w - inset, y },
+    { x: x + w, y: y + inset },
+    { x: x + w, y: y + h - inset },
+    { x: x + w - inset, y: y + h },
+    { x: x + inset, y: y + h },
+    { x, y: y + h - inset },
+    { x, y: y + inset }
+  ];
+}
+
+function lPolygon(
+  x,
+  y,
+  outerW,
+  outerH,
+  thickness,
+  flipX,
+  flipY
+) {
+  let points = [
+    { x, y },
+    { x: x + thickness, y },
+    {
+      x: x + thickness,
+      y: y + outerH - thickness
+    },
+    { x: x + outerW, y: y + outerH - thickness },
+    { x: x + outerW, y: y + outerH },
+    { x, y: y + outerH }
+  ];
+
+  if (flipX) {
+    points = points.map((point) => {
+      return {
+        x: x + outerW - (point.x - x),
+        y: point.y
+      };
     });
   }
 
-  return top.concat(bottom.reverse());
-}
-
-/**
- * An elliptical lake, stored as a polygon.
- */
-function createLakePolygon() {
-  return ellipsePolygon(
-    random(width * 0.18, width * 0.82),
-    random(height * 0.18, height * 0.82),
-    random(cellWidth * 3, cellWidth * 7),
-    random(cellHeight * 2.4, cellHeight * 5.2),
-    random(TWO_PI),
-    22
-  );
-}
-
-function ellipsePolygon(
-  centerX,
-  centerY,
-  radiusX,
-  radiusY,
-  rotation,
-  count
-) {
-  const points = [];
-
-  for (let index = 0; index < count; index++) {
-    const angle = (TWO_PI * index) / count;
-
-    const x = cos(angle) * radiusX;
-    const y = sin(angle) * radiusY;
-
-    const rotatedX =
-      x * cos(rotation) -
-      y * sin(rotation);
-
-    const rotatedY =
-      x * sin(rotation) +
-      y * cos(rotation);
-
-    points.push({
-      x: centerX + rotatedX,
-      y: centerY + rotatedY
+  if (flipY) {
+    points = points.map((point) => {
+      return {
+        x: point.x,
+        y: y + outerH - (point.y - y)
+      };
     });
   }
 
   return points;
 }
 
+function diamondPolygon(centerX, centerY, radius) {
+  return [
+    { x: centerX, y: centerY - radius },
+    { x: centerX + radius, y: centerY },
+    { x: centerX, y: centerY + radius },
+    { x: centerX - radius, y: centerY }
+  ];
+}
+
 /**
- * One soft green patch, drawn as two overlapping ellipses.
+ * Thickens an octilinear centerline into a polygon.
  */
-function createPark() {
+function ribbonPolygon(centerline, halfWidth) {
+  const cleaned = dedupePoints(centerline);
+
+  if (cleaned.length < 2) {
+    return cleaned;
+  }
+
+  const left = offsetPolyline(
+    cleaned,
+    halfWidth
+  );
+
+  const right = offsetPolyline(
+    cleaned,
+    -halfWidth
+  );
+
+  return left.concat(right.reverse());
+}
+
+function offsetPolyline(points, distance) {
+  const offsets = [];
+
+  for (
+    let index = 0;
+    index < points.length;
+    index++
+  ) {
+    const current = points[index];
+
+    if (index === 0) {
+      const normal = segmentNormal(
+        current,
+        points[index + 1]
+      );
+
+      offsets.push(
+        addScaled(current, normal, distance)
+      );
+
+      continue;
+    }
+
+    if (index === points.length - 1) {
+      const normal = segmentNormal(
+        points[index - 1],
+        current
+      );
+
+      offsets.push(
+        addScaled(current, normal, distance)
+      );
+
+      continue;
+    }
+
+    const previous = points[index - 1];
+    const next = points[index + 1];
+
+    const normalIn = segmentNormal(
+      previous,
+      current
+    );
+
+    const normalOut = segmentNormal(
+      current,
+      next
+    );
+
+    const directionIn = segmentDirection(
+      previous,
+      current
+    );
+
+    const directionOut = segmentDirection(
+      current,
+      next
+    );
+
+    offsets.push(
+      lineIntersection(
+        addScaled(current, normalIn, distance),
+        directionIn,
+        addScaled(current, normalOut, distance),
+        directionOut
+      )
+    );
+  }
+
+  return offsets;
+}
+
+function segmentDirection(start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = sqrt(dx * dx + dy * dy);
+
+  if (length < EPSILON) {
+    return { x: 1, y: 0 };
+  }
+
   return {
-    x: random(width * 0.08, width * 0.92),
-    y: random(height * 0.08, height * 0.92),
-    w: random(cellWidth * 4, cellWidth * 10),
-    h: random(cellHeight * 3, cellHeight * 7),
-    rotation: random(TWO_PI),
-    lobe: random(0.18, 0.42)
+    x: dx / length,
+    y: dy / length
+  };
+}
+
+function segmentNormal(start, end) {
+  const direction = segmentDirection(start, end);
+
+  return {
+    x: -direction.y,
+    y: direction.x
+  };
+}
+
+function addScaled(point, vector, scale) {
+  return {
+    x: point.x + vector.x * scale,
+    y: point.y + vector.y * scale
+  };
+}
+
+function lineIntersection(originA, directionA, originB, directionB) {
+  const delta = {
+    x: originB.x - originA.x,
+    y: originB.y - originA.y
+  };
+
+  const denominator = crossProduct(
+    directionA,
+    directionB
+  );
+
+  if (abs(denominator) < EPSILON) {
+    return {
+      x: originA.x,
+      y: originA.y
+    };
+  }
+
+  const t = crossProduct(delta, directionB) / denominator;
+
+  return {
+    x: originA.x + directionA.x * t,
+    y: originA.y + directionA.y * t
+  };
+}
+
+function dedupePoints(points) {
+  const result = [];
+
+  for (const point of points) {
+    const last = result[result.length - 1];
+
+    if (
+      !last ||
+      abs(last.x - point.x) > 0.01 ||
+      abs(last.y - point.y) > 0.01
+    ) {
+      result.push(point);
+    }
+  }
+
+  return result;
+}
+
+function gridSize() {
+  return min(cellWidth, cellHeight);
+}
+
+function snapToGrid(value) {
+  const size = gridSize();
+  return round(value / size) * size;
+}
+
+function randomInt(minValue, maxValue) {
+  return floor(random(minValue, maxValue + 1));
+}
+
+function randomOrigin(shapeWidth, shapeHeight) {
+  const cell = gridSize();
+  const maxX = max(cell, width - shapeWidth);
+  const maxY = max(cell, height - shapeHeight);
+
+  return {
+    x: snapToGrid(random(0, maxX)),
+    y: snapToGrid(random(0, maxY))
   };
 }
 
 /**
- * Draws land, then water, then parks.
+ * Draws land, walls, parks, then water.
  */
 function drawTerrain() {
   background(LAND_COLOR);
 
   noStroke();
-  fill(WATER_COLOR);
 
-  for (const water of terrain.waters) {
-    drawPolygon(water);
+  fill(WALL_COLOR);
+
+  for (const wall of terrain.walls) {
+    drawPolygon(wall);
   }
 
   fill(PARK_COLOR);
 
   for (const park of terrain.parks) {
-    push();
+    drawPolygon(park);
+  }
 
-    translate(park.x, park.y);
-    rotate(park.rotation);
+  fill(WATER_COLOR);
 
-    ellipse(0, 0, park.w, park.h);
-
-    ellipse(
-      park.w * park.lobe,
-      park.h * 0.06,
-      park.w * 0.64,
-      park.h * 0.74
-    );
-
-    pop();
+  for (const water of terrain.waters) {
+    drawPolygon(water);
   }
 }
 
@@ -3053,6 +3566,13 @@ function setupPane() {
     step: 1
   });
 
+  pane.addInput(params, "walls", {
+    label: "Walls",
+    min: 0,
+    max: 6,
+    step: 1
+  });
+
   pane
     .addButton({
       title: "New map"
@@ -3076,9 +3596,11 @@ function setupPane() {
 
     if (
       event.presetKey === "water" ||
-      event.presetKey === "parks"
+      event.presetKey === "parks" ||
+      event.presetKey === "walls"
     ) {
       createTerrain();
+      removeStationsInWater();
       renderScene();
     }
   });
@@ -3159,13 +3681,16 @@ function mousePressed(event) {
     return false;
   }
 
-  addPoint(
+  const placed = addPoint(
     mouseX,
     mouseY,
     selectedSetIndex
   );
 
-  renderScene();
+  if (placed) {
+    renderScene();
+  }
+
   return false;
 }
 
