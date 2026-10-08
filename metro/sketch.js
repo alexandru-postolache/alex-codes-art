@@ -4,6 +4,10 @@ const params = {
   water: 2,
   parks: 4,
   walls: 3,
+  waterSize: 0.5,
+  parkSize: 0.5,
+  wallSize: 0.5,
+  sectors: 4,
   showGrid: false,
   cells: 50,
   bend: "diagonal"
@@ -187,7 +191,6 @@ function canPlaceStation(x, y) {
 
 function renderScene() {
   drawTerrain();
-  drawSectorLines();
 
   rawSegments = mergeCloseParallelSegments(
     createAllLineSegments()
@@ -2752,8 +2755,10 @@ function removeStationsInWater() {
  */
 function createRiverPolygon() {
   const cell = gridSize();
-  const step = cell * randomInt(5, 8);
-  const half = cell * randomInt(2, 3);
+  const step =
+    cell * areaCount(5, 8, params.waterSize);
+  const half =
+    cell * areaCount(2, 3, params.waterSize);
 
   const forward = [
     { x: 1, y: 0 },
@@ -2832,16 +2837,32 @@ function createRiverPolygon() {
  */
 function createLakePolygon() {
   const kind = floor(random(3));
+  const scale = params.waterSize;
 
   if (kind === 0) {
-    return randomRectangle(4, 8, 3, 6);
+    return randomRectangle(
+      areaCount(4, 4, scale),
+      areaCount(8, 8, scale),
+      areaCount(3, 3, scale),
+      areaCount(6, 6, scale)
+    );
   }
 
   if (kind === 1) {
-    return randomOctagon(5, 9, 4, 7);
+    return randomOctagon(
+      areaCount(5, 5, scale),
+      areaCount(9, 9, scale),
+      areaCount(4, 4, scale),
+      areaCount(7, 7, scale)
+    );
   }
 
-  return randomRibbon(2, 4, 2, 3);
+  return randomRibbon(
+    2,
+    4,
+    areaCount(2, 2, scale),
+    areaCount(3, 3, scale)
+  );
 }
 
 /**
@@ -2849,37 +2870,38 @@ function createLakePolygon() {
  */
 function createPark() {
   const kind = floor(random(4));
+  const scale = params.parkSize;
 
   if (kind === 0) {
     return randomRectangle(
-      cellsBetween(0.28, 0.34),
-      cellsBetween(0.42, 0.52),
-      cellsBetween(0.20, 0.26),
-      cellsBetween(0.34, 0.44)
+      cellsBetween(0.28, 0.34, scale),
+      cellsBetween(0.42, 0.52, scale),
+      cellsBetween(0.20, 0.26, scale),
+      cellsBetween(0.34, 0.44, scale)
     );
   }
 
   if (kind === 1) {
     return randomOctagon(
-      cellsBetween(0.26, 0.32),
-      cellsBetween(0.40, 0.50),
-      cellsBetween(0.22, 0.28),
-      cellsBetween(0.34, 0.44)
+      cellsBetween(0.26, 0.32, scale),
+      cellsBetween(0.40, 0.50, scale),
+      cellsBetween(0.22, 0.28, scale),
+      cellsBetween(0.34, 0.44, scale)
     );
   }
 
   if (kind === 2) {
     return randomLShape(
-      cellsBetween(0.32, 0.38),
-      cellsBetween(0.48, 0.58),
-      cellsBetween(0.12, 0.16),
-      cellsBetween(0.18, 0.24)
+      cellsBetween(0.32, 0.38, scale),
+      cellsBetween(0.48, 0.58, scale),
+      cellsBetween(0.12, 0.16, scale),
+      cellsBetween(0.18, 0.24, scale)
     );
   }
 
   return randomDiamond(
-    cellsBetween(0.12, 0.16),
-    cellsBetween(0.20, 0.26)
+    cellsBetween(0.12, 0.16, scale),
+    cellsBetween(0.20, 0.26, scale)
   );
 }
 
@@ -2888,50 +2910,75 @@ function createPark() {
  */
 function createWall() {
   const kind = floor(random(3));
+  const scale = params.wallSize;
 
   if (kind === 0) {
     return randomRectangle(
-      cellsBetween(0.24, 0.30),
-      cellsBetween(0.42, 0.52),
-      cellsBetween(0.14, 0.18),
-      cellsBetween(0.26, 0.34)
+      cellsBetween(0.24, 0.30, scale),
+      cellsBetween(0.42, 0.52, scale),
+      cellsBetween(0.14, 0.18, scale),
+      cellsBetween(0.26, 0.34, scale)
     );
   }
 
   if (kind === 1) {
     return randomLShape(
-      cellsBetween(0.30, 0.36),
-      cellsBetween(0.46, 0.56),
-      cellsBetween(0.10, 0.14),
-      cellsBetween(0.16, 0.22)
+      cellsBetween(0.30, 0.36, scale),
+      cellsBetween(0.46, 0.56, scale),
+      cellsBetween(0.10, 0.14, scale),
+      cellsBetween(0.16, 0.22, scale)
     );
   }
 
   return randomRibbon(
     2,
     3,
-    cellsBetween(0.05, 0.07),
-    cellsBetween(0.09, 0.13)
+    cellsBetween(0.05, 0.07, scale),
+    cellsBetween(0.09, 0.13, scale)
   );
 }
 
 /**
- * A cell count that stays a large fraction of the grid.
+ * A cell count for one side of a park or wall.
+ * `scale` shrinks or grows that side. 1 keeps the
+ * original large areas.
  */
-function cellsBetween(minFraction, maxFraction) {
-  const limit = max(4, params.cells - 2);
+function cellsBetween(
+  minFraction,
+  maxFraction,
+  scale
+) {
+  const limit = max(2, params.cells - 2);
+  const amount = max(0.05, scale);
 
   const minCount = min(
     limit,
-    max(4, round(params.cells * minFraction))
+    max(
+      2,
+      round(params.cells * minFraction * amount)
+    )
   );
 
   const maxCount = min(
     limit,
-    max(minCount, round(params.cells * maxFraction))
+    max(
+      minCount,
+      round(params.cells * maxFraction * amount)
+    )
   );
 
   return randomInt(minCount, maxCount);
+}
+
+/**
+ * A whole-cell count scaled the same way as the areas.
+ */
+function areaCount(minCells, maxCells, scale) {
+  const amount = max(0.05, scale);
+  const low = max(1, round(minCells * amount));
+  const high = max(low, round(maxCells * amount));
+
+  return randomInt(low, high);
 }
 
 function randomRectangle(
@@ -3413,12 +3460,16 @@ function randomOrigin(shapeWidth, shapeHeight) {
  * Providence draw these as pale dotted lines.
  */
 function createSectorLines() {
-  return [
-    createSectorCrossing(true),
-    createSectorCrossing(true),
-    createSectorCrossing(false),
-    createSectorCrossing(false)
-  ];
+  const lines = [];
+  const count = max(0, params.sectors);
+
+  for (let index = 0; index < count; index++) {
+    lines.push(
+      createSectorCrossing(index % 2 === 0)
+    );
+  }
+
+  return lines;
 }
 
 /**
@@ -3549,6 +3600,12 @@ function axisPoint(along, cross, horizontal) {
 function drawTerrain() {
   background(LAND_COLOR);
 
+  /*
+   * Sector dots sit on the bare land. Walls, parks,
+   * and water are painted over them.
+   */
+  drawSectorLines();
+
   noStroke();
 
   fill(WALL_COLOR);
@@ -3572,7 +3629,6 @@ function drawTerrain() {
 
 /**
  * Pale gray dots along the sector boundaries.
- * Routes are drawn later, so they stay on top.
  */
 function drawSectorLines() {
   if (
@@ -3948,6 +4004,34 @@ function setupPane() {
     step: 1
   });
 
+  pane.addInput(params, "waterSize", {
+    label: "Water size",
+    min: 0.25,
+    max: 1.5,
+    step: 0.05
+  });
+
+  pane.addInput(params, "parkSize", {
+    label: "Park size",
+    min: 0.25,
+    max: 1.5,
+    step: 0.05
+  });
+
+  pane.addInput(params, "wallSize", {
+    label: "Wall size",
+    min: 0.25,
+    max: 1.5,
+    step: 0.05
+  });
+
+  pane.addInput(params, "sectors", {
+    label: "Sectors",
+    min: 0,
+    max: 8,
+    step: 1
+  });
+
   pane.addInput(params, "showGrid", {
     label: "Grid"
   });
@@ -4001,10 +4085,19 @@ function setupPane() {
       return;
     }
 
+    if (event.presetKey === "sectors") {
+      terrain.sectors = createSectorLines();
+      renderScene();
+      return;
+    }
+
     if (
       event.presetKey === "water" ||
       event.presetKey === "parks" ||
-      event.presetKey === "walls"
+      event.presetKey === "walls" ||
+      event.presetKey === "waterSize" ||
+      event.presetKey === "parkSize" ||
+      event.presetKey === "wallSize"
     ) {
       createTerrain();
       removeStationsInWater();
