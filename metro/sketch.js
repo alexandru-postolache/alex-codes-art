@@ -1,8 +1,16 @@
-const nrOfPoints = 3;
-const nrOfSets = 3;
-
 const numberOfRows = 50;
 const numberOfCols = 50;
+
+const params = {
+  lines: 3,
+  points: 3,
+  water: 2,
+  parks: 4
+};
+
+const LAND_COLOR = "#e6e2d8";
+const WATER_COLOR = "#6eb0d0";
+const PARK_COLOR = "#9fbf78";
 
 const METRO_PALETTE = [
   "#D32F2F", // red
@@ -31,6 +39,13 @@ let intersectionStations = [];
 
 let selectedSetIndex = 0;
 
+let terrain = {
+  waters: [],
+  parks: []
+};
+
+let pane;
+
 /* =========================================================
    SETUP AND DATA
    ========================================================= */
@@ -45,10 +60,14 @@ function setup() {
     }
   );
 
+  canvas.parent("map");
+
   cellWidth = width / numberOfCols;
   cellHeight = height / numberOfRows;
 
+  createTerrain();
   createSets();
+  setupPane();
   renderScene();
 
   noLoop();
@@ -60,7 +79,7 @@ function setup() {
 function createSets() {
   for (
     let setIndex = 0;
-    setIndex < nrOfSets;
+    setIndex < params.lines;
     setIndex++
   ) {
     setColors[setIndex] = color(
@@ -71,7 +90,7 @@ function createSets() {
 
     sets[setIndex] = [];
 
-    for (let i = 0; i < nrOfPoints; i++) {
+    for (let i = 0; i < params.points; i++) {
       addPoint(
         random(width),
         random(height),
@@ -118,21 +137,11 @@ function addPoint(x, y, setIndex) {
    ========================================================= */
 
 function renderScene() {
-  background(255);
+  drawTerrain();
 
-  // Uncomment to show the grid.
-  /*
-  drawGrid(
-    numberOfRows,
-    numberOfCols,
-    0,
-    0,
-    width,
-    height
+  rawSegments = mergeCloseParallelSegments(
+    createAllLineSegments()
   );
-  */
-
-  rawSegments = createAllLineSegments();
 
   const network =
     buildAtomicNetwork(rawSegments);
@@ -555,6 +564,661 @@ function analyzeSegmentPair(
 }
 
 /* =========================================================
+   CLOSE PARALLEL MERGING
+   ========================================================= */
+
+/**
+ * Pulls parallel routes that run one grid cell apart onto
+ * one shared track so the bundler can draw them as lanes.
+ *
+ * A short piece of the original route is kept at each end,
+ * then a perpendicular step joins the shared track.
+ */
+function mergeCloseParallelSegments(segments) {
+  const threshold =
+    getParallelMergeDistance();
+
+  const annotated = [];
+
+  for (
+    let index = 0;
+    index < segments.length;
+    index++
+  ) {
+    const item =
+      annotateSegment(
+        segments[index],
+        index
+      );
+
+    if (item === null) {
+      continue;
+    }
+
+    annotated.push(item);
+  }
+
+  const buckets = new Map();
+
+  for (const item of annotated) {
+    const key = item.direction.key;
+
+    if (!buckets.has(key)) {
+      buckets.set(key, []);
+    }
+
+    buckets.get(key).push(item);
+  }
+
+  const merged = [];
+
+  for (const bucket of buckets.values()) {
+    const clusters =
+      clusterParallelSegments(
+        bucket,
+        threshold
+      );
+
+    for (const cluster of clusters) {
+      const spread =
+        offsetSpread(cluster);
+
+      if (
+        cluster.length < 2 ||
+        spread <= 0.01
+      ) {
+        for (const item of cluster) {
+          merged.push(item.segment);
+        }
+
+        continue;
+      }
+
+      const targetOffset =
+        averageOffset(cluster);
+
+      for (const item of cluster) {
+        const intervals =
+          mergeIntervalsForItem(
+            item,
+            cluster,
+            threshold
+          );
+
+        const pieces =
+          snapSegmentToOffset(
+            item,
+            intervals,
+            targetOffset
+          );
+
+        merged.push(...pieces);
+      }
+    }
+  }
+
+  return merged;
+}
+
+/**
+ * Parallel tracks at most one grid cell apart can merge.
+ */
+function getParallelMergeDistance() {
+  return min(cellWidth, cellHeight);
+}
+
+/**
+ * Original track left in place before a route steps
+ * onto the shared line.
+ */
+function getMergeLead() {
+  return min(cellWidth, cellHeight);
+}
+
+/**
+ * Describes a segment in a direction shared by every
+ * parallel copy, including opposite travel directions.
+ */
+function annotateSegment(segment, index) {
+  const dx = segment.x2 - segment.x1;
+  const dy = segment.y2 - segment.y1;
+
+  const length = sqrt(
+    dx * dx + dy * dy
+  );
+
+  if (length < EPSILON) {
+    return null;
+  }
+
+  const direction =
+    canonicalDirection(dx, dy);
+
+  const t1 =
+    segment.x1 * direction.x +
+    segment.y1 * direction.y;
+
+  const t2 =
+    segment.x2 * direction.x +
+    segment.y2 * direction.y;
+
+  const offset1 =
+    segment.x1 * direction.normalX +
+    segment.y1 * direction.normalY;
+
+  const offset2 =
+    segment.x2 * direction.normalX +
+    segment.y2 * direction.normalY;
+
+  return {
+    segment,
+    index,
+    direction,
+
+    offset: (offset1 + offset2) / 2,
+
+    tMin: min(t1, t2),
+    tMax: max(t1, t2)
+  };
+}
+
+/**
+ * Snaps an arbitrary direction onto the metro directions:
+ * horizontal, vertical, and both 45-degree diagonals.
+ */
+function canonicalDirection(dx, dy) {
+  const length = sqrt(
+    dx * dx + dy * dy
+  );
+
+  const ux = dx / length;
+  const uy = dy / length;
+
+  const diagonal = sqrt(0.5);
+
+  const candidates = [
+    { x: 1, y: 0 },
+    { x: diagonal, y: diagonal },
+    { x: 0, y: 1 },
+    { x: -diagonal, y: diagonal }
+  ];
+
+  let best = candidates[0];
+  let bestDot = -Infinity;
+
+  for (const candidate of candidates) {
+    const alignment = abs(
+      ux * candidate.x +
+        uy * candidate.y
+    );
+
+    if (alignment > bestDot) {
+      bestDot = alignment;
+      best = candidate;
+    }
+  }
+
+  return {
+    x: best.x,
+    y: best.y,
+    normalX: -best.y,
+    normalY: best.x,
+    key:
+      best.x.toFixed(4) +
+      "," +
+      best.y.toFixed(4)
+  };
+}
+
+/**
+ * Groups segments that are one grid cell apart and that
+ * overlap along their direction.
+ */
+function clusterParallelSegments(
+  items,
+  threshold
+) {
+  const parent = items.map(
+    (_, index) => index
+  );
+
+  function find(index) {
+    let current = index;
+
+    while (parent[current] !== current) {
+      parent[current] =
+        parent[parent[current]];
+
+      current = parent[current];
+    }
+
+    return current;
+  }
+
+  function unite(first, second) {
+    const rootA = find(first);
+    const rootB = find(second);
+
+    if (rootA !== rootB) {
+      parent[rootB] = rootA;
+    }
+  }
+
+  for (let i = 0; i < items.length; i++) {
+    for (
+      let j = i + 1;
+      j < items.length;
+      j++
+    ) {
+      if (
+        segmentsShouldMerge(
+          items[i],
+          items[j],
+          threshold
+        )
+      ) {
+        unite(i, j);
+      }
+    }
+  }
+
+  const groups = new Map();
+
+  for (let i = 0; i < items.length; i++) {
+    const root = find(i);
+
+    if (!groups.has(root)) {
+      groups.set(root, []);
+    }
+
+    groups.get(root).push(items[i]);
+  }
+
+  return Array.from(groups.values());
+}
+
+/**
+ * True when two parallel segments are close enough,
+ * and long enough together, to share a track.
+ */
+function segmentsShouldMerge(
+  first,
+  second,
+  threshold
+) {
+  const separation = abs(
+    first.offset - second.offset
+  );
+
+  if (separation > threshold + 0.5) {
+    return false;
+  }
+
+  const overlap =
+    min(first.tMax, second.tMax) -
+    max(first.tMin, second.tMin);
+
+  return (
+    overlap >
+    getParallelMergeDistance() * 0.25
+  );
+}
+
+function offsetSpread(cluster) {
+  let low = Infinity;
+  let high = -Infinity;
+
+  for (const item of cluster) {
+    low = min(low, item.offset);
+    high = max(high, item.offset);
+  }
+
+  return high - low;
+}
+
+function averageOffset(cluster) {
+  let weight = 0;
+  let sum = 0;
+
+  for (const item of cluster) {
+    const length =
+      item.tMax - item.tMin;
+
+    sum += item.offset * length;
+    weight += length;
+  }
+
+  if (weight < EPSILON) {
+    return cluster[0].offset;
+  }
+
+  return sum / weight;
+}
+
+/**
+ * Overlap of this segment with its close neighbors,
+ * kept clear of the segment ends.
+ */
+function mergeIntervalsForItem(
+  item,
+  cluster,
+  threshold
+) {
+  const raw = [];
+
+  for (const other of cluster) {
+    if (other.index === item.index) {
+      continue;
+    }
+
+    const separation = abs(
+      item.offset - other.offset
+    );
+
+    if (separation > threshold + 0.5) {
+      continue;
+    }
+
+    const start = max(
+      item.tMin,
+      other.tMin
+    );
+
+    const end = min(
+      item.tMax,
+      other.tMax
+    );
+
+    if (end - start > EPSILON) {
+      raw.push({ start, end });
+    }
+  }
+
+  const lead = getMergeLead();
+  const trimmed = [];
+
+  for (const interval of mergeIntervals(raw)) {
+    const start = max(
+      interval.start,
+      item.tMin + lead
+    );
+
+    const end = min(
+      interval.end,
+      item.tMax - lead
+    );
+
+    if (end - start >= lead * 0.5) {
+      trimmed.push({ start, end });
+    }
+  }
+
+  return trimmed;
+}
+
+function mergeIntervals(intervals) {
+  if (intervals.length === 0) {
+    return [];
+  }
+
+  const sorted = intervals
+    .slice()
+    .sort((a, b) => a.start - b.start);
+
+  const result = [
+    {
+      start: sorted[0].start,
+      end: sorted[0].end
+    }
+  ];
+
+  for (let i = 1; i < sorted.length; i++) {
+    const last = result[result.length - 1];
+    const next = sorted[i];
+
+    if (next.start <= last.end + 0.01) {
+      last.end = max(last.end, next.end);
+    } else {
+      result.push({
+        start: next.start,
+        end: next.end
+      });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Rebuilds one segment so the overlapping run lies on
+ * the shared track. The ends stay on the original line.
+ */
+function snapSegmentToOffset(
+  item,
+  intervals,
+  targetOffset
+) {
+  const segment = item.segment;
+
+  if (intervals.length === 0) {
+    return [segment];
+  }
+
+  const direction = item.direction;
+
+  const t1 =
+    segment.x1 * direction.x +
+    segment.y1 * direction.y;
+
+  const t2 =
+    segment.x2 * direction.x +
+    segment.y2 * direction.y;
+
+  const span = t2 - t1;
+
+  if (abs(span) < EPSILON) {
+    return [segment];
+  }
+
+  const cuts = [0, 1];
+
+  for (const interval of intervals) {
+    cuts.push((interval.start - t1) / span);
+    cuts.push((interval.end - t1) / span);
+  }
+
+  const fractions =
+    uniqueSortedFractions(cuts);
+
+  const pieces = [];
+
+  let cursor = {
+    x: segment.x1,
+    y: segment.y1
+  };
+
+  for (
+    let index = 0;
+    index < fractions.length - 1;
+    index++
+  ) {
+    const startFraction = fractions[index];
+    const endFraction = fractions[index + 1];
+
+    if (endFraction - startFraction < 0.0001) {
+      continue;
+    }
+
+    const midT =
+      t1 +
+      ((startFraction + endFraction) / 2) *
+        span;
+
+    const snapped =
+      intervalContains(intervals, midT);
+
+    const start =
+      pointOnSegmentFraction(
+        segment,
+        startFraction
+      );
+
+    const end =
+      pointOnSegmentFraction(
+        segment,
+        endFraction
+      );
+
+    const pieceStart = snapped
+      ? shiftToOffset(
+          start,
+          item,
+          targetOffset
+        )
+      : start;
+
+    const pieceEnd = snapped
+      ? shiftToOffset(
+          end,
+          item,
+          targetOffset
+        )
+      : end;
+
+    pushRouteSegment(
+      pieces,
+      cursor,
+      pieceStart,
+      segment
+    );
+
+    pushRouteSegment(
+      pieces,
+      pieceStart,
+      pieceEnd,
+      segment
+    );
+
+    cursor = pieceEnd;
+  }
+
+  pushRouteSegment(
+    pieces,
+    cursor,
+    {
+      x: segment.x2,
+      y: segment.y2
+    },
+    segment
+  );
+
+  if (pieces.length === 0) {
+    return [segment];
+  }
+
+  return pieces;
+}
+
+function pointOnSegmentFraction(
+  segment,
+  fraction
+) {
+  return {
+    x: lerp(
+      segment.x1,
+      segment.x2,
+      fraction
+    ),
+
+    y: lerp(
+      segment.y1,
+      segment.y2,
+      fraction
+    )
+  };
+}
+
+function shiftToOffset(
+  point,
+  item,
+  targetOffset
+) {
+  const delta =
+    targetOffset - item.offset;
+
+  return {
+    x:
+      point.x +
+      item.direction.normalX * delta,
+
+    y:
+      point.y +
+      item.direction.normalY * delta
+  };
+}
+
+function pushRouteSegment(
+  pieces,
+  start,
+  end,
+  template
+) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+
+  if (
+    dx * dx + dy * dy <
+    EPSILON * EPSILON
+  ) {
+    return;
+  }
+
+  pieces.push({
+    x1: start.x,
+    y1: start.y,
+    x2: end.x,
+    y2: end.y,
+    setIndex: template.setIndex,
+    connectionId: template.connectionId
+  });
+}
+
+function uniqueSortedFractions(cuts) {
+  const sorted = cuts
+    .map((value) => constrain(value, 0, 1))
+    .sort((a, b) => a - b);
+
+  const result = [];
+
+  for (const value of sorted) {
+    const previous =
+      result[result.length - 1];
+
+    if (
+      result.length === 0 ||
+      abs(value - previous) > 0.0001
+    ) {
+      result.push(value);
+    }
+  }
+
+  return result;
+}
+
+function intervalContains(intervals, t) {
+  for (const interval of intervals) {
+    if (
+      t >= interval.start - 0.01 &&
+      t <= interval.end + 0.01
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/* =========================================================
    BUNDLED ROUTE DRAWING
    ========================================================= */
 
@@ -616,13 +1280,12 @@ function drawBundledLines() {
       const offsetY =
         perpendicularY * offset;
 
-      stroke(setColors[setIndex]);
-
-      line(
+      drawColoredSegment(
         edge.x1 + offsetX,
         edge.y1 + offsetY,
         edge.x2 + offsetX,
-        edge.y2 + offsetY
+        edge.y2 + offsetY,
+        setColors[setIndex]
       );
     }
   }
@@ -772,18 +1435,18 @@ function drawEndOfLineCap(
 
   push();
 
-  stroke(setColors[setIndex]);
   strokeWeight(getRouteWidth());
   strokeCap(SQUARE);
 
-  line(
+  drawColoredSegment(
     laneCenter.x,
     laneCenter.y,
     capCenter.x,
-    capCenter.y
+    capCenter.y,
+    setColors[setIndex]
   );
 
-  line(
+  drawColoredSegment(
     capCenter.x -
       perpendicularX * halfCapLength,
 
@@ -794,7 +1457,8 @@ function drawEndOfLineCap(
       perpendicularX * halfCapLength,
 
     capCenter.y +
-      perpendicularY * halfCapLength
+      perpendicularY * halfCapLength,
+    setColors[setIndex]
   );
 
   pop();
@@ -1910,6 +2574,537 @@ function isInsideLegend(x, y) {
     y >= layout.y &&
     y <= layout.y + layout.height
   );
+}
+
+/* =========================================================
+   TERRAIN
+   ========================================================= */
+
+/**
+ * Builds the neutral land, water, and parks for this map.
+ * Land is the canvas color. Water and parks are shapes.
+ */
+function createTerrain() {
+  terrain = {
+    waters: [],
+    parks: []
+  };
+
+  for (
+    let index = 0;
+    index < params.water;
+    index++
+  ) {
+    if (index === 0) {
+      terrain.waters.push(
+        createRiverPolygon()
+      );
+    } else {
+      terrain.waters.push(
+        createLakePolygon()
+      );
+    }
+  }
+
+  for (
+    let index = 0;
+    index < params.parks;
+    index++
+  ) {
+    terrain.parks.push(createPark());
+  }
+}
+
+/**
+ * A wavy river crossing the map, stored as a polygon.
+ */
+function createRiverPolygon() {
+  const steps = 18;
+  const half = random(
+    min(cellWidth, cellHeight) * 2.4,
+    min(cellWidth, cellHeight) * 4.6
+  );
+
+  const yBase = random(
+    height * 0.3,
+    height * 0.7
+  );
+
+  const phase = random(TWO_PI);
+  const phase2 = random(TWO_PI);
+
+  const top = [];
+  const bottom = [];
+
+  for (let step = 0; step <= steps; step++) {
+    const t = step / steps;
+    const x = t * width;
+
+    const wave =
+      sin(t * TWO_PI * 1.15 + phase) *
+        cellWidth *
+        2.4 +
+      cos(t * TWO_PI * 0.5 + phase2) *
+        cellWidth *
+        1.5;
+
+    const y = constrain(
+      yBase + wave,
+      half + 10,
+      height - half - 10
+    );
+
+    const widthScale =
+      1 +
+      0.16 *
+        sin(t * TWO_PI * 2 + phase2);
+
+    top.push({
+      x,
+      y: y - half * widthScale
+    });
+
+    bottom.push({
+      x,
+      y: y + half * widthScale
+    });
+  }
+
+  return top.concat(bottom.reverse());
+}
+
+/**
+ * An elliptical lake, stored as a polygon.
+ */
+function createLakePolygon() {
+  return ellipsePolygon(
+    random(width * 0.18, width * 0.82),
+    random(height * 0.18, height * 0.82),
+    random(cellWidth * 3, cellWidth * 7),
+    random(cellHeight * 2.4, cellHeight * 5.2),
+    random(TWO_PI),
+    22
+  );
+}
+
+function ellipsePolygon(
+  centerX,
+  centerY,
+  radiusX,
+  radiusY,
+  rotation,
+  count
+) {
+  const points = [];
+
+  for (let index = 0; index < count; index++) {
+    const angle = (TWO_PI * index) / count;
+
+    const x = cos(angle) * radiusX;
+    const y = sin(angle) * radiusY;
+
+    const rotatedX =
+      x * cos(rotation) -
+      y * sin(rotation);
+
+    const rotatedY =
+      x * sin(rotation) +
+      y * cos(rotation);
+
+    points.push({
+      x: centerX + rotatedX,
+      y: centerY + rotatedY
+    });
+  }
+
+  return points;
+}
+
+/**
+ * One soft green patch, drawn as two overlapping ellipses.
+ */
+function createPark() {
+  return {
+    x: random(width * 0.08, width * 0.92),
+    y: random(height * 0.08, height * 0.92),
+    w: random(cellWidth * 4, cellWidth * 10),
+    h: random(cellHeight * 3, cellHeight * 7),
+    rotation: random(TWO_PI),
+    lobe: random(0.18, 0.42)
+  };
+}
+
+/**
+ * Draws land, then water, then parks.
+ */
+function drawTerrain() {
+  background(LAND_COLOR);
+
+  noStroke();
+  fill(WATER_COLOR);
+
+  for (const water of terrain.waters) {
+    drawPolygon(water);
+  }
+
+  fill(PARK_COLOR);
+
+  for (const park of terrain.parks) {
+    push();
+
+    translate(park.x, park.y);
+    rotate(park.rotation);
+
+    ellipse(0, 0, park.w, park.h);
+
+    ellipse(
+      park.w * park.lobe,
+      park.h * 0.06,
+      park.w * 0.64,
+      park.h * 0.74
+    );
+
+    pop();
+  }
+}
+
+function drawPolygon(points) {
+  if (!points || points.length < 3) {
+    return;
+  }
+
+  beginShape();
+
+  for (const point of points) {
+    vertex(point.x, point.y);
+  }
+
+  endShape(CLOSE);
+}
+
+function pointInWater(x, y) {
+  for (const water of terrain.waters) {
+    if (pointInPolygon(x, y, water)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function pointInPolygon(x, y, polygon) {
+  let inside = false;
+
+  for (
+    let index = 0, previous = polygon.length - 1;
+    index < polygon.length;
+    previous = index++
+  ) {
+    const current = polygon[index];
+    const prior = polygon[previous];
+
+    const crosses =
+      current.y > y !== prior.y > y;
+
+    if (!crosses) {
+      continue;
+    }
+
+    const xHit =
+      ((prior.x - current.x) * (y - current.y)) /
+        (prior.y - current.y) +
+      current.x;
+
+    if (x < xHit) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+}
+
+/* =========================================================
+   LAND AND WATER STROKES
+   ========================================================= */
+
+/**
+ * Draws a route solid on land and dotted over water.
+ */
+function drawColoredSegment(
+  x1,
+  y1,
+  x2,
+  y2,
+  paint
+) {
+  const pieces =
+    splitSegmentByTerrain(x1, y1, x2, y2);
+
+  for (const piece of pieces) {
+    if (piece.water) {
+      drawDottedSegment(
+        piece.x1,
+        piece.y1,
+        piece.x2,
+        piece.y2,
+        paint
+      );
+    } else {
+      stroke(paint);
+
+      line(
+        piece.x1,
+        piece.y1,
+        piece.x2,
+        piece.y2
+      );
+    }
+  }
+}
+
+/**
+ * Splits a segment where it enters or leaves water.
+ */
+function splitSegmentByTerrain(x1, y1, x2, y2) {
+  const length = dist(x1, y1, x2, y2);
+
+  if (length < EPSILON) {
+    return [
+      {
+        x1,
+        y1,
+        x2,
+        y2,
+        water: pointInWater(x1, y1)
+      }
+    ];
+  }
+
+  const step =
+    min(cellWidth, cellHeight) * 0.35;
+
+  const samples = max(
+    2,
+    ceil(length / step)
+  );
+
+  const pieces = [];
+
+  let pieceStart = 0;
+  let water = pointInWater(x1, y1);
+
+  for (
+    let sample = 1;
+    sample <= samples;
+    sample++
+  ) {
+    const t = sample / samples;
+
+    const sampleWater = pointInWater(
+      lerp(x1, x2, t),
+      lerp(y1, y2, t)
+    );
+
+    if (sampleWater === water) {
+      continue;
+    }
+
+    const boundary =
+      (sample - 0.5) / samples;
+
+    pieces.push(
+      makeTerrainPiece(
+        x1,
+        y1,
+        x2,
+        y2,
+        pieceStart,
+        boundary,
+        water
+      )
+    );
+
+    pieceStart = boundary;
+    water = sampleWater;
+  }
+
+  pieces.push(
+    makeTerrainPiece(
+      x1,
+      y1,
+      x2,
+      y2,
+      pieceStart,
+      1,
+      water
+    )
+  );
+
+  return pieces;
+}
+
+function makeTerrainPiece(
+  x1,
+  y1,
+  x2,
+  y2,
+  startT,
+  endT,
+  water
+) {
+  return {
+    x1: lerp(x1, x2, startT),
+    y1: lerp(y1, y2, startT),
+    x2: lerp(x1, x2, endT),
+    y2: lerp(y1, y2, endT),
+    water
+  };
+}
+
+/**
+ * Round dots in the route color, with water showing
+ * between them.
+ */
+function drawDottedSegment(
+  x1,
+  y1,
+  x2,
+  y2,
+  paint
+) {
+  const length = dist(x1, y1, x2, y2);
+  const diameter = getRouteWidth() * 0.7;
+  const spacing = getRouteWidth() * 1.65;
+
+  push();
+
+  noStroke();
+  fill(paint);
+
+  if (length <= spacing) {
+    circle(
+      (x1 + x2) / 2,
+      (y1 + y2) / 2,
+      diameter
+    );
+
+    pop();
+    return;
+  }
+
+  let distance = spacing * 0.5;
+
+  while (distance < length) {
+    const t = distance / length;
+
+    circle(
+      lerp(x1, x2, t),
+      lerp(y1, y2, t),
+      diameter
+    );
+
+    distance += spacing;
+  }
+
+  pop();
+}
+
+/* =========================================================
+   CONTROLS
+   ========================================================= */
+
+/**
+ * Tweakpane controls for the route count and the map.
+ */
+function setupPane() {
+  const container =
+    document.getElementById("controls");
+
+  pane = new Tweakpane.Pane({
+    container,
+    title: "Metro"
+  });
+
+  pane.addInput(params, "lines", {
+    label: "Lines",
+    min: 1,
+    max: 8,
+    step: 1
+  });
+
+  pane.addInput(params, "points", {
+    label: "Points",
+    min: 2,
+    max: 8,
+    step: 1
+  });
+
+  pane.addInput(params, "water", {
+    label: "Water",
+    min: 0,
+    max: 4,
+    step: 1
+  });
+
+  pane.addInput(params, "parks", {
+    label: "Parks",
+    min: 0,
+    max: 6,
+    step: 1
+  });
+
+  pane
+    .addButton({
+      title: "New map"
+    })
+    .on("click", () => {
+      rebuildMap();
+    });
+
+  pane.on("change", (event) => {
+    if (event.last === false) {
+      return;
+    }
+
+    if (
+      event.presetKey === "lines" ||
+      event.presetKey === "points"
+    ) {
+      rebuildRoutes();
+      return;
+    }
+
+    if (
+      event.presetKey === "water" ||
+      event.presetKey === "parks"
+    ) {
+      createTerrain();
+      renderScene();
+    }
+  });
+}
+
+/**
+ * Builds a fresh set of routes and keeps the terrain.
+ */
+function rebuildRoutes() {
+  sets = [];
+  setColors = [];
+
+  if (selectedSetIndex >= params.lines) {
+    selectedSetIndex = 0;
+  }
+
+  createSets();
+  renderScene();
+}
+
+/**
+ * Builds a new terrain and a new set of routes.
+ */
+function rebuildMap() {
+  createTerrain();
+  rebuildRoutes();
 }
 
 /* =========================================================

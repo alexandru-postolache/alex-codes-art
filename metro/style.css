@@ -2,6 +2,20 @@ html, body {
   margin: 0;
   padding: 0;
 }
+
+body {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
+  background: #e6e2d8;
+  font-family: sans-serif;
+}
+
 canvas {
   display: block;
+}
+
+#controls {
+  width: 260px;
 }
