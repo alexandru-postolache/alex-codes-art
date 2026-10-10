@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kinetic Anatomy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,560&family=Outfit:wght@380;500;560&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <strong>Kinetic Anatomy</strong>
+        <span>Joint motion, ranges, and the muscles that make them</span>
+      </div>
+      <div class="segmented" role="group" aria-label="Side">
+        <button id="side-right" aria-pressed="true">Right</button>
+        <button id="side-left" aria-pressed="false">Left</button>
+      </div>
+      <div class="top-actions">
+        <button id="mirror" aria-pressed="true">Move both sides</button>
+        <button id="bones" aria-pressed="true">Bones</button>
+        <button id="muscles" aria-pressed="true">Muscles</button>
+        <button id="all-muscles" aria-pressed="false">All paths</button>
+        <button id="play" aria-pressed="false">Play range</button>
+        <button id="reset">Reset</button>
+      </div>
+    </header>
+    <aside id="library" class="panel"></aside>
+    <main class="stage">
+      <div id="viewport"></div>
+      <div class="hud">
+        <div class="chip" id="readout"><b>Loading the skeleton…</b><span id="loading">Fetching the Rajagopal bone meshes.</span></div>
+        <div class="chip legend">
+          <span><i class="swatch prime"></i>Prime mover</span>
+          <span><i class="swatch syn"></i>Synergist</span>
+          <span><i class="swatch opp"></i>Antagonist</span>
+        </div>
+      </div>
+    </main>
+    <aside id="detail" class="panel"></aside>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
