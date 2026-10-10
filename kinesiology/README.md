@@ -1,6 +1,6 @@
 # Kinetic Anatomy
 
-A browser lab for kinesiology. Drag a joint through its range and the skeleton moves on the published axes of the [Rajagopal 2016 full-body OpenSim model](https://doi.org/10.1109/TBME.2016.2586891). Lower-limb muscle lines are that model's paths. The panel names the prime movers, synergists, and antagonists for each direction.
+A browser lab for kinesiology. Drag a joint through its range and the skeleton moves on the published axes of the [Rajagopal 2016 full-body OpenSim model](https://doi.org/10.1109/TBME.2016.2586891). Every joint that has left the neutral pose keeps a label on the skeleton, so the whole pose stays readable at once. Lower-limb muscle lines are that model's paths. The panel names the prime movers, synergists, and antagonists for each direction.
 
 ## Run it
 

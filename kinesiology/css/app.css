@@ -102,6 +102,56 @@ button { cursor: pointer; }
 .swatch.syn { background: var(--syn); }
 .swatch.opp { background: var(--opp); }
 
+.pose-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.pose-mark { position: absolute; }
+.pose-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 99px;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(224, 138, 79, 0.28);
+}
+.pose-card {
+  position: absolute;
+  left: 14px;
+  top: -8px;
+  min-width: 118px;
+  background: rgba(18, 17, 14, 0.86);
+  border: 1px solid rgba(224, 138, 79, 0.55);
+  border-radius: 12px;
+  padding: 6px 8px 7px;
+  box-shadow: var(--shadow);
+}
+.pose-summary {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 1;
+  pointer-events: none;
+  max-width: min(320px, 42vw);
+  background: rgba(18, 17, 14, 0.82);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  box-shadow: var(--shadow);
+}
+.pose-summary b {
+  display: block;
+  font-family: "Fraunces", serif;
+  font-size: 16px;
+  font-weight: 520;
+  margin-bottom: 4px;
+}
+.pose-summary span { display: block; color: var(--muted); font-size: 13px; line-height: 1.35; margin-top: 3px; }
+.pose-summary em { color: var(--faint); font-style: normal; }
+.pose-mark[data-align="left"] .pose-card { left: auto; right: 12px; text-align: right; }
+.pose-card b { display: block; font-size: 11px; letter-spacing: 0.04em; color: var(--faint); font-weight: 500; }
+.pose-card span { display: block; color: var(--ink); font-size: 13px; line-height: 1.35; }
+
 .search {
   width: 100%;
   border: 1px solid var(--line);

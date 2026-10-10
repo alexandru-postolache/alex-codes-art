@@ -374,11 +374,97 @@ export function createViewer(container, model, meshData) {
   observer.observe(container);
   resize();
 
+  const poseLayer = document.createElement("div");
+  poseLayer.className = "pose-layer";
+  container.appendChild(poseLayer);
+  const poseNodes = new Map();
+  let poseMarks = [];
+  const cameraForward = new THREE.Vector3();
+  const markWorld = new THREE.Vector3();
+
+  function fillPoseMark(el, mark) {
+    el.replaceChildren();
+    const dot = document.createElement("i");
+    dot.className = "pose-dot";
+    const card = document.createElement("div");
+    card.className = "pose-card";
+    const title = document.createElement("b");
+    title.textContent = mark.title;
+    card.append(title);
+    for (const line of mark.lines) {
+      const span = document.createElement("span");
+      span.textContent = line;
+      card.append(span);
+    }
+    el.append(dot, card);
+  }
+
+  function placePoseMarks() {
+    const width = container.clientWidth || 1;
+    const height = container.clientHeight || 1;
+    camera.getWorldDirection(cameraForward);
+    const seen = new Set();
+    const placedCards = [];
+    for (const mark of poseMarks) {
+      seen.add(mark.id);
+      markWorld.set(mark.point[0], mark.point[1] + root.position.y, mark.point[2]);
+      const inFront = markWorld.clone().sub(camera.position).dot(cameraForward) > 0.04;
+      const ndc = markWorld.clone().project(camera);
+      const x = (ndc.x * 0.5 + 0.5) * width;
+      const y = (-ndc.y * 0.5 + 0.5) * height;
+      const visible = inFront && ndc.z >= -1 && ndc.z <= 1 && x > -20 && y > -20 && x < width + 20 && y < height + 20;
+      let el = poseNodes.get(mark.id);
+      if (!el) {
+        el = document.createElement("div");
+        el.className = "pose-mark";
+        poseNodes.set(mark.id, el);
+        poseLayer.append(el);
+      }
+      const signature = `${mark.title}|${mark.lines.join("|")}`;
+      if (el.dataset.signature !== signature) {
+        el.dataset.signature = signature;
+        fillPoseMark(el, mark);
+      }
+      const align = x > width * 0.78 ? "left" : mark.side === "left" ? "left" : "right";
+      el.dataset.align = align;
+      el.hidden = false;
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+      if (visible) {
+        const card = el.querySelector(".pose-card");
+        let shift = -8;
+        const height = card?.offsetHeight || 46;
+        const widthOfCard = card?.offsetWidth || 130;
+        const boxAt = (top) => {
+          const left = align === "left" ? x - 16 - widthOfCard : x + 14;
+          return { left, top: y + top, right: left + widthOfCard, bottom: y + top + height };
+        };
+        let guard = 0;
+        while (guard < 6 && placedCards.some((other) => {
+          const box = boxAt(shift);
+          return box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top;
+        })) {
+          shift += height + 8;
+          guard += 1;
+        }
+        if (card) card.style.top = `${shift}px`;
+        placedCards.push(boxAt(shift));
+      }
+      el.hidden = !visible;
+    }
+    for (const [id, el] of poseNodes) {
+      if (seen.has(id)) continue;
+      el.remove();
+      poseNodes.delete(id);
+    }
+  }
+
   let running = true;
   function frame() {
     if (!running) return;
     requestAnimationFrame(frame);
     controls.update();
+    placePoseMarks();
     renderer.render(scene, camera);
   }
   frame();
@@ -526,7 +612,7 @@ export function createViewer(container, model, meshData) {
         target[2] + shot.eye[2] * zSign,
       );
     },
-    update({ world, muscles, roles, showMuscles, showBones, extras, ground, axis }) {
+    update({ world, muscles, roles, showMuscles, showBones, extras, ground, axis, marks }) {
       lastWorld = world;
       root.visible = showBones;
       const offset = ground ? standingOffset : 0;
@@ -535,6 +621,8 @@ export function createViewer(container, model, meshData) {
       setMuscles(muscles, roles, showMuscles);
       highlightBodies(axis?.bodies || []);
       setAxis(axis?.origin, axis?.direction, axis?.color || "#f2c14e");
+      poseMarks = marks || [];
+      placePoseMarks();
     },
     dispose() {
       running = false;

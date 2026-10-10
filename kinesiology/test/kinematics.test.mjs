@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { JOINTS, MODEL_CHANGES, MUSCLES, sidedCoord } from "../js/anatomy.js";
+import { poseMarks } from "../js/pose-summary.js";
 import { schematicMuscles } from "../js/schematic-muscles.js";
 import {
   cervicalRotation,
@@ -196,4 +197,28 @@ test("the base-model summary covers every teaching change", () => {
       assert.equal(tighter, true, `${dof.id} slider should be inside the published range`);
     }
   }
+});
+
+test("pose labels list every joint that has left neutral", () => {
+  const shoulder = JOINTS.find((joint) => joint.id === "shoulder");
+  const hip = JOINTS.find((joint) => joint.id === "hip");
+  const pose = {
+    arm_add_r: -40,
+    arm_flex_r: -15,
+    arm_add_l: -40,
+    hip_flexion_r: 80,
+  };
+  const marks = poseMarks(JOINTS, (dof, joint, side) => {
+    if (!joint.sided) return 0;
+    const name = `${dof.id}_${side === "left" ? "l" : "r"}`;
+    return pose[name] || 0;
+  });
+  const rightShoulder = marks.find((mark) => mark.id === "shoulder:right");
+  assert.deepEqual(rightShoulder.lines, ["15° extension", "40° abduction"]);
+  assert.equal(rightShoulder.title, "Right shoulder");
+  assert.equal(marks.find((mark) => mark.id === "shoulder:left").lines[0], "40° abduction");
+  assert.equal(marks.find((mark) => mark.id === "hip:right").lines[0], "80° flexion");
+  assert.equal(marks.some((mark) => mark.id === "hip:left"), false);
+  assert.equal(marks.some((mark) => mark.jointId === "elbow"), false);
+  assert.ok(shoulder && hip);
 });

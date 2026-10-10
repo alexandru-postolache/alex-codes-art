@@ -1,5 +1,6 @@
 import { JOINTS, MODEL_CHANGES, MUSCLES, PATTERNS, REGIONS, muscleBase, sidedCoord } from "./anatomy.js";
 import { cervicalRotation, compensatePelvis, deg, forwardKinematics, mulMatVec, mulTransform, rad, transformPoint } from "./kinematics.js";
+import { poseMarks } from "./pose-summary.js";
 import { schematicMuscles } from "./schematic-muscles.js";
 import { createViewer, jointAxisWorld } from "./viewer.js";
 
@@ -66,12 +67,41 @@ function limits(dof, joint) {
   return { min, max };
 }
 
-function currentDegrees(dof, joint) {
+function degreesFor(dof, joint, side) {
   if (TEACHING.has(dof.id)) return deg(state.extras[dof.id] || 0);
-  const name = sidedCoord(dof.id, state.side, joint);
+  const name = sidedCoord(dof.id, side || state.side, joint);
   if (state.pose[name] != null) return deg(state.pose[name]);
   const record = coordRecord(name) || coordRecord(dof.id);
   return deg(record?.default ?? 0);
+}
+
+function currentDegrees(dof, joint) {
+  return degreesFor(dof, joint, state.side);
+}
+
+const MARK_ANCHOR = {
+  pelvis: ["pelvis", [0.02, 0.04, 0]],
+  lumbar: ["torso", [0.06, 0.28, 0]],
+  cervical: ["skull", [0.04, 0.56, 0]],
+  shoulder: ["humerus", [0, 0.01, 0]],
+  elbow: ["ulna", [0, 0.01, 0]],
+  forearm: ["radius", [0, -0.1, 0]],
+  wrist: ["hand", [0, -0.01, 0]],
+  fingers: ["hand", [0.02, -0.09, 0]],
+  hip: ["femur", [0, -0.04, 0]],
+  knee: ["tibia", [0, 0.02, 0]],
+  ankle: ["talus", [0, 0, 0]],
+  subtalar: ["calcn", [0.05, 0.02, 0]],
+  toes: ["toes", [0.03, 0.01, 0]],
+};
+
+function markPoint(world, jointId, side) {
+  const spec = MARK_ANCHOR[jointId] || ["pelvis", [0, 0, 0]];
+  const body = spec[0] === "pelvis" || spec[0] === "torso" || spec[0] === "skull"
+    ? spec[0]
+    : `${spec[0]}_${side === "left" ? "l" : "r"}`;
+  const frame = world[body] || world.torso;
+  return transformPoint(frame, spec[1]);
 }
 
 function setDegrees(dof, joint, degrees) {
@@ -89,6 +119,15 @@ function setDegrees(dof, joint, degrees) {
 
 function modelOverrides() {
   return compensatePelvis(model, state.pose);
+}
+
+function renderPoseSummary(marks) {
+  const summary = document.querySelector("#pose-summary");
+  if (!marks.length) {
+    summary.innerHTML = "<b>Pose</b><span>Anatomical position</span>";
+    return;
+  }
+  summary.innerHTML = `<b>Pose</b>${marks.map((mark) => `<span><em>${mark.title}</em> ${mark.lines.join(" · ")}</span>`).join("")}`;
 }
 
 function phrase(dof, degrees) {
@@ -181,6 +220,11 @@ function sync() {
     }
     return [`${body}_r`, `${body}_l`];
   });
+  const marks = poseMarks(JOINTS, degreesFor).map((mark) => ({
+    ...mark,
+    point: markPoint(solved.world, mark.jointId, mark.side),
+  }));
+  renderPoseSummary(marks);
   viewer.update({
     world: solved.world,
     muscles,
@@ -190,6 +234,7 @@ function sync() {
     extras: state.extras,
     ground: true,
     axis: axis ? { ...axis, bodies, color: "#f2c14e" } : { bodies },
+    marks,
   });
   readoutEl.innerHTML = `<b>${label}</b><span>${detail}</span>`;
 }
