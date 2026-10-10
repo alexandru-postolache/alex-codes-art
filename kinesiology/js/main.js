@@ -1,9 +1,8 @@
 import { JOINTS, MUSCLES, PATTERNS, REGIONS, muscleBase, sidedCoord } from "./anatomy.js";
-import { cervicalRotation, deg, forwardKinematics, mulMatVec, mulTransform, rad, transformPoint } from "./kinematics.js";
+import { cervicalRotation, compensatePelvis, deg, forwardKinematics, mulMatVec, mulTransform, rad, transformPoint } from "./kinematics.js";
 import { schematicMuscles } from "./schematic-muscles.js";
 import { createViewer, jointAxisWorld } from "./viewer.js";
 
-const HIP_CENTER = [-0.056276, -0.07849, 0];
 const TEACHING = new Set(["cervical_flexion", "cervical_lateral", "cervical_rotation", "finger_curl", "thumb_flexion"]);
 
 const state = {
@@ -22,8 +21,8 @@ const state = {
     cervical_rotation: 0,
     finger_curl: 0,
     thumb_flexion: 0,
-    pelvic_on_hips: 0,
   },
+  detailId: null,
   playing: false,
   playDir: 1,
 };
@@ -68,52 +67,28 @@ function limits(dof, joint) {
 }
 
 function currentDegrees(dof, joint) {
-  if (dof.kind === "coupled") return deg(state.extras.pelvic_on_hips);
   if (TEACHING.has(dof.id)) return deg(state.extras[dof.id] || 0);
   const name = sidedCoord(dof.id, state.side, joint);
+  if (state.pose[name] != null) return deg(state.pose[name]);
   const record = coordRecord(name) || coordRecord(dof.id);
-  const overrides = modelOverrides();
-  const value = overrides[name] ?? record?.default ?? 0;
-  return deg(value);
+  return deg(record?.default ?? 0);
 }
 
 function setDegrees(dof, joint, degrees) {
   const { min, max } = limits(dof, joint);
   const clamped = Math.min(max, Math.max(min, degrees));
   const value = rad(clamped);
-  if (dof.kind === "coupled") {
-    state.extras.pelvic_on_hips = value;
-    return;
-  }
   if (TEACHING.has(dof.id)) {
     state.extras[dof.id] = value;
-    if (state.mirror && joint.sided) {
-      // Teaching finger and neck values are shared across sides on purpose.
-    }
     return;
   }
-  if (dof.id === "hip_flexion" || dof.id === "pelvis_tilt") state.extras.pelvic_on_hips = 0;
   const names = [sidedCoord(dof.id, state.side, joint)];
   if (state.mirror && joint.sided) names.push(sidedCoord(dof.id, state.side === "right" ? "left" : "right", joint));
   for (const name of names) state.pose[name] = value;
 }
 
 function modelOverrides() {
-  const overrides = { ...state.pose };
-  const anterior = state.extras.pelvic_on_hips;
-  if (Math.abs(anterior) > 1e-4) {
-    const alpha = -anterior;
-    const c = Math.cos(alpha);
-    const s = Math.sin(alpha);
-    const rx = c * HIP_CENTER[0] - s * HIP_CENTER[1];
-    const ry = s * HIP_CENTER[0] + c * HIP_CENTER[1];
-    overrides.pelvis_tilt = alpha;
-    overrides.hip_flexion_r = -alpha;
-    overrides.hip_flexion_l = -alpha;
-    overrides.pelvis_tx = HIP_CENTER[0] - rx;
-    overrides.pelvis_ty = 0.94 + (HIP_CENTER[1] - ry);
-  }
-  return overrides;
+  return compensatePelvis(model, state.pose);
 }
 
 function phrase(dof, degrees) {
@@ -220,7 +195,14 @@ function sync() {
 }
 
 function axisFor(world, joint, dof) {
-  if (!dof || dof.kind === "coupled" || joint.kind === "teaching" || joint.kind === "lesson") {
+  if (dof && joint.id === "pelvis" && dof.id.startsWith("pelvis_")) {
+    const local = dof.id === "pelvis_tilt" ? [0, 0, 1] : dof.id === "pelvis_list" ? [1, 0, 0] : [0, 1, 0];
+    return {
+      origin: transformPoint(world.pelvis, [-0.056276, -0.07849, 0]),
+      direction: mulMatVec(world.pelvis.R, local),
+    };
+  }
+  if (!dof || joint.kind === "teaching" || joint.kind === "lesson") {
     if (joint.id === "cervical" && dof) {
       const local = dof.id.endsWith("flexion") ? [0, 0, -1] : dof.id.endsWith("lateral") ? [1, 0, 0] : [0, 1, 0];
       return {
@@ -270,6 +252,7 @@ function renderLibrary() {
       const joint = activeJoint();
       state.dofId = joint.dofs?.[0]?.id || null;
       state.lessonName = joint.movements?.[0]?.name || null;
+      state.detailId = null;
       state.playing = false;
       renderLibrary();
       renderDetail();
@@ -292,6 +275,13 @@ function muscleBlock(item, groupLabel) {
   </div>`;
 }
 
+function detailToggle(id) {
+  const open = state.detailId === id;
+  return `<button class="detail-toggle" data-detail="${id}" aria-expanded="${open}" aria-label="${open ? "Hide muscle detail" : "Show muscle detail"}">
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 6.2 8 10.2 12 6.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>`;
+}
+
 function renderDetail() {
   const joint = activeJoint();
   const kind = joint.kind === "model" ? "Rajagopal 2016 coordinate" : joint.kind === "teaching" ? "Teaching approximation" : "Not a separate joint in this model";
@@ -302,15 +292,19 @@ function renderDetail() {
       const range = limits(dof, joint);
       const degrees = currentDegrees(dof, joint);
       const active = dof.id === state.dofId;
+      const open = state.detailId === dof.id;
       return `<section class="dof" data-active="${active}" data-dof="${dof.id}">
         <header>
           <button class="link" data-pick-dof="${dof.id}"><b>${dof.positive}</b> <span class="meta">/ ${dof.negative}</span></button>
-          <span class="degrees" data-readout="${dof.id}">${phrase(dof, degrees)}</span>
+          <span class="dof-tools">
+            <span class="degrees" data-readout="${dof.id}">${phrase(dof, degrees)}</span>
+            ${detailToggle(dof.id)}
+          </span>
         </header>
         <input type="range" min="${range.min}" max="${range.max}" step="1" value="${degrees}" data-slider="${dof.id}" aria-label="${dof.positive}">
         <div class="ends"><span>${dof.negative}</span><span>${dof.positive}</span></div>
         <div class="facts"><span>${dof.plane}</span><span>${dof.axis}</span></div>
-        ${active ? `<p class="about">${dof.about}</p><p class="clinical">${dof.clinical}</p>
+        ${open ? `<p class="about">${dof.about}</p><p class="clinical">${dof.clinical}</p>
           <h3>Muscles</h3>
           ${dof.positiveMuscles.map((item) => muscleBlock(item, dof.positive)).join("")}
           ${dof.negativeMuscles.map((item) => muscleBlock(item, dof.negative)).join("")}` : ""}
@@ -345,7 +339,10 @@ function renderDetail() {
       });
       sync();
     });
-    slider.addEventListener("change", () => {
+  });
+  detailEl.querySelectorAll("[data-detail]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.detailId = state.detailId === button.dataset.detail ? null : button.dataset.detail;
       renderDetail();
     });
   });
@@ -384,6 +381,7 @@ function applyPattern(pattern) {
   }
   state.jointId = pattern.focus;
   state.dofId = pattern.dof;
+  state.detailId = null;
   renderLibrary();
   renderDetail();
   focusCamera(pattern.focus);
