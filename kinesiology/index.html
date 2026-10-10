@@ -35,6 +35,7 @@
         <button id="all-muscles" aria-pressed="false">All paths</button>
         <button id="play" aria-pressed="false">Play range</button>
         <button id="reset">Reset</button>
+        <button id="changes-open" type="button">Model changes</button>
       </div>
     </header>
     <aside id="library" class="panel"></aside>
@@ -51,6 +52,18 @@
     </main>
     <aside id="detail" class="panel"></aside>
   </div>
+  <dialog id="changes" aria-labelledby="changes-title">
+    <div class="changes-sheet">
+      <header>
+        <div>
+          <p class="kicker">Rajagopal 2016</p>
+          <h2 id="changes-title">Changes to the base model</h2>
+        </div>
+        <button type="button" id="changes-close">Close</button>
+      </header>
+      <div id="changes-body"></div>
+    </div>
+  </dialog>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>
