@@ -146,7 +146,24 @@ h2 { font-family: "Fraunces", serif; font-weight: 540; font-size: 32px; margin: 
   margin-bottom: 8px;
   background: #191714;
 }
-.dof header { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.dof header { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.dof-tools { display: flex; align-items: center; gap: 8px; flex: none; }
+.detail-toggle {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0;
+}
+.detail-toggle[aria-expanded="true"] {
+  color: var(--accent);
+  border-color: rgba(224, 138, 79, 0.7);
+}
+.detail-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .dof button.link {
   border: 0; background: transparent; padding: 0; text-align: left; color: var(--ink);
 }

@@ -3,6 +3,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
   add,
   cervicalRotation,
+  forwardKinematics,
   mulMatVec,
   rotAxis,
   scale,
@@ -493,6 +494,10 @@ export function createViewer(container, model, meshData) {
     return minY;
   }
 
+  // Plant the standing pose once. Later joint motion must not drop the body
+  // to chase whichever sole point is lowest.
+  const standingOffset = -lowestSole(forwardKinematics(model).world);
+
   return {
     resize,
     setPickHandler(handler) {
@@ -509,7 +514,7 @@ export function createViewer(container, model, meshData) {
         hand: { body: `hand_${side}`, local: [0.01, -0.04, 0], eye: [0.06, 0.05, 0.42] },
       };
       const shot = shots[part] || shots.pelvis;
-      const lift = world ? -lowestSole(world) : 0;
+      const lift = world ? standingOffset : 0;
       const target = world?.[shot.body]
         ? transformPoint(world[shot.body], shot.local)
         : [0, 0.95, 0];
@@ -524,7 +529,7 @@ export function createViewer(container, model, meshData) {
     update({ world, muscles, roles, showMuscles, showBones, extras, ground, axis }) {
       lastWorld = world;
       root.visible = showBones;
-      const offset = ground ? -lowestSole(world) : 0;
+      const offset = ground ? standingOffset : 0;
       setPose(world, extras, offset);
       setBonesDimmed(showMuscles);
       setMuscles(muscles, roles, showMuscles);

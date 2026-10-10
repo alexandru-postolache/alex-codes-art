@@ -5,6 +5,7 @@ import { JOINTS, MUSCLES, sidedCoord } from "../js/anatomy.js";
 import { schematicMuscles } from "../js/schematic-muscles.js";
 import {
   cervicalRotation,
+  compensatePelvis,
   forwardKinematics,
   mobilizerTransform,
   mulMatVec,
@@ -101,6 +102,46 @@ test("knee flexion moves the ankle without leaving the femoral joint", () => {
   const ankle1 = transformPoint(bent.world.tibia_r, [0, -0.4, 0]);
   assert.ok(ankle1[0] < ankle0[0] - 0.05, "knee flexion should swing the foot backward");
   assert.ok(ankle1[1] > ankle0[1] + 0.05, "knee flexion should lift the foot");
+});
+
+test("pelvis tilt, list, and rotation leave the thighs where the hip sliders put them", () => {
+  const pose = {
+    pelvis_tilt: rad(18),
+    pelvis_list: rad(12),
+    pelvis_rotation: rad(16),
+    hip_flexion_r: rad(25),
+    hip_adduction_l: rad(10),
+  };
+  const moved = forwardKinematics(model, compensatePelvis(model, pose));
+  const legs = forwardKinematics(model, {
+    hip_flexion_r: rad(25),
+    hip_adduction_l: rad(10),
+  });
+  const direction = (world, body) => {
+    const origin = transformPoint(world[body], [0, 0, 0]);
+    const distal = transformPoint(world[body], [0, -0.4, 0]);
+    return [distal[0] - origin[0], distal[1] - origin[1], distal[2] - origin[2]];
+  };
+  for (const body of ["femur_r", "femur_l"]) {
+    const a = direction(moved.world, body);
+    const b = direction(legs.world, body);
+    const gap = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    assert.ok(gap < 1e-4, `${body} direction changed by ${gap}`);
+  }
+  const tilted = forwardKinematics(model, compensatePelvis(model, { pelvis_tilt: rad(18) }));
+  const standing = forwardKinematics(model);
+  const knee = [0, -0.4, 0];
+  for (const body of ["femur_r", "femur_l"]) {
+    const a = transformPoint(tilted.world[body], knee);
+    const b = transformPoint(standing.world[body], knee);
+    const gap = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    assert.ok(gap < 1e-4, `${body} knee moved ${gap} under pure tilt`);
+  }
+  const chest = [0.05, 0.3, 0];
+  const before = transformPoint(standing.world.torso, chest);
+  const after = transformPoint(moved.world.torso, chest);
+  const chestGap = Math.hypot(after[0] - before[0], after[1] - before[1], after[2] - before[2]);
+  assert.ok(chestGap > 0.05, "the trunk should turn with the pelvis");
 });
 
 test("cervical flexion drops the chin and turns the face with the labeled signs", () => {

@@ -154,6 +154,62 @@ export function forwardKinematics(model, overrides = {}) {
   return { q, world };
 }
 
+function pelvisRotation(tilt, list, rotation) {
+  return mulMat(rotAxis([0, 0, 1], tilt), mulMat(rotAxis([1, 0, 0], list), rotAxis([0, 1, 0], rotation)));
+}
+
+function hipRotation(flexion, adduction, rotation) {
+  return mulMat(
+    rotAxis([0, 0, 1], flexion),
+    mulMat(rotAxis([1, 0, 0], adduction), rotAxis([0, 1, 0], rotation)),
+  );
+}
+
+/** Invert R = Rz(flex) * Rx(add) * Ry(rot). Adduction stays within ±90°. */
+function decomposeZXY(r) {
+  const add = Math.asin(Math.max(-1, Math.min(1, r[7])));
+  const cb = Math.cos(add);
+  if (Math.abs(cb) < 1e-6) {
+    return { flex: Math.atan2(-r[3], r[0]), add, rot: 0 };
+  }
+  return {
+    flex: Math.atan2(-r[1] / cb, r[4] / cb),
+    add,
+    rot: Math.atan2(-r[6] / cb, r[8] / cb),
+  };
+}
+
+/**
+ * Pelvis tilt, list, and rotation spin the pelvis on the femoral heads.
+ * The hip coordinates stored by the UI stay the thigh pose in the lab.
+ */
+export function compensatePelvis(model, overrides = {}) {
+  const q = resolveCoordinates(model, overrides);
+  const right = model.joints.find((joint) => joint.name === "hip_r").parentFrame.p;
+  const left = model.joints.find((joint) => joint.name === "hip_l").parentFrame.p;
+  const center = [(right[0] + left[0]) / 2, (right[1] + left[1]) / 2, (right[2] + left[2]) / 2];
+  const pelvisR = pelvisRotation(q.pelvis_tilt, q.pelvis_list, q.pelvis_rotation);
+  const rotated = mulMatVec(pelvisR, center);
+  const next = { ...overrides };
+  next.pelvis_tx = q.pelvis_tx + center[0] - rotated[0];
+  next.pelvis_ty = q.pelvis_ty + center[1] - rotated[1];
+  next.pelvis_tz = q.pelvis_tz + center[2] - rotated[2];
+  const inv = transpose(pelvisR);
+  for (const side of ["r", "l"]) {
+    const sign = side === "l" ? -1 : 1;
+    const user = hipRotation(
+      q[`hip_flexion_${side}`],
+      sign * q[`hip_adduction_${side}`],
+      sign * q[`hip_rotation_${side}`],
+    );
+    const applied = decomposeZXY(mulMat(inv, user));
+    next[`hip_flexion_${side}`] = applied.flex;
+    next[`hip_adduction_${side}`] = sign * applied.add;
+    next[`hip_rotation_${side}`] = sign * applied.rot;
+  }
+  return next;
+}
+
 /** Teaching neck rotation in the torso frame. Positive flexion nods the chin down. */
 export function cervicalRotation(flex, lateral, rotation) {
   return mulMat(

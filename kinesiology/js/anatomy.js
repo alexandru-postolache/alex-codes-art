@@ -92,38 +92,24 @@ export const JOINTS = [
     region: "Trunk",
     sided: false,
     kind: "model",
-    summary: "The pelvis is the base for the trunk and both femurs. Tilting it changes the hip angle even when the feet stay planted.",
+    summary: "Tilt, hike, and rotation turn the pelvis and trunk on the femoral heads. The thighs stay with the hip sliders.",
     bodies: ["pelvis"],
     dofs: [
       hip("pelvis_tilt", "Posterior tilt", "Anterior tilt", "Sagittal", "Mediolateral",
-        "Positive pelvis tilt in this model rolls the top of the pelvis backward. Anterior tilt is the opposite: the ASIS drops forward and the hip-flexion angle increases if the femurs stay still.",
-        "A useful clinical window is roughly 10–15° either side of a comfortable standing tilt. The model allows a much larger lab-frame tilt.",
+        "Posterior tilt rolls the top of the pelvis and the trunk backward over both femoral heads. Anterior tilt drops the ASIS forward. The thighs stay where the hip sliders left them, so the hip angle changes inside the joint.",
+        "A useful clinical window is roughly 10–15° either side of a comfortable standing tilt.",
         [m("glmax1", "prime"), m("glmax2", "prime"), m("bflh", "synergist"), m("semimem", "synergist")],
         [m("iliacus", "prime"), m("psoas", "prime"), m("recfem", "synergist"), m("erector", "synergist")],
         { uiMin: -20, uiMax: 20 }),
-      {
-        id: "pelvic_on_hips",
-        kind: "coupled",
-        positive: "Anterior tilt on the femurs",
-        negative: "Posterior tilt on the femurs",
-        plane: "Sagittal",
-        axis: "Through both femoral heads",
-        about: "This slider rotates the pelvis on the hip joints and cancels that rotation in the femurs, so the thighs stay where they are. Anterior tilt lengthens the hamstrings and hip extensors and shortens iliopsoas. That is the tilt used when you talk about a lordotic standing posture.",
-        clinical: "Standing anterior tilt is often near 10°. The slider runs ±20° so the relative hip motion stays easy to see.",
-        positiveMuscles: [m("iliacus", "prime"), m("psoas", "prime"), m("erector", "synergist"), m("recfem", "synergist")],
-        negativeMuscles: [m("glmax1", "prime"), m("glmax2", "prime"), m("bflh", "synergist"), m("semimem", "synergist"), m("addmagIsch", "synergist")],
-        uiMin: -20,
-        uiMax: 20,
-      },
       hip("pelvis_list", "Right side higher", "Left side higher", "Frontal", "Anteroposterior",
-        "Pelvic list, or obliquity, hikes one iliac crest. In gait the gluteus medius of the stance leg stops the opposite crest from dropping.",
+        "One iliac crest hikes and the other drops. The trunk rides with the pelvis. The thighs stay vertical under the moving hip joints instead of leaning with the whole body.",
         "A few degrees of obliquity are normal in gait. Large list means the pelvis is dropping on the unloaded side.",
         [m("glmed1", "prime"), m("glmed2", "prime"), m("glmin1", "synergist")],
         [m("glmed1", "prime"), m("glmed2", "prime"), m("glmin2", "synergist")],
         { uiMin: -15, uiMax: 15 }),
       hip("pelvis_rotation", "Rotation to the left", "Rotation to the right", "Transverse", "Vertical",
-        "The pelvis rotates in the transverse plane over the femoral heads. Gait uses a small rotation each way, timed with trunk rotation in the opposite direction.",
-        "Walking uses roughly 5° each way. The model joint allows far more.",
+        "The pelvis and trunk turn in the transverse plane over the femoral heads. The thighs do not turn with them.",
+        "Walking uses roughly 5° each way.",
         [m("glmax1", "synergist"), m("piri", "synergist")],
         [m("glmax1", "synergist"), m("piri", "synergist")],
         { uiMin: -20, uiMax: 20 }),
@@ -474,8 +460,7 @@ export function sidedCoord(dofId, side, joint) {
   if (
     dofId.startsWith("pelvis_") ||
     dofId.startsWith("lumbar_") ||
-    dofId.startsWith("cervical_") ||
-    dofId === "pelvic_on_hips"
+    dofId.startsWith("cervical_")
   ) {
     return dofId;
   }
