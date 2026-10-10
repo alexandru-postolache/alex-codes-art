@@ -268,8 +268,13 @@ function renderChanges() {
       const changed = !published
         || Math.abs(Math.round(published.min) - Math.round(slider.min)) > 0
         || Math.abs(Math.round(published.max) - Math.round(slider.max)) > 0;
+      const motion = dof.id === "finger_curl"
+        ? "Fingers · combined curl"
+        : dof.id === "thumb_flexion"
+          ? "Fingers · thumb"
+          : `${joint.title} · ${dof.positive} / ${dof.negative}`;
       rows.push(`<tr data-changed="${changed}">
-        <td>${escapeHtml(joint.title)} · ${escapeHtml(dof.positive)} / ${escapeHtml(dof.negative)}</td>
+        <td>${escapeHtml(motion)}</td>
         <td>${published ? degreeSpan(published.min, published.max) : "Not in the model"}</td>
         <td>${degreeSpan(slider.min, slider.max)}</td>
       </tr>`);
