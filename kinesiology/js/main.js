@@ -1,4 +1,4 @@
-import { JOINTS, MUSCLES, PATTERNS, REGIONS, muscleBase, sidedCoord } from "./anatomy.js";
+import { JOINTS, MODEL_CHANGES, MUSCLES, PATTERNS, REGIONS, muscleBase, sidedCoord } from "./anatomy.js";
 import { cervicalRotation, compensatePelvis, deg, forwardKinematics, mulMatVec, mulTransform, rad, transformPoint } from "./kinematics.js";
 import { schematicMuscles } from "./schematic-muscles.js";
 import { createViewer, jointAxisWorld } from "./viewer.js";
@@ -219,6 +219,105 @@ function axisFor(world, joint, dof) {
   return jointAxisWorld(world, osim, axis.axis);
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function signedDegrees(value) {
+  const rounded = Math.round(value);
+  return rounded < 0 ? `−${Math.abs(rounded)}°` : `${rounded}°`;
+}
+
+function degreeSpan(min, max) {
+  return `${signedDegrees(min)} to ${signedDegrees(max)}`;
+}
+
+function publishedRange(dof, joint) {
+  if (joint.kind === "teaching" || TEACHING.has(dof.id)) return null;
+  const sample = coordRecord(sidedCoord(dof.id, "r", joint)) || coordRecord(dof.id);
+  if (!sample) return null;
+  return { min: deg(sample.min), max: deg(sample.max) };
+}
+
+function renderChanges() {
+  const kept = MODEL_CHANGES.kept.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+  const wrapped = model.muscles.filter((muscle) => muscle.wraps.length > 0).length;
+  const cards = MODEL_CHANGES.changes.map((change) => {
+    const lab = change.title.startsWith("Lower-limb")
+      ? `${change.lab} ${wrapped} of the ${model.muscles.length} paths define a wrap cylinder.`
+      : change.lab;
+    return `<article class="change">
+      <h3>${escapeHtml(change.title)}</h3>
+      <dl>
+        <dt>Base model</dt>
+        <dd>${escapeHtml(change.model)}</dd>
+        <dt>This lab</dt>
+        <dd>${escapeHtml(lab)}</dd>
+      </dl>
+    </article>`;
+  }).join("");
+  const rows = [];
+  for (const joint of JOINTS) {
+    for (const dof of joint.dofs || []) {
+      const slider = limits(dof, joint);
+      const published = publishedRange(dof, joint);
+      const changed = !published
+        || Math.abs(Math.round(published.min) - Math.round(slider.min)) > 0
+        || Math.abs(Math.round(published.max) - Math.round(slider.max)) > 0;
+      const motion = dof.id === "finger_curl"
+        ? "Fingers · combined curl"
+        : dof.id === "thumb_flexion"
+          ? "Fingers · thumb"
+          : `${joint.title} · ${dof.positive} / ${dof.negative}`;
+      rows.push(`<tr data-changed="${changed}">
+        <td>${escapeHtml(motion)}</td>
+        <td>${published ? degreeSpan(published.min, published.max) : "Not in the model"}</td>
+        <td>${degreeSpan(slider.min, slider.max)}</td>
+      </tr>`);
+    }
+  }
+  const drawn = [...new Set(muscles.filter((muscle) => muscle.source === "schematic").map((muscle) => muscleBase(muscle.name)))]
+    .map((id) => MUSCLES[id]?.title || id);
+  const poses = PATTERNS.filter((pattern) => pattern.id !== "stand").map((pattern) => {
+    const bits = Object.entries(pattern.pose).map(([key, degrees]) => {
+      const owner = JOINTS.find((joint) => joint.dofs?.some((dof) => dof.id === key));
+      const dof = owner.dofs.find((item) => item.id === key);
+      const word = degrees >= 0 ? dof.positive : dof.negative;
+      return `${Math.abs(degrees)}° ${word.toLowerCase()}`;
+    });
+    return `<li><b>${escapeHtml(pattern.title)}.</b> ${escapeHtml(bits.join(", "))}. ${escapeHtml(pattern.detail)}</li>`;
+  }).join("");
+  document.querySelector("#changes-body").innerHTML = `
+    <p class="summary changes-body-lead">${escapeHtml(MODEL_CHANGES.lead)}</p>
+    <p class="section-label">Unchanged from the paper</p>
+    <ul class="kept">${kept}</ul>
+    <p class="section-label">Added or changed</p>
+    ${cards}
+    <p class="section-label">Slider ranges</p>
+    <p class="summary">Each row is a published coordinate limit beside the window the slider uses. Highlighted rows are narrower than the model, or are hinges this lab added. Shoulder flexion stays at the model’s ±90° because the scapula cannot rotate the arm overhead.</p>
+    <table class="change-table">
+      <thead><tr><th>Motion</th><th>Published</th><th>Slider</th></tr></thead>
+      <tbody>${rows.join("")}</tbody>
+    </table>
+    <p class="section-label">Drawn lines that are not in the model</p>
+    <p class="summary">${drawn.length} lines on each side. The lower limb keeps the model’s ${model.muscles.length} paths.</p>
+    <div class="muscle-pills">${drawn.map((title) => `<span>${escapeHtml(title)}</span>`).join("")}</div>
+    <p class="section-label">Example poses</p>
+    <ul class="kept">${poses}</ul>
+    <p class="credit">Rajagopal A, Dembia CL, DeMers MS, Delp DD, Hicks JL, Delp SL. Full-body musculoskeletal model for muscle-driven simulation of human gait. IEEE Trans Biomed Eng. 2016. <a href="https://doi.org/10.1109/TBME.2016.2586891">Paper</a>. Source: <a href="https://github.com/opensim-org/opensim-models/tree/master/Models/Rajagopal">opensim-models</a>.</p>
+  `;
+}
+
+function openChanges() {
+  renderChanges();
+  const dialog = document.querySelector("#changes");
+  if (!dialog.open) dialog.showModal();
+}
+
 function renderLibrary() {
   const query = (libraryEl.querySelector("#search")?.value || "").trim().toLowerCase();
   const parts = ['<input id="search" class="search" placeholder="Search joints or muscles" value="">'];
@@ -324,7 +423,7 @@ function renderDetail() {
     <p class="summary">${joint.summary}</p>
     <div class="patterns">${patternButtons}</div>
     ${body}
-    <p class="credit">Bones, joint axes, and lower-limb paths: Rajagopal et al., IEEE TBME 2016, as distributed with OpenSim. Upper-limb lines and the neck and finger hinges are teaching diagrams on that skeleton. Clinical ranges are adult guides, not this one person's measurements. <a href="https://doi.org/10.1109/TBME.2016.2586891">Paper</a>.</p>
+    <p class="credit">Bones, joint axes, and lower-limb paths: Rajagopal et al., IEEE TBME 2016. <button type="button" class="text-button" data-open-changes>See every change this lab adds</button>. <a href="https://doi.org/10.1109/TBME.2016.2586891">Paper</a>.</p>
   `;
   detailEl.querySelectorAll("[data-slider]").forEach((slider) => {
     slider.addEventListener("input", () => {
@@ -363,6 +462,7 @@ function renderDetail() {
   detailEl.querySelectorAll("[data-pattern]").forEach((button) => {
     button.addEventListener("click", () => applyPattern(PATTERNS.find((pattern) => pattern.id === button.dataset.pattern)));
   });
+  detailEl.querySelector("[data-open-changes]").addEventListener("click", openChanges);
 }
 
 function applyPattern(pattern) {
@@ -469,6 +569,12 @@ function wireChrome() {
     event.currentTarget.textContent = state.playing ? "Pause" : "Play range";
   });
   document.querySelector("#reset").addEventListener("click", () => applyPattern(PATTERNS[0]));
+  document.querySelector("#changes-open").addEventListener("click", openChanges);
+  const changes = document.querySelector("#changes");
+  document.querySelector("#changes-close").addEventListener("click", () => changes.close());
+  changes.addEventListener("click", (event) => {
+    if (event.target === changes) changes.close();
+  });
 }
 
 async function boot() {

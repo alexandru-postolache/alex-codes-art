@@ -24,12 +24,14 @@ node --test kinesiology/test/kinematics.test.mjs
 
 The OpenSim model supplies the bone meshes, the joint frames, and the lower-limb muscle paths. Positive hip flexion swings the knee forward. Positive hip adduction swings each knee toward the midline. Knee flexion follows the Walker knee splines, so the tibia slides as it bends instead of hinging through the femur.
 
-A few things are deliberately not pretended to be part of that paper:
+The **Model changes** button in the app is the full list of what this lab adds on top of that model. In short:
 
 - Upper-limb muscle lines are schematic paths placed on the same bones. The gait model actuates the arms with torques, not muscles.
 - The neck pivot and the finger hinges are approximations. In the source model the skull is welded to the torso and the hand is one rigid body.
 - The scapula, clavicle, and individual vertebrae do not have their own joints. Scapular motion is explained beside the shoulder, because a real overhead reach is glenohumeral abduction plus scapular upward rotation.
-- Slider limits are the model's published coordinate ranges, tightened where that range is far outside a teaching range (the lumbar joint, for example, can fold ±90°). Clinical numbers shown next to them are adult guides in the AAOS / Norkin & White tradition, not measurements of this generic model.
+- Slider limits are the model's published coordinate ranges, tightened where that range is far outside a teaching range (the lumbar joint and the pelvis angles, for example). Clinical numbers shown next to them are adult guides in the AAOS / Norkin & White tradition, not measurements of this generic model.
+- Pelvis tilt, list, and rotation turn the pelvis on the femoral heads. The published root motion would carry the whole body. The thighs stay with the hip sliders, and the trunk still rides on the pelvis.
+- The standing height is locked to the neutral sole. Joint motion does not drop the skeleton to chase the lowest point of the foot.
 
 ## Rebuild the model files
 

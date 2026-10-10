@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { JOINTS, MUSCLES, sidedCoord } from "../js/anatomy.js";
+import { JOINTS, MODEL_CHANGES, MUSCLES, sidedCoord } from "../js/anatomy.js";
 import { schematicMuscles } from "../js/schematic-muscles.js";
 import {
   cervicalRotation,
@@ -159,4 +159,41 @@ test("cervical flexion drops the chin and turns the face with the labeled signs"
   const turned = mulMatVec(cervicalRotation(0, 0, rad(40)), nose);
   assert.ok(turned[2] < -0.02, "positive rotation should turn the face toward the model's left");
   assert.equal(pivot[1], 0.47);
+});
+
+test("the base-model summary covers every teaching change", () => {
+  const titles = MODEL_CHANGES.changes.map((change) => change.title);
+  for (const title of [
+    "Pelvis turns on the femoral heads",
+    "Standing height stays put",
+    "Neck hinge",
+    "Finger and thumb hinges",
+    "Upper-limb and trunk muscle lines",
+    "Lower-limb wraps",
+    "Scapula, clavicle, and the spine",
+    "Clinical notes and muscle roles",
+    "Example poses",
+  ]) {
+    assert.ok(titles.includes(title), title);
+  }
+  for (const change of MODEL_CHANGES.changes) {
+    assert.ok(change.model.length > 40, change.title);
+    assert.ok(change.lab.length > 40, change.title);
+  }
+  const names = new Set(model.coordinates.map((coord) => coord.name));
+  for (const joint of JOINTS) {
+    for (const dof of joint.dofs || []) {
+      if (joint.kind === "teaching") {
+        assert.equal(names.has(dof.id), false, `${dof.id} should not be a published coordinate`);
+        continue;
+      }
+      if (dof.uiMin == null && dof.uiMax == null) continue;
+      const sample = model.coordinates.find((coord) => coord.name === `${dof.id}_r` || coord.name === dof.id);
+      assert.ok(sample, dof.id);
+      const min = sample.min * 180 / Math.PI;
+      const max = sample.max * 180 / Math.PI;
+      const tighter = (dof.uiMin != null && dof.uiMin > min + 0.5) || (dof.uiMax != null && dof.uiMax < max - 0.5);
+      assert.equal(tighter, true, `${dof.id} slider should be inside the published range`);
+    }
+  }
 });

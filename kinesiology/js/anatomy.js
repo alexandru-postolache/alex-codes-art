@@ -451,6 +451,65 @@ export const PATTERNS = [
 
 export const REGIONS = ["Trunk", "Upper limb", "Lower limb"];
 
+/** Teaching changes relative to the published Rajagopal 2016 gait model.
+ * Slider numbers are filled in from the model file when the panel renders.
+ */
+export const MODEL_CHANGES = {
+  lead: "Bones, joint axes, and the 80 lower-limb muscle paths are the Rajagopal 2016 full-body gait model, as distributed with OpenSim. The list below is everything this lab adds or changes on that model.",
+  kept: [
+    "Bone meshes and joint frames, including the Walker knee and the patella that follows knee flexion.",
+    "Coordinate signs. Positive hip flexion still swings the knee forward. Positive knee flexion still swings the foot backward.",
+    "One generic adult male. Left hip adduction and rotation use the model’s slope of −1, so the left side is that model’s mirror, not a second person.",
+  ],
+  changes: [
+    {
+      title: "Pelvis turns on the femoral heads",
+      model: "The pelvis is the root of the skeleton. Tilt, list, rotation, and the three pelvis translations carry the whole body, thighs included.",
+      lab: "Tilt, list, and rotation keep the midpoint of the two hip joints fixed, and the hip angles are rewritten so the thighs stay with the hip sliders. The trunk still rides on the pelvis. List and axial rotation still separate the two hip centers, so one foot can leave the floor. The translation coordinates are solved for that pose. They are not sliders.",
+    },
+    {
+      title: "Standing height stays put",
+      model: "The paper does not plant the feet. The default pelvis height is 0.94 m.",
+      lab: "The viewer records the lowest sole point of the neutral pose and keeps that vertical offset. Flexing a hip no longer drops the body to follow the foot. A heel raise can push the toes through the floor, and a hiked hip can lift that foot.",
+    },
+    {
+      title: "Neck hinge",
+      model: "The skull and jaw are meshes of the torso. There is no neck coordinate.",
+      lab: "Skull and jaw are parented to one hinge at the base of the skull. Flexion, side-bending, and rotation are teaching angles, not a stack of cervical joints and not an OpenSim coordinate.",
+    },
+    {
+      title: "Finger and thumb hinges",
+      model: "The hand is one rigid body. Carpal and finger meshes ride together.",
+      lab: "Hinges sit where the mesh boxes of the metacarpals meet the phalanges, so a fist can close. They are not measured joint centers. The thumb cannot oppose, and the carpals still move as one hand.",
+    },
+    {
+      title: "Upper-limb and trunk muscle lines",
+      model: "The arms are driven by torque actuators. The model has no muscle paths for the shoulder, elbow, forearm, wrist, scapula, or neck.",
+      lab: "Lines are drawn on the bones and mirrored from right to left. They are diagrams. Muscles named in the joint text but not drawn include the abdominal obliques, quadratus lumborum, pectoralis minor, scalenes, suboccipitals, splenius, lumbricals, and interossei.",
+    },
+    {
+      title: "Lower-limb wraps",
+      model: "Many of the 80 lower-limb muscles wrap on cylinders. OpenSim solves that path iteratively.",
+      lab: "Each line is pushed onto the cylinder so it bows around the bone. That is a picture of the wrap, not the published solver, and some lines can still pass through bone.",
+    },
+    {
+      title: "Scapula, clavicle, and the spine",
+      model: "The scapulae and clavicles are part of the rib-cage mesh. One lumbar joint moves the whole torso. Vertebrae are not separate joints.",
+      lab: "Those parts still move only with the trunk. Scapular elevation, depression, protraction, retraction, and upward and downward rotation, including scapulohumeral rhythm, are a written lesson. They do not move the mesh. The toes stay one body, so the toe slider is the model’s combined metatarsophalangeal hinge.",
+    },
+    {
+      title: "Clinical notes and muscle roles",
+      model: "The model file stores coordinate ranges, frames, and muscle paths. It does not store nerves, origins, insertions, or prime-mover labels.",
+      lab: "Those sentences are written for this lab. The clinical ranges are adult guides in the AAOS and Norkin & White tradition, not measurements of this skeleton. Prime mover, synergist, and antagonist colors describe the action in anatomical position. A muscle’s job changes with posture, and the colors do not follow that.",
+    },
+    {
+      title: "Example poses",
+      model: "The published pose is the model’s zero, with the palms forward and the feet pointing ahead.",
+      lab: "Squat, heel raise, arm abduction, forward reach, and horizontal abduction are poses composed for the lab. They are not poses from the paper.",
+    },
+  ],
+};
+
 export function muscleBase(name) {
   return name.replace(/_(r|l)$/, "");
 }
