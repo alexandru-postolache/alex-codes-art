@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { JOINTS, MODEL_CHANGES, MUSCLES, sidedCoord } from "../js/anatomy.js";
 import { poseMarks } from "../js/pose-summary.js";
+import { GLENOID, placeScapula, scapulaLocal, splitScapulaMesh } from "../js/scapula.js";
 import { schematicMuscles } from "../js/schematic-muscles.js";
 import {
   cervicalRotation,
@@ -17,6 +18,7 @@ import {
 } from "../js/kinematics.js";
 
 const model = JSON.parse(readFileSync(new URL("../data/model.json", import.meta.url)));
+const meshes = JSON.parse(readFileSync(new URL("../data/meshes.json", import.meta.url)));
 
 function frameInWorld(bodyWorld, frame) {
   return mulTransform(bodyWorld, { R: frame.R, p: frame.p ?? frame.t });
@@ -221,4 +223,71 @@ test("pose labels list every joint that has left neutral", () => {
   assert.equal(marks.some((mark) => mark.id === "hip:left"), false);
   assert.equal(marks.some((mark) => mark.jointId === "elbow"), false);
   assert.ok(shoulder && hip);
+});
+
+test("scapula blades are cut out of the rib mesh and move about the glenoid", () => {
+  const source = meshes["hat_ribs_scap.vtp"];
+  const split = splitScapulaMesh(source);
+  assert.equal(
+    split.ribs.indices.length + split.scapula_r.indices.length + split.scapula_l.indices.length,
+    source.indices.length,
+  );
+  assert.ok(split.scapula_r.positions.length / 3 > 700);
+  assert.ok(split.scapula_l.positions.length / 3 > 700);
+  const glenoid = model.joints.find((joint) => joint.name === "acromial_r").parentFrame.p;
+  assert.deepEqual(GLENOID.r, glenoid);
+
+  const positions = split.scapula_r.positions;
+  let inferior = null;
+  for (let index = 0; index < positions.length; index += 3) {
+    const point = [positions[index], positions[index + 1], positions[index + 2]];
+    if (!inferior || point[1] < inferior[1]) inferior = point;
+  }
+  const rotated = transformPoint(scapulaLocal("r", rad(40), 0, 0), inferior);
+  assert.ok(rotated[2] > inferior[2] + 0.02, "upward rotation swings the inferior angle laterally");
+  const stayed = transformPoint(scapulaLocal("r", rad(40), 0, 0), glenoid);
+  const glenoidGap = Math.hypot(stayed[0] - glenoid[0], stayed[1] - glenoid[1], stayed[2] - glenoid[2]);
+  assert.ok(glenoidGap < 1e-6, "upward rotation pivots on the glenoid");
+
+  const leftPositions = split.scapula_l.positions;
+  let leftInferior = null;
+  for (let index = 0; index < leftPositions.length; index += 3) {
+    const point = [leftPositions[index], leftPositions[index + 1], leftPositions[index + 2]];
+    if (!leftInferior || point[1] < leftInferior[1]) leftInferior = point;
+  }
+  const leftRotated = transformPoint(scapulaLocal("l", rad(40), 0, 0), leftInferior);
+  assert.ok(leftRotated[2] < leftInferior[2] - 0.02, "the left blade swings to the model's left");
+
+  const blade = [-0.01, 0.36, 0.13];
+  const protracted = transformPoint(scapulaLocal("r", 0, rad(25), 0), blade);
+  assert.ok(protracted[0] > blade[0] + 0.03, "protraction carries the blade forward");
+  const elevated = transformPoint(scapulaLocal("r", 0, 0, 0.04), blade);
+  assert.ok(Math.abs(elevated[1] - blade[1] - 0.04) < 1e-6);
+
+  const neutral = forwardKinematics(model).world;
+  const posed = forwardKinematics(model).world;
+  placeScapula(posed, { r: { upward: rad(40), protraction: 0, elevation: 0 }, l: {} });
+  const distal = [0, -0.2, 0];
+  const before = transformPoint(neutral.humerus_r, distal);
+  const after = transformPoint(posed.humerus_r, distal);
+  assert.ok(after[1] > before[1] + 0.04, "the arm lifts with scapular upward rotation");
+  assert.ok(after[2] > before[2] + 0.04, "the arm abducts with scapular upward rotation");
+  const joint = model.joints.find((item) => item.name === "acromial_r");
+  const head = transformPoint(posed.humerus_r, joint.childFrame.p);
+  const socket = transformPoint(posed.scapula_r, joint.parentFrame.p);
+  const seat = Math.hypot(head[0] - socket[0], head[1] - socket[1], head[2] - socket[2]);
+  assert.ok(seat < 1e-5, "the humeral head stays in the glenoid");
+
+  const scapula = JOINTS.find((item) => item.id === "scapula");
+  assert.equal(scapula.kind, "teaching");
+  assert.deepEqual(scapula.dofs.map((dof) => dof.id), ["scap_up", "scap_prot", "scap_elev"]);
+  const marks = poseMarks(JOINTS, (dof, item, side) => {
+    if (item.id !== "scapula" || side !== "right") return 0;
+    if (dof.id === "scap_up") return 25;
+    if (dof.id === "scap_elev") return 40;
+    return 0;
+  });
+  assert.deepEqual(marks.find((mark) => mark.id === "scapula:right").lines, ["25° upward rotation", "40 mm elevation"]);
+  const inserted = schematicMuscles().find((muscle) => muscle.name === "serratus_r").points.at(-1);
+  assert.equal(inserted.body, "scapula_r");
 });

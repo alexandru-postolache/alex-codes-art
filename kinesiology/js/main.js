@@ -1,10 +1,15 @@
 import { JOINTS, MODEL_CHANGES, MUSCLES, PATTERNS, REGIONS, muscleBase, sidedCoord } from "./anatomy.js";
 import { cervicalRotation, compensatePelvis, deg, forwardKinematics, mulMatVec, mulTransform, rad, transformPoint } from "./kinematics.js";
 import { poseMarks } from "./pose-summary.js";
+import { GLENOID, STERNUM, placeScapula } from "./scapula.js";
 import { schematicMuscles } from "./schematic-muscles.js";
 import { createViewer, jointAxisWorld } from "./viewer.js";
 
-const TEACHING = new Set(["cervical_flexion", "cervical_lateral", "cervical_rotation", "finger_curl", "thumb_flexion"]);
+const TEACHING = new Set([
+  "cervical_flexion", "cervical_lateral", "cervical_rotation",
+  "finger_curl", "thumb_flexion",
+  "scap_up", "scap_prot", "scap_elev",
+]);
 
 const state = {
   side: "right",
@@ -12,6 +17,7 @@ const state = {
   showBones: true,
   showMuscles: true,
   showAllMuscles: false,
+  showPose: true,
   jointId: "hip",
   dofId: "hip_flexion",
   lessonName: null,
@@ -67,8 +73,19 @@ function limits(dof, joint) {
   return { min, max };
 }
 
+function extraKey(dof, side) {
+  if (!dof.perSide) return dof.id;
+  const suffix = side === "left" || side === "l" ? "l" : "r";
+  return `${dof.id}_${suffix}`;
+}
+
+function readExtra(dof, side) {
+  const raw = state.extras[extraKey(dof, side)] || 0;
+  return dof.unit === "mm" ? raw : deg(raw);
+}
+
 function degreesFor(dof, joint, side) {
-  if (TEACHING.has(dof.id)) return deg(state.extras[dof.id] || 0);
+  if (TEACHING.has(dof.id)) return readExtra(dof, side || state.side);
   const name = sidedCoord(dof.id, side || state.side, joint);
   if (state.pose[name] != null) return deg(state.pose[name]);
   const record = coordRecord(name) || coordRecord(dof.id);
@@ -84,6 +101,7 @@ const MARK_ANCHOR = {
   lumbar: ["torso", [0.06, 0.28, 0]],
   cervical: ["skull", [0.04, 0.56, 0]],
   shoulder: ["humerus", [0, 0.01, 0]],
+  scapula: ["scapula", [-0.03, 0.33, 0.12]],
   elbow: ["ulna", [0, 0.01, 0]],
   forearm: ["radius", [0, -0.1, 0]],
   wrist: ["hand", [0, -0.01, 0]],
@@ -101,15 +119,21 @@ function markPoint(world, jointId, side) {
     ? spec[0]
     : `${spec[0]}_${side === "left" ? "l" : "r"}`;
   const frame = world[body] || world.torso;
-  return transformPoint(frame, spec[1]);
+  const local = spec[1].slice();
+  if (spec[0] === "scapula" && side === "left") local[2] *= -1;
+  return transformPoint(frame, local);
 }
 
 function setDegrees(dof, joint, degrees) {
   const { min, max } = limits(dof, joint);
   const clamped = Math.min(max, Math.max(min, degrees));
-  const value = rad(clamped);
+  const value = dof.unit === "mm" ? clamped : rad(clamped);
   if (TEACHING.has(dof.id)) {
-    state.extras[dof.id] = value;
+    const sides = dof.perSide ? [state.side] : [null];
+    if (dof.perSide && state.mirror && joint.sided) {
+      sides.push(state.side === "right" ? "left" : "right");
+    }
+    for (const side of sides) state.extras[extraKey(dof, side)] = value;
     return;
   }
   const names = [sidedCoord(dof.id, state.side, joint)];
@@ -123,6 +147,7 @@ function modelOverrides() {
 
 function renderPoseSummary(marks) {
   const summary = document.querySelector("#pose-summary");
+  summary.hidden = !state.showPose;
   if (!marks.length) {
     summary.innerHTML = "<b>Pose</b><span>Anatomical position</span>";
     return;
@@ -130,18 +155,52 @@ function renderPoseSummary(marks) {
   summary.innerHTML = `<b>Pose</b>${marks.map((mark) => `<span><em>${mark.title}</em> ${mark.lines.join(" · ")}</span>`).join("")}`;
 }
 
-function phrase(dof, degrees) {
+function amountText(dof, degrees) {
   const amount = Math.abs(Math.round(degrees));
-  if (amount < 1) return "Anatomical position";
-  return degrees > 0 ? `${amount}° ${dof.positive.toLowerCase()}` : `${amount}° ${dof.negative.toLowerCase()}`;
+  const unit = dof.unit === "mm" ? " mm" : "°";
+  const name = degrees > 0 ? dof.positive : dof.negative;
+  return `${amount}${unit} ${name.toLowerCase()}`;
+}
+
+function phrase(dof, degrees) {
+  if (Math.abs(Math.round(degrees)) < 1) return "Anatomical position";
+  return amountText(dof, degrees);
+}
+
+function scapulaMotion() {
+  const read = (id, side) => state.extras[`${id}_${side}`] || 0;
+  return {
+    r: { upward: read("scap_up", "r"), protraction: read("scap_prot", "r"), elevation: read("scap_elev", "r") / 1000 },
+    l: { upward: read("scap_up", "l"), protraction: read("scap_prot", "l"), elevation: read("scap_elev", "l") / 1000 },
+  };
+}
+
+function decorateWorld(world) {
+  const pivot = [-0.012, 0.47, 0];
+  const neck = {
+    R: cervicalRotation(
+      state.extras.cervical_flexion || 0,
+      state.extras.cervical_lateral || 0,
+      state.extras.cervical_rotation || 0,
+    ),
+    p: [0, 0, 0],
+  };
+  world.skull = mulTransform(
+    world.torso,
+    mulTransform(
+      { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], p: pivot },
+      mulTransform(neck, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], p: [-pivot[0], -pivot[1], -pivot[2]] }),
+    ),
+  );
+  placeScapula(world, scapulaMotion());
+  return world;
 }
 
 function emphasis(degrees, min, max) {
   if (state.playing) return state.playDir > 0 ? "positive" : "negative";
-  const t = (degrees - min) / ((max - min) || 1);
-  if (t > 0.62) return "positive";
-  if (t < 0.38) return "negative";
-  return "both";
+  const span = Math.max(Math.abs(min), Math.abs(max), 1);
+  if (Math.abs(degrees) <= Math.min(12, span * 0.18)) return "both";
+  return degrees > 0 ? "positive" : "negative";
 }
 
 function rolesFor(items, emphasisName) {
@@ -177,22 +236,7 @@ function lessonItems() {
 
 function sync() {
   const solved = forwardKinematics(model, modelOverrides());
-  const pivot = [-0.012, 0.47, 0];
-  const neck = {
-    R: cervicalRotation(
-      state.extras.cervical_flexion || 0,
-      state.extras.cervical_lateral || 0,
-      state.extras.cervical_rotation || 0,
-    ),
-    p: [0, 0, 0],
-  };
-  solved.world.skull = mulTransform(
-    solved.world.torso,
-    mulTransform(
-      { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], p: pivot },
-      mulTransform(neck, { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], p: [-pivot[0], -pivot[1], -pivot[2]] }),
-    ),
-  );
+  decorateWorld(solved.world);
   const joint = activeJoint();
   const dof = activeDof();
   const lesson = lessonItems();
@@ -235,6 +279,7 @@ function sync() {
     ground: true,
     axis: axis ? { ...axis, bodies, color: "#f2c14e" } : { bodies },
     marks,
+    showPose: state.showPose,
   });
   readoutEl.innerHTML = `<b>${label}</b><span>${detail}</span>`;
 }
@@ -255,6 +300,26 @@ function axisFor(world, joint, dof) {
         direction: mulMatVec(world.torso.R, local),
       };
     }
+    if (joint.id === "scapula" && dof) {
+      const side = state.side === "left" ? "l" : "r";
+      const blade = world[`scapula_${side}`] || world.torso;
+      if (dof.id === "scap_prot") {
+        return {
+          origin: transformPoint(world.torso, STERNUM),
+          direction: mulMatVec(world.torso.R, [0, 1, 0]),
+        };
+      }
+      if (dof.id === "scap_elev") {
+        return {
+          origin: transformPoint(blade, [-0.02, 0.34, GLENOID[side][2] * 0.7]),
+          direction: mulMatVec(world.torso.R, [0, 1, 0]),
+        };
+      }
+      return {
+        origin: transformPoint(blade, GLENOID[side]),
+        direction: mulMatVec(blade.R, [1, 0, 0]),
+      };
+    }
     return null;
   }
   const name = sidedCoord(dof.id, state.side, joint);
@@ -272,13 +337,14 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-function signedDegrees(value) {
+function signedAmount(value, unit = "°") {
   const rounded = Math.round(value);
-  return rounded < 0 ? `−${Math.abs(rounded)}°` : `${rounded}°`;
+  const number = rounded < 0 ? `−${Math.abs(rounded)}` : `${rounded}`;
+  return unit === "mm" ? `${number} mm` : `${number}°`;
 }
 
-function degreeSpan(min, max) {
-  return `${signedDegrees(min)} to ${signedDegrees(max)}`;
+function degreeSpan(min, max, unit = "°") {
+  return `${signedAmount(min, unit)} to ${signedAmount(max, unit)}`;
 }
 
 function publishedRange(dof, joint) {
@@ -321,7 +387,7 @@ function renderChanges() {
       rows.push(`<tr data-changed="${changed}">
         <td>${escapeHtml(motion)}</td>
         <td>${published ? degreeSpan(published.min, published.max) : "Not in the model"}</td>
-        <td>${degreeSpan(slider.min, slider.max)}</td>
+        <td>${degreeSpan(slider.min, slider.max, dof.unit)}</td>
       </tr>`);
     }
   }
@@ -343,7 +409,7 @@ function renderChanges() {
     <p class="section-label">Added or changed</p>
     ${cards}
     <p class="section-label">Slider ranges</p>
-    <p class="summary">Each row is a published coordinate limit beside the window the slider uses. Highlighted rows are narrower than the model, or are hinges this lab added. Shoulder flexion stays at the model’s ±90° because the scapula cannot rotate the arm overhead.</p>
+    <p class="summary">Each row is a published coordinate limit beside the window the slider uses. Highlighted rows are narrower than the model, or are hinges this lab added. Shoulder flexion stays at the model’s ±90° because that coordinate is only the glenohumeral joint. The Scapula sliders carry the arm farther.</p>
     <table class="change-table">
       <thead><tr><th>Motion</th><th>Published</th><th>Slider</th></tr></thead>
       <tbody>${rows.join("")}</tbody>
@@ -517,8 +583,13 @@ function applyPattern(pattern) {
   for (const [key, degrees] of Object.entries(pattern.pose)) {
     const owner = JOINTS.find((joint) => joint.dofs?.some((dof) => dof.id === key));
     const dof = owner.dofs.find((item) => item.id === key);
-    const value = rad(degrees);
-    if (TEACHING.has(key)) state.extras[key] = value;
+    const value = dof.unit === "mm" ? degrees : rad(degrees);
+    if (TEACHING.has(key)) {
+      if (dof.perSide) {
+        state.extras[`${key}_r`] = value;
+        state.extras[`${key}_l`] = value;
+      } else state.extras[key] = value;
+    }
     else if (owner.sided) {
       state.pose[`${key}_r`] = value;
       state.pose[`${key}_l`] = value;
@@ -535,12 +606,12 @@ function applyPattern(pattern) {
 
 function focusCamera(jointId) {
   const map = {
-    pelvis: "pelvis", lumbar: "pelvis", cervical: "neck", scapula: "shoulder",
+    pelvis: "pelvis", lumbar: "pelvis", cervical: "neck", scapula: "scapula",
     shoulder: "shoulder", elbow: "shoulder", forearm: "hand", wrist: "hand", fingers: "hand",
     hip: "hip", knee: "knee", ankle: "ankle", subtalar: "ankle", toes: "ankle",
   };
-  const solved = forwardKinematics(model, modelOverrides());
-  viewer.lookAt(map[jointId] || "hip", solved.world, state.side === "left" ? "l" : "r");
+  const world = decorateWorld(forwardKinematics(model, modelOverrides()).world);
+  viewer.lookAt(map[jointId] || "hip", world, state.side === "left" ? "l" : "r");
 }
 
 function bodyToJoint(body) {
@@ -548,7 +619,7 @@ function bodyToJoint(body) {
   const map = {
     femur: "hip", patella: "knee", tibia: "knee", talus: "ankle", calcn: "subtalar",
     toes: "toes", humerus: "shoulder", ulna: "elbow", radius: "forearm", hand: "wrist",
-    pelvis: "pelvis", torso: "lumbar", skull: "cervical",
+    pelvis: "pelvis", torso: "lumbar", skull: "cervical", scapula: "scapula",
   };
   return map[base];
 }
@@ -606,6 +677,11 @@ function wireChrome() {
   document.querySelector("#all-muscles").addEventListener("click", (event) => {
     state.showAllMuscles = !state.showAllMuscles;
     event.currentTarget.setAttribute("aria-pressed", String(state.showAllMuscles));
+    sync();
+  });
+  document.querySelector("#pose-labels").addEventListener("click", (event) => {
+    state.showPose = !state.showPose;
+    event.currentTarget.setAttribute("aria-pressed", String(state.showPose));
     sync();
   });
   document.querySelector("#play").addEventListener("click", (event) => {

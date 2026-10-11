@@ -1,6 +1,6 @@
 # Kinetic Anatomy
 
-A browser lab for kinesiology. Drag a joint through its range and the skeleton moves on the published axes of the [Rajagopal 2016 full-body OpenSim model](https://doi.org/10.1109/TBME.2016.2586891). Every joint that has left the neutral pose keeps a label on the skeleton, so the whole pose stays readable at once. Lower-limb muscle lines are that model's paths. The panel names the prime movers, synergists, and antagonists for each direction.
+A browser lab for kinesiology. Drag a joint through its range and the skeleton moves on the published axes of the [Rajagopal 2016 full-body OpenSim model](https://doi.org/10.1109/TBME.2016.2586891). Every joint that has left the neutral pose keeps a label on the skeleton, so the whole pose stays readable at once. Pose labels hides those notes. Lower-limb muscle lines are that model's paths. The panel names the prime movers, synergists, and antagonists for each direction.
 
 ## Run it
 
@@ -28,7 +28,7 @@ The **Model changes** button in the app is the full list of what this lab adds o
 
 - Upper-limb muscle lines are schematic paths placed on the same bones. The gait model actuates the arms with torques, not muscles.
 - The neck pivot and the finger hinges are approximations. In the source model the skull is welded to the torso and the hand is one rigid body.
-- The scapula, clavicle, and individual vertebrae do not have their own joints. Scapular motion is explained beside the shoulder, because a real overhead reach is glenohumeral abduction plus scapular upward rotation.
+- The scapula is cut out of the fused rib-cage mesh. Upward rotation, protraction, and elevation are a teaching rig, and the arm follows the glenoid. The medial clavicle and the individual vertebrae stay on the trunk. MoBL-ARMS has a separate scapula, but it belongs to a different thorax and its license is non-commercial, so that mesh is not used here.
 - Slider limits are the model's published coordinate ranges, tightened where that range is far outside a teaching range (the lumbar joint and the pelvis angles, for example). Clinical numbers shown next to them are adult guides in the AAOS / Norkin & White tradition, not measurements of this generic model.
 - Pelvis tilt, list, and rotation turn the pelvis on the femoral heads. The published root motion would carry the whole body. The thighs stay with the hip sliders, and the trunk still rides on the pelvis.
 - The standing height is locked to the neutral sole. Joint motion does not drop the skeleton to chase the lowest point of the foot.

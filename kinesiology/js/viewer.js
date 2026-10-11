@@ -10,6 +10,7 @@ import {
   sub,
   transformPoint,
 } from "./kinematics.js";
+import { splitScapulaMesh } from "./scapula.js";
 import { muscleWorldPoints } from "./wrap.js";
 
 const BONE = new THREE.Color("#e7d3b4");
@@ -228,6 +229,10 @@ export function createViewer(container, model, meshData) {
   for (const [name, mesh] of Object.entries(meshData)) {
     geometries[name] = geometryFromMesh(mesh);
   }
+  const ribSplit = splitScapulaMesh(meshData["hat_ribs_scap.vtp"]);
+  geometries["hat_ribs_scap.vtp"] = geometryFromMesh(ribSplit.ribs);
+  geometries.scapula_r = geometryFromMesh(ribSplit.scapula_r);
+  geometries.scapula_l = geometryFromMesh(ribSplit.scapula_l);
 
   const neck = {
     pivot: new THREE.Vector3(-0.012, 0.47, 0),
@@ -275,6 +280,16 @@ export function createViewer(container, model, meshData) {
       if (body.name.startsWith("hand_") && fingerFiles.has(file)) continue;
       addBoneMesh(group, geometry, new THREE.Vector3(), body.name);
     }
+  }
+
+  for (const side of ["r", "l"]) {
+    const name = `scapula_${side}`;
+    const group = new THREE.Group();
+    group.name = name;
+    group.matrixAutoUpdate = false;
+    root.add(group);
+    bodies[name] = group;
+    addBoneMesh(group, geometries[name], new THREE.Vector3(), name);
   }
 
   const torso = bodies.torso;
@@ -596,6 +611,12 @@ export function createViewer(container, model, meshData) {
         knee: { body: `tibia_${side}`, local: [0, 0.18, 0], eye: [0.85, 0.12, 0.95] },
         ankle: { body: `calcn_${side}`, local: [0.07, 0.03, 0], eye: [0.22, 0.16, 0.72] },
         shoulder: { body: `humerus_${side}`, local: [0, -0.02, 0], eye: [0.85, 0.22, 1.05] },
+        scapula: {
+          body: `scapula_${side}`,
+          local: [-0.03, 0.32, side === "r" ? 0.12 : -0.12],
+          eye: [-0.78, 0.1, side === "r" ? 0.22 : -0.22],
+          mirror: false,
+        },
         neck: { body: "torso", local: [-0.01, 0.56, 0], eye: [0.22, 0.02, 0.88], mirror: false },
         hand: { body: `hand_${side}`, local: [0.01, -0.04, 0], eye: [0.06, 0.05, 0.42] },
       };
@@ -612,7 +633,7 @@ export function createViewer(container, model, meshData) {
         target[2] + shot.eye[2] * zSign,
       );
     },
-    update({ world, muscles, roles, showMuscles, showBones, extras, ground, axis, marks }) {
+    update({ world, muscles, roles, showMuscles, showBones, extras, ground, axis, marks, showPose = true }) {
       lastWorld = world;
       root.visible = showBones;
       const offset = ground ? standingOffset : 0;
@@ -621,7 +642,8 @@ export function createViewer(container, model, meshData) {
       setMuscles(muscles, roles, showMuscles);
       highlightBodies(axis?.bodies || []);
       setAxis(axis?.origin, axis?.direction, axis?.color || "#f2c14e");
-      poseMarks = marks || [];
+      poseLayer.hidden = !showPose;
+      poseMarks = showPose ? (marks || []) : [];
       placePoseMarks();
     },
     dispose() {

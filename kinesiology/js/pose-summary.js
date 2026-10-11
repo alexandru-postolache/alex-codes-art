@@ -12,7 +12,8 @@ export function poseMarks(joints, readDegrees) {
         if (Math.abs(degrees) < 0.5) continue;
         const amount = Math.abs(Math.round(degrees));
         const name = degrees > 0 ? dof.positive : dof.negative;
-        lines.push(`${amount}° ${name.toLowerCase()}`);
+        const unit = dof.unit === "mm" ? " mm" : "°";
+        lines.push(`${amount}${unit} ${name.toLowerCase()}`);
       }
       if (!lines.length) continue;
       const title = side ? `${side === "right" ? "Right" : "Left"} ${joint.title.toLowerCase()}` : joint.title;
