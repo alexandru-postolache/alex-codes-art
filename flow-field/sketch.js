@@ -6,8 +6,8 @@ const params = {
   showField: false,
   fieldColor: "#c8c8c8",
   particleCount: 200,
-  maxSpeed: 2,
-  strokeWeight: 2,
+  speed: { min: 1, max: 3 },
+  weight: { min: 1, max: 3 },
   strokeColor: "#000000",
   colorScheme: "solid",
   paletteSize: 6,
@@ -111,6 +111,25 @@ function resetParticles() {
   particles = [];
   colorCursor = 0;
   syncParticleCount();
+}
+
+function rangeValue(range) {
+  const low = Math.min(range.min, range.max);
+  const high = Math.max(range.min, range.max);
+  if (high <= low) {
+    return low;
+  }
+  return random(low, high);
+}
+
+function generateNew() {
+  params.noiseSeed = Math.floor(random(10000));
+  if (pane) {
+    pane.refresh();
+  }
+  rebuildField();
+  clearCanvas();
+  resetParticles();
 }
 
 function syncParticleCount() {
@@ -280,6 +299,7 @@ function drawVector(v, x, y, scale) {
 
 function setupPane() {
   pane = new Tweakpane.Pane({ title: "Flow Field" });
+  pane.registerPlugin(TweakpaneEssentialsPlugin);
 
   const fieldFolder = pane.addFolder({ title: "Field" });
   fieldFolder
@@ -329,17 +349,17 @@ function setupPane() {
       step: 1,
     })
     .on("change", syncParticleCount);
-  particleFolder.addInput(params, "maxSpeed", {
-    label: "max speed",
+  particleFolder.addInput(params, "speed", {
+    label: "speed",
     min: 0.1,
     max: 12,
     step: 0.1,
   });
-  particleFolder.addInput(params, "strokeWeight", {
+  particleFolder.addInput(params, "weight", {
     label: "weight",
     min: 0.5,
     max: 12,
-    step: 0.5,
+    step: 0.1,
   });
   particleFolder.addInput(params, "respawn", { label: "respawn" });
 
@@ -427,13 +447,7 @@ function setupPane() {
     params.paused = !params.paused;
     pauseButton.title = params.paused ? "Resume" : "Pause";
   });
-  actions.addButton({ title: "Clear canvas" }).on("click", clearCanvas);
-  actions.addButton({ title: "Reset particles" }).on("click", resetParticles);
-  actions.addButton({ title: "New seed" }).on("click", () => {
-    params.noiseSeed = Math.floor(random(10000));
-    pane.refresh();
-    rebuildField();
-  });
+  actions.addButton({ title: "Generate new" }).on("click", generateNew);
 }
 
 class Particle {
@@ -444,8 +458,14 @@ class Particle {
     this.history = [];
     this.colorIndex = colorIndex;
     this.alive = true;
+    this.pickMotion();
     const flow = sampleField(x, y);
-    this.vel.set(flow.x * params.maxSpeed, flow.y * params.maxSpeed);
+    this.vel.set(flow.x * this.speed, flow.y * this.speed);
+  }
+
+  pickMotion() {
+    this.speed = rangeValue(params.speed);
+    this.weight = rangeValue(params.weight);
   }
 
   follow() {
@@ -474,7 +494,7 @@ class Particle {
     }
     heading += delta;
 
-    const speed = Math.min(params.maxSpeed, speedNow + 0.2);
+    const speed = Math.min(this.speed, speedNow + 0.2);
     this.vel.x = Math.cos(heading) * speed;
     this.vel.y = Math.sin(heading) * speed;
     this.pos.x += this.vel.x;
@@ -521,7 +541,7 @@ class Particle {
 
   applyStroke() {
     stroke(particleColor(this));
-    strokeWeight(sharpWeight(params.strokeWeight));
+    strokeWeight(sharpWeight(this.weight));
   }
 
   paintCurve(p0, p1, p2, p3) {
@@ -553,8 +573,9 @@ class Particle {
   respawn() {
     const point = randomEdgePoint();
     this.pos.set(point.x, point.y);
+    this.pickMotion();
     const flow = sampleField(point.x, point.y);
-    this.vel.set(flow.x * params.maxSpeed, flow.y * params.maxSpeed);
+    this.vel.set(flow.x * this.speed, flow.y * this.speed);
     this.acc.set(0, 0);
     this.history = [];
     this.alive = true;
