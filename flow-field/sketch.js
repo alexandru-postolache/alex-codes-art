@@ -25,6 +25,7 @@ const params = {
 };
 
 let pane;
+let ink;
 let particles = [];
 let field = [];
 let palette = [];
@@ -46,6 +47,7 @@ function setup() {
   createCanvas(size.w, size.h);
   strokeCap(ROUND);
   noFill();
+  createInk();
   rebuildField();
   rebuildPalette();
   resetParticles();
@@ -63,39 +65,48 @@ function viewSize() {
 function windowResized() {
   const size = viewSize();
   resizeCanvas(size.w, size.h);
+  createInk();
   rebuildField();
   clearCanvas();
 }
 
+function createInk() {
+  ink = createGraphics(width, height);
+  ink.pixelDensity(pixelDensity());
+  ink.colorMode(RGB, 255);
+  ink.strokeCap(ROUND);
+  ink.noFill();
+  ink.curveTightness(0);
+}
+
 function draw() {
-  if (params.paused) {
-    return;
+  if (!params.paused) {
+    ink.strokeCap(ROUND);
+    ink.noFill();
+    ink.curveTightness(0);
+    fadeBackground();
+
+    for (const particle of particles) {
+      if (!particle.alive) {
+        if (params.respawn && !particle.stopped) {
+          particle.respawn();
+        }
+        continue;
+      }
+
+      particle.follow(field);
+      particle.update();
+      if (!particle.alive) {
+        continue;
+      }
+      particle.show();
+      particle.edges();
+    }
   }
 
-  strokeCap(ROUND);
-  noFill();
-  curveTightness(0);
-  fadeBackground();
-
+  image(ink, 0, 0);
   if (params.showField) {
     drawField();
-  }
-
-  for (const particle of particles) {
-    if (!particle.alive) {
-      if (params.respawn && !particle.stopped) {
-        particle.respawn();
-      }
-      continue;
-    }
-
-    particle.follow(field);
-    particle.update();
-    if (!particle.alive) {
-      continue;
-    }
-    particle.show();
-    particle.edges();
   }
 }
 
@@ -156,6 +167,10 @@ function syncParticleCount() {
 function clearCanvas() {
   colorMode(RGB, 255);
   background(params.backgroundColor);
+  if (ink) {
+    ink.colorMode(RGB, 255);
+    ink.background(params.backgroundColor);
+  }
   clearOccupied();
 }
 
@@ -380,7 +395,7 @@ function fadeBackground() {
   }
 
   const c = color(params.backgroundColor);
-  background(red(c), green(c), blue(c), params.fade);
+  ink.background(red(c), green(c), blue(c), params.fade);
 }
 
 function drawField() {
@@ -688,7 +703,7 @@ class Particle {
       const a = history[history.length - 2];
       const b = history[history.length - 1];
       this.applyStroke();
-      line(a.x, a.y, b.x, b.y);
+      ink.line(a.x, a.y, b.x, b.y);
       return;
     }
 
@@ -702,8 +717,8 @@ class Particle {
   }
 
   applyStroke() {
-    stroke(particleColor(this));
-    strokeWeight(sharpWeight(this.weight));
+    ink.stroke(particleColor(this));
+    ink.strokeWeight(sharpWeight(this.weight));
   }
 
   paintCurve(p0, p1, p2, p3) {
@@ -711,7 +726,7 @@ class Particle {
       return;
     }
     this.applyStroke();
-    curve(p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+    ink.curve(p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
   }
 
   edges() {
