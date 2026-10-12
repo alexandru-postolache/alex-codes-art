@@ -18,6 +18,8 @@ const params = {
   increaseBrightness: true,
   backgroundColor: "#ffffff",
   fade: 0,
+  paused: false,
+  respawn: true,
 };
 
 let pane;
@@ -28,12 +30,15 @@ let colorCursor = 0;
 let cols = 0;
 let rows = 0;
 let colorInputs = {};
+let pauseButton;
+const sampledForce = { x: 0, y: 0 };
 
 function setup() {
   pixelDensity(Math.min(3, Math.max(2, Math.round(displayDensity() || 1))));
   const size = viewSize();
   createCanvas(size.w, size.h);
-  strokeCap(PROJECT);
+  strokeCap(ROUND);
+  noFill();
   rebuildField();
   rebuildPalette();
   resetParticles();
@@ -56,7 +61,13 @@ function windowResized() {
 }
 
 function draw() {
-  strokeCap(PROJECT);
+  if (params.paused) {
+    return;
+  }
+
+  strokeCap(ROUND);
+  noFill();
+  curveTightness(0);
   fadeBackground();
 
   if (params.showField) {
@@ -64,6 +75,13 @@ function draw() {
   }
 
   for (const particle of particles) {
+    if (!particle.alive) {
+      if (params.respawn) {
+        particle.respawn();
+      }
+      continue;
+    }
+
     particle.follow(field);
     particle.update();
     particle.show();
@@ -119,13 +137,47 @@ function sharpWeight(weight) {
   return devicePixelWeight(weight) / pixelDensity();
 }
 
-function snapAxis(value, weight) {
-  const density = pixelDensity();
-  const odd = devicePixelWeight(weight) % 2 === 1;
-  const device = odd
-    ? Math.round(value * density - 0.5) + 0.5
-    : Math.round(value * density);
-  return device / density;
+function sampleField(px, py) {
+  const spacing = params.fieldSpacing;
+  const gx = px / spacing;
+  const gy = py / spacing;
+  const x0 = constrain(Math.floor(gx), 0, cols - 1);
+  const y0 = constrain(Math.floor(gy), 0, rows - 1);
+  const x1 = Math.min(x0 + 1, cols - 1);
+  const y1 = Math.min(y0 + 1, rows - 1);
+  const tx = x0 === x1 ? 0 : gx - Math.floor(gx);
+  const ty = y0 === y1 ? 0 : gy - Math.floor(gy);
+  const v00 = field[x0][y0];
+  const v10 = field[x1][y0];
+  const v01 = field[x0][y1];
+  const v11 = field[x1][y1];
+  const ax = v00.x + (v10.x - v00.x) * tx;
+  const ay = v00.y + (v10.y - v00.y) * tx;
+  const bx = v01.x + (v11.x - v01.x) * tx;
+  const by = v01.y + (v11.y - v01.y) * tx;
+  sampledForce.x = ax + (bx - ax) * ty;
+  sampledForce.y = ay + (by - ay) * ty;
+  const mag = Math.hypot(sampledForce.x, sampledForce.y);
+  if (mag > 0) {
+    sampledForce.x /= mag;
+    sampledForce.y /= mag;
+  }
+  return sampledForce;
+}
+
+function randomEdgePoint() {
+  const inset = 1;
+  const side = Math.floor(random(4));
+  if (side === 0) {
+    return { x: random(width), y: inset };
+  }
+  if (side === 1) {
+    return { x: random(width), y: height - inset };
+  }
+  if (side === 2) {
+    return { x: inset, y: random(height) };
+  }
+  return { x: width - inset, y: random(height) };
 }
 
 function rebuildPalette() {
@@ -289,6 +341,7 @@ function setupPane() {
     max: 12,
     step: 0.5,
   });
+  particleFolder.addInput(params, "respawn", { label: "respawn" });
 
   const colorFolder = pane.addFolder({ title: "Color" });
   colorFolder
@@ -369,6 +422,11 @@ function setupPane() {
   });
 
   const actions = pane.addFolder({ title: "Actions" });
+  pauseButton = actions.addButton({ title: "Pause" });
+  pauseButton.on("click", () => {
+    params.paused = !params.paused;
+    pauseButton.title = params.paused ? "Resume" : "Pause";
+  });
   actions.addButton({ title: "Clear canvas" }).on("click", clearCanvas);
   actions.addButton({ title: "Reset particles" }).on("click", resetParticles);
   actions.addButton({ title: "New seed" }).on("click", () => {
@@ -383,71 +441,122 @@ class Particle {
     this.pos = createVector(x, y);
     this.vel = createVector(0, 0);
     this.acc = createVector(0, 0);
-    this.prevPos = this.pos.copy();
+    this.history = [];
     this.colorIndex = colorIndex;
+    this.alive = true;
+    const flow = sampleField(x, y);
+    this.vel.set(flow.x * params.maxSpeed, flow.y * params.maxSpeed);
   }
 
-  follow(vectors) {
-    const x = constrain(
-      Math.floor(this.pos.x / params.fieldSpacing),
-      0,
-      cols - 1
-    );
-    const y = constrain(
-      Math.floor(this.pos.y / params.fieldSpacing),
-      0,
-      rows - 1
-    );
-    const force = vectors[x] && vectors[x][y];
-    if (force) {
-      this.acc.add(force);
-    }
+  follow() {
+    const force = sampleField(this.pos.x, this.pos.y);
+    this.acc.x = force.x;
+    this.acc.y = force.y;
   }
 
   update() {
-    this.vel.add(this.acc);
-    this.vel.limit(params.maxSpeed);
-    this.pos.add(this.vel);
-    this.acc.mult(0);
+    const target = Math.atan2(this.acc.y, this.acc.x);
+    const speedNow = Math.hypot(this.vel.x, this.vel.y);
+    let heading = speedNow < 0.001 ? target : Math.atan2(this.vel.y, this.vel.x);
+    let delta = target - heading;
+    if (delta > Math.PI) {
+      delta -= Math.PI * 2;
+    } else if (delta < -Math.PI) {
+      delta += Math.PI * 2;
+    }
+
+    // A small turn per frame bends the stroke into an arc instead of a corner.
+    const maxTurn = 0.09;
+    if (delta > maxTurn) {
+      delta = maxTurn;
+    } else if (delta < -maxTurn) {
+      delta = -maxTurn;
+    }
+    heading += delta;
+
+    const speed = Math.min(params.maxSpeed, speedNow + 0.2);
+    this.vel.x = Math.cos(heading) * speed;
+    this.vel.y = Math.sin(heading) * speed;
+    this.pos.x += this.vel.x;
+    this.pos.y += this.vel.y;
+    this.acc.x = 0;
+    this.acc.y = 0;
   }
 
   show() {
-    const weight = params.strokeWeight;
-    const x1 = snapAxis(this.prevPos.x, weight);
-    const y1 = snapAxis(this.prevPos.y, weight);
-    const x2 = snapAxis(this.pos.x, weight);
-    const y2 = snapAxis(this.pos.y, weight);
-
-    if (x1 !== x2 || y1 !== y2) {
-      stroke(particleColor(this));
-      strokeWeight(sharpWeight(weight));
-      line(x1, y1, x2, y2);
+    this.history.push({ x: this.pos.x, y: this.pos.y });
+    if (this.history.length < 4) {
+      return;
+    }
+    if (this.history.length > 4) {
+      this.history.shift();
     }
 
-    this.prevPos.set(this.pos);
+    const [p0, p1, p2, p3] = this.history;
+    this.paintCurve(p0, p1, p2, p3);
+  }
+
+  flush() {
+    const history = this.history;
+    if (history.length < 2) {
+      return;
+    }
+
+    if (history.length < 4) {
+      const a = history[history.length - 2];
+      const b = history[history.length - 1];
+      this.applyStroke();
+      line(a.x, a.y, b.x, b.y);
+      return;
+    }
+
+    const p1 = history[1];
+    const p2 = history[2];
+    const p3 = history[3];
+    this.paintCurve(p1, p2, p3, {
+      x: p3.x + (p3.x - p2.x),
+      y: p3.y + (p3.y - p2.y),
+    });
+  }
+
+  applyStroke() {
+    stroke(particleColor(this));
+    strokeWeight(sharpWeight(params.strokeWeight));
+  }
+
+  paintCurve(p0, p1, p2, p3) {
+    if (Math.hypot(p2.x - p1.x, p2.y - p1.y) < 0.05) {
+      return;
+    }
+    this.applyStroke();
+    curve(p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
   }
 
   edges() {
-    let wrapped = false;
-
-    if (this.pos.x > width) {
-      this.pos.x = 0;
-      wrapped = true;
-    } else if (this.pos.x < 0) {
-      this.pos.x = width;
-      wrapped = true;
+    const inside =
+      this.pos.x >= 0 &&
+      this.pos.x <= width &&
+      this.pos.y >= 0 &&
+      this.pos.y <= height;
+    if (inside) {
+      return;
     }
 
-    if (this.pos.y > height) {
-      this.pos.y = 0;
-      wrapped = true;
-    } else if (this.pos.y < 0) {
-      this.pos.y = height;
-      wrapped = true;
+    this.flush();
+    if (params.respawn) {
+      this.respawn();
+    } else {
+      this.alive = false;
     }
+  }
 
-    if (wrapped) {
-      this.prevPos.set(this.pos);
-    }
+  respawn() {
+    const point = randomEdgePoint();
+    this.pos.set(point.x, point.y);
+    const flow = sampleField(point.x, point.y);
+    this.vel.set(flow.x * params.maxSpeed, flow.y * params.maxSpeed);
+    this.acc.set(0, 0);
+    this.history = [];
+    this.alive = true;
   }
 }
