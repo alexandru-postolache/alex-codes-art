@@ -39,7 +39,9 @@ let occupied = null;
 let occupiedWidth = 0;
 let occupiedHeight = 0;
 let nextStrokeId = 1;
+let strokes = [];
 const sampledForce = { x: 0, y: 0 };
+const EXPORT_LONG_SIDE = 8192;
 
 function setup() {
   pixelDensity(Math.min(3, Math.max(2, Math.round(displayDensity() || 1))));
@@ -172,6 +174,83 @@ function clearCanvas() {
     ink.background(params.backgroundColor);
   }
   clearOccupied();
+  strokes = [];
+}
+
+function rememberPoint(point) {
+  return { x: point.x, y: point.y };
+}
+
+function rememberColor(value) {
+  if (value && value.levels) {
+    return value.levels.slice(0, 4);
+  }
+  const parsed = color(value);
+  return [red(parsed), green(parsed), blue(parsed), alpha(parsed)];
+}
+
+function exportScale() {
+  const longest = Math.max(width, height, 1);
+  return Math.min(4, EXPORT_LONG_SIDE / longest);
+}
+
+function exportPng() {
+  const scale = exportScale();
+  const gfx = createGraphics(Math.round(width * scale), Math.round(height * scale));
+  gfx.pixelDensity(1);
+  gfx.elt.setAttribute("aria-hidden", "true");
+  gfx.elt.style.display = "none";
+  gfx.colorMode(RGB, 255);
+  gfx.background(params.backgroundColor);
+  gfx.strokeCap(ROUND);
+  gfx.noFill();
+  gfx.curveTightness(0);
+  gfx.scale(scale, scale);
+
+  for (const mark of strokes) {
+    const [r, g, b, a] = mark.color;
+    gfx.stroke(r, g, b, a);
+    gfx.strokeWeight(mark.weight);
+    const points = mark.points;
+    if (mark.kind === "line") {
+      gfx.line(points[0].x, points[0].y, points[1].x, points[1].y);
+    } else {
+      gfx.curve(
+        points[0].x,
+        points[0].y,
+        points[1].x,
+        points[1].y,
+        points[2].x,
+        points[2].y,
+        points[3].x,
+        points[3].y
+      );
+    }
+  }
+
+  if (params.showField) {
+    const length = Math.max(1, params.fieldSpacing - 2);
+    gfx.stroke(params.fieldColor);
+    gfx.strokeWeight(1);
+    for (let x = 0; x < cols; x++) {
+      for (let y = 0; y < rows; y++) {
+        const vector = field[x][y];
+        gfx.push();
+        gfx.translate(x * params.fieldSpacing, y * params.fieldSpacing);
+        gfx.rotate(vector.heading());
+        gfx.line(0, 0, length, 0);
+        gfx.pop();
+      }
+    }
+  }
+
+  // toDataURL stays inside the click, so the browser keeps the download gesture.
+  // saveCanvas encodes later, and Chrome can drop that download.
+  const link = document.createElement("a");
+  link.download = "flow-field.png";
+  link.href = gfx.elt.toDataURL("image/png");
+  link.click();
+  gfx.remove();
 }
 
 function clearOccupied() {
@@ -583,6 +662,7 @@ function setupPane() {
     pauseButton.title = params.paused ? "Resume" : "Pause";
   });
   actions.addButton({ title: "Generate new" }).on("click", generateNew);
+  actions.addButton({ title: "Export PNG" }).on("click", exportPng);
 }
 
 class Particle {
@@ -704,6 +784,12 @@ class Particle {
       const b = history[history.length - 1];
       this.applyStroke();
       ink.line(a.x, a.y, b.x, b.y);
+      strokes.push({
+        kind: "line",
+        points: [rememberPoint(a), rememberPoint(b)],
+        color: rememberColor(particleColor(this)),
+        weight: this.weight,
+      });
       return;
     }
 
@@ -727,6 +813,12 @@ class Particle {
     }
     this.applyStroke();
     ink.curve(p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+    strokes.push({
+      kind: "curve",
+      points: [rememberPoint(p0), rememberPoint(p1), rememberPoint(p2), rememberPoint(p3)],
+      color: rememberColor(particleColor(this)),
+      weight: this.weight,
+    });
   }
 
   edges() {
