@@ -20,6 +20,8 @@ const params = {
   fade: 0,
   paused: false,
   respawn: true,
+  allowIntersect: true,
+  minSpace: 8,
 };
 
 let pane;
@@ -31,6 +33,11 @@ let cols = 0;
 let rows = 0;
 let colorInputs = {};
 let pauseButton;
+let minSpaceInput;
+let occupied = null;
+let occupiedWidth = 0;
+let occupiedHeight = 0;
+let nextStrokeId = 1;
 const sampledForce = { x: 0, y: 0 };
 
 function setup() {
@@ -76,7 +83,7 @@ function draw() {
 
   for (const particle of particles) {
     if (!particle.alive) {
-      if (params.respawn) {
+      if (params.respawn && !particle.stopped) {
         particle.respawn();
       }
       continue;
@@ -84,6 +91,9 @@ function draw() {
 
     particle.follow(field);
     particle.update();
+    if (!particle.alive) {
+      continue;
+    }
     particle.show();
     particle.edges();
   }
@@ -146,6 +156,100 @@ function syncParticleCount() {
 function clearCanvas() {
   colorMode(RGB, 255);
   background(params.backgroundColor);
+  clearOccupied();
+}
+
+function clearOccupied() {
+  if (!occupied || occupiedWidth !== width || occupiedHeight !== height) {
+    occupiedWidth = Math.max(1, width);
+    occupiedHeight = Math.max(1, height);
+    occupied = new Uint32Array(occupiedWidth * occupiedHeight);
+  } else {
+    occupied.fill(0);
+  }
+}
+
+function stampSegment(x1, y1, x2, y2, radius, id) {
+  const length = Math.hypot(x2 - x1, y2 - y1);
+  const steps = Math.max(1, Math.ceil(length));
+  const r2 = radius * radius;
+  const r = Math.ceil(radius);
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const cx = x1 + (x2 - x1) * t;
+    const cy = y1 + (y2 - y1) * t;
+    const minX = Math.max(0, Math.floor(cx - r));
+    const maxX = Math.min(occupiedWidth - 1, Math.ceil(cx + r));
+    const minY = Math.max(0, Math.floor(cy - r));
+    const maxY = Math.min(occupiedHeight - 1, Math.ceil(cy + r));
+    for (let y = minY; y <= maxY; y++) {
+      const row = y * occupiedWidth;
+      const dy = y + 0.5 - cy;
+      for (let x = minX; x <= maxX; x++) {
+        const dx = x + 0.5 - cx;
+        if (dx * dx + dy * dy <= r2) {
+          occupied[row + x] = id;
+        }
+      }
+    }
+  }
+}
+
+function segmentBlocked(x1, y1, x2, y2, reach, selfId, ignoreNear) {
+  if (!occupied) {
+    return false;
+  }
+
+  const r = Math.ceil(reach);
+  const minX = Math.max(0, Math.floor(Math.min(x1, x2) - r));
+  const maxX = Math.min(occupiedWidth - 1, Math.ceil(Math.max(x1, x2) + r));
+  const minY = Math.max(0, Math.floor(Math.min(y1, y2) - r));
+  const maxY = Math.min(occupiedHeight - 1, Math.ceil(Math.max(y1, y2) + r));
+  const reach2 = reach * reach;
+  const abx = x2 - x1;
+  const aby = y2 - y1;
+  const ab2 = abx * abx + aby * aby;
+  const ignore2 = ignoreNear * ignoreNear;
+
+  for (let y = minY; y <= maxY; y++) {
+    const row = y * occupiedWidth;
+    for (let x = minX; x <= maxX; x++) {
+      const id = occupied[row + x];
+      if (!id) {
+        continue;
+      }
+
+      const px = x + 0.5;
+      const py = y + 0.5;
+      let t = 0;
+      if (ab2 > 0) {
+        t = ((px - x1) * abx + (py - y1) * aby) / ab2;
+        if (t < 0) {
+          t = 0;
+        } else if (t > 1) {
+          t = 1;
+        }
+      }
+      const cx = x1 + abx * t;
+      const cy = y1 + aby * t;
+      const dx = px - cx;
+      const dy = py - cy;
+      if (dx * dx + dy * dy > reach2) {
+        continue;
+      }
+
+      if (id === selfId) {
+        const ox = cx - x1;
+        const oy = cy - y1;
+        if (ox * ox + oy * oy <= ignore2) {
+          continue;
+        }
+      }
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function devicePixelWeight(weight) {
@@ -242,6 +346,12 @@ function rebuildPalette() {
   pop();
   colorMode(RGB, 255);
   palette = next;
+}
+
+function updateSeparationVisibility() {
+  if (minSpaceInput) {
+    minSpaceInput.hidden = params.allowIntersect;
+  }
 }
 
 function updateColorVisibility() {
@@ -362,6 +472,16 @@ function setupPane() {
     step: 0.1,
   });
   particleFolder.addInput(params, "respawn", { label: "respawn" });
+  particleFolder
+    .addInput(params, "allowIntersect", { label: "intersect" })
+    .on("change", updateSeparationVisibility);
+  minSpaceInput = particleFolder.addInput(params, "minSpace", {
+    label: "min space",
+    min: 0,
+    max: 48,
+    step: 1,
+  });
+  updateSeparationVisibility();
 
   const colorFolder = pane.addFolder({ title: "Color" });
   colorFolder
@@ -458,6 +578,7 @@ class Particle {
     this.history = [];
     this.colorIndex = colorIndex;
     this.alive = true;
+    this.stopped = false;
     this.pickMotion();
     const flow = sampleField(x, y);
     this.vel.set(flow.x * this.speed, flow.y * this.speed);
@@ -466,6 +587,11 @@ class Particle {
   pickMotion() {
     this.speed = rangeValue(params.speed);
     this.weight = rangeValue(params.weight);
+    this.strokeId = nextStrokeId;
+    nextStrokeId += 1;
+    if (nextStrokeId > 0xffffffff) {
+      nextStrokeId = 1;
+    }
   }
 
   follow() {
@@ -497,8 +623,44 @@ class Particle {
     const speed = Math.min(this.speed, speedNow + 0.2);
     this.vel.x = Math.cos(heading) * speed;
     this.vel.y = Math.sin(heading) * speed;
-    this.pos.x += this.vel.x;
-    this.pos.y += this.vel.y;
+    const nextX = this.pos.x + this.vel.x;
+    const nextY = this.pos.y + this.vel.y;
+
+    if (!params.allowIntersect) {
+      const reach = this.weight / 2 + params.minSpace;
+      const ignoreNear = this.weight + params.minSpace + this.speed + 2;
+      if (
+        segmentBlocked(
+          this.pos.x,
+          this.pos.y,
+          nextX,
+          nextY,
+          reach,
+          this.strokeId,
+          ignoreNear
+        )
+      ) {
+        this.flush();
+        this.alive = false;
+        this.stopped = true;
+        this.acc.x = 0;
+        this.acc.y = 0;
+        return;
+      }
+    }
+
+    if (occupied) {
+      stampSegment(
+        this.pos.x,
+        this.pos.y,
+        nextX,
+        nextY,
+        Math.max(0.5, this.weight / 2),
+        this.strokeId
+      );
+    }
+    this.pos.x = nextX;
+    this.pos.y = nextY;
     this.acc.x = 0;
     this.acc.y = 0;
   }
@@ -578,6 +740,7 @@ class Particle {
     this.vel.set(flow.x * this.speed, flow.y * this.speed);
     this.acc.set(0, 0);
     this.history = [];
+    this.stopped = false;
     this.alive = true;
   }
 }
