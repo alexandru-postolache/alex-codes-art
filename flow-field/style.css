@@ -10,3 +10,10 @@ html, body {
 canvas {
   display: block;
 }
+
+.tp-dfwv.flow-pane {
+  max-height: calc(100dvh - 16px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}

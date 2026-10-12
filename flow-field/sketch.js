@@ -40,6 +40,7 @@ let occupiedWidth = 0;
 let occupiedHeight = 0;
 let nextStrokeId = 1;
 let strokes = [];
+let countBaseline = params.particleCount;
 const sampledForce = { x: 0, y: 0 };
 const EXPORT_LONG_SIDE = 8192;
 
@@ -155,14 +156,39 @@ function generateNew() {
   resetParticles();
 }
 
+function spawnParticle() {
+  particles.push(new Particle(random(width), random(height), colorCursor));
+  colorCursor += 1;
+}
+
 function syncParticleCount() {
-  const target = params.particleCount;
+  const target = Math.max(1, Math.round(params.particleCount));
   while (particles.length < target) {
-    particles.push(new Particle(random(width), random(height), colorCursor));
-    colorCursor += 1;
+    spawnParticle();
   }
   if (particles.length > target) {
     particles.length = target;
+  }
+  countBaseline = target;
+}
+
+function applyParticleCountChange() {
+  const next = Math.max(1, Math.round(params.particleCount));
+  const delta = next - countBaseline;
+  countBaseline = next;
+  if (delta > 0) {
+    for (let i = 0; i < delta; i++) {
+      spawnParticle();
+    }
+  } else if (delta < 0) {
+    particles.length = Math.max(0, particles.length + delta);
+  }
+}
+
+function addParticles() {
+  const count = Math.max(1, Math.round(params.particleCount));
+  for (let i = 0; i < count; i++) {
+    spawnParticle();
   }
 }
 
@@ -504,6 +530,8 @@ function drawVector(v, x, y, scale) {
 function setupPane() {
   pane = new Tweakpane.Pane({ title: "Flow Field" });
   pane.registerPlugin(TweakpaneEssentialsPlugin);
+  const frame = pane.element.closest(".tp-dfwv") || pane.element;
+  frame.classList.add("flow-pane");
 
   const fieldFolder = pane.addFolder({ title: "Field" });
   fieldFolder
@@ -552,7 +580,7 @@ function setupPane() {
       max: 4000,
       step: 1,
     })
-    .on("change", syncParticleCount);
+    .on("change", applyParticleCountChange);
   particleFolder.addInput(params, "speed", {
     label: "speed",
     min: 0.1,
@@ -662,6 +690,7 @@ function setupPane() {
     pauseButton.title = params.paused ? "Resume" : "Pause";
   });
   actions.addButton({ title: "Generate new" }).on("click", generateNew);
+  actions.addButton({ title: "Add particles" }).on("click", addParticles);
   actions.addButton({ title: "Export PNG" }).on("click", exportPng);
 }
 
