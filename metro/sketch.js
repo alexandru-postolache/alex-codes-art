@@ -33,10 +33,17 @@ let rawSegments = [];
 let atomicEdges = [];
 
 let selectedSetIndex = 0;
+let extendFromStart = [];
 let dragStationIndex = -1;
+let dragHistorySaved = false;
 let pressAddsStation = false;
 let pressX = 0;
 let pressY = 0;
+
+let history = [];
+let restoringHistory = false;
+
+const HISTORY_LIMIT = 50;
 
 let pane;
 
@@ -55,6 +62,8 @@ function setup() {
   );
 
   canvas.parent("map");
+
+  window.addEventListener("keydown", onUndoKey);
 
   updateCellSize();
 
@@ -81,6 +90,7 @@ function createSets() {
     );
 
     sets[setIndex] = [];
+    extendFromStart[setIndex] = false;
 
     for (let i = 0; i < params.points; i++) {
       for (
@@ -106,7 +116,7 @@ function createSets() {
  * Snaps a point to the center of a grid cell and adds it
  * as a station to the given route.
  */
-function addPoint(x, y, setIndex) {
+function addPoint(x, y, setIndex, atStart = false) {
   if (
     x < 0 ||
     x >= width ||
@@ -128,10 +138,16 @@ function addPoint(x, y, setIndex) {
     floor(y / cellHeight) * cellHeight +
     cellHeight / 2;
 
-  sets[setIndex].push({
+  const station = {
     x: xGrid,
     y: yGrid
-  });
+  };
+
+  if (atStart) {
+    sets[setIndex].unshift(station);
+  } else {
+    sets[setIndex].push(station);
+  }
 
   return true;
 }
@@ -163,6 +179,7 @@ function renderScene() {
   drawBundledLines();
   drawEndOfLineCaps();
   drawOriginalStations();
+  drawActiveEndMarker();
   drawRouteLegend();
 }
 
@@ -1758,7 +1775,45 @@ function drawRouteLegend() {
     );
   }
 
+  drawAddLineButton(layout);
+
   pop();
+}
+
+/**
+ * A plus beside the route colors. Clicking it starts
+ * an empty line in the next palette color.
+ */
+function drawAddLineButton(layout) {
+  if (!canAddLine()) {
+    return;
+  }
+
+  const bounds = getAddLineBounds(layout);
+  const centerX = bounds.x + bounds.width / 2;
+  const centerY = bounds.y + bounds.height / 2;
+  const diameter = bounds.height + 8;
+  const arm = diameter * 0.26;
+
+  noFill();
+  stroke(35);
+  strokeWeight(1.5);
+
+  circle(centerX, centerY, diameter);
+
+  line(
+    centerX - arm,
+    centerY,
+    centerX + arm,
+    centerY
+  );
+
+  line(
+    centerX,
+    centerY - arm,
+    centerX,
+    centerY + arm
+  );
 }
 
 /**
@@ -1770,7 +1825,8 @@ function getLegendLayout() {
   const gap = 14;
   const padX = 14;
   const padY = 14;
-  const count = sets.length;
+  const count =
+    sets.length + (canAddLine() ? 1 : 0);
 
   const panelWidth =
     padX * 2 +
@@ -1813,6 +1869,70 @@ function getLegendItemBounds(
     width: layout.itemWidth,
     height: layout.itemHeight
   };
+}
+
+/**
+ * Bounds of the plus that adds a line.
+ */
+function getAddLineBounds(layout) {
+  return getLegendItemBounds(
+    layout,
+    sets.length
+  );
+}
+
+function canAddLine() {
+  return sets.length < METRO_PALETTE.length;
+}
+
+/**
+ * True when the pointer is over the add-line plus.
+ */
+function isAddLineAt(x, y) {
+  if (!canAddLine()) {
+    return false;
+  }
+
+  const layout = getLegendLayout();
+  const bounds = getAddLineBounds(layout);
+  const hitPadding = 8;
+
+  return (
+    x >= bounds.x - hitPadding &&
+    x <= bounds.x + bounds.width + hitPadding &&
+    y >= bounds.y - hitPadding &&
+    y <= bounds.y + bounds.height + hitPadding
+  );
+}
+
+/**
+ * Appends an empty route and selects it.
+ * New stations are placed on this line until another
+ * color is chosen.
+ */
+function addLine() {
+  if (!canAddLine()) {
+    return false;
+  }
+
+  pushHistory();
+
+  const setIndex = sets.length;
+
+  setColors[setIndex] = color(
+    METRO_PALETTE[setIndex]
+  );
+
+  sets[setIndex] = [];
+  extendFromStart[setIndex] = false;
+  selectedSetIndex = setIndex;
+  params.lines = sets.length;
+
+  commitParams();
+  syncPane();
+  renderScene();
+
+  return true;
 }
 
 /**
@@ -1881,8 +2001,10 @@ function updateCellSize() {
  * Rebuilds the grid and keeps stations on the new cells.
  */
 function applyCellCount() {
+  pushHistory();
   updateCellSize();
   resnapStations();
+  commitParams();
   renderScene();
 }
 
@@ -1956,7 +2078,7 @@ function setupPane() {
   pane.addInput(params, "lines", {
     label: "Lines",
     min: 1,
-    max: 8,
+    max: METRO_PALETTE.length,
     step: 1
   });
 
@@ -1994,8 +2116,16 @@ function setupPane() {
       rebuildMap();
     });
 
+  pane
+    .addButton({
+      title: "Undo (Ctrl+Z)"
+    })
+    .on("click", () => {
+      undo();
+    });
+
   pane.on("change", (event) => {
-    if (event.last === false) {
+    if (restoringHistory || event.last === false) {
       return;
     }
 
@@ -2011,6 +2141,7 @@ function setupPane() {
       event.presetKey === "showGrid" ||
       event.presetKey === "bend"
     ) {
+      commitParams();
       renderScene();
       return;
     }
@@ -2025,14 +2156,18 @@ function setupPane() {
  * Builds a fresh set of routes.
  */
 function rebuildRoutes() {
+  pushHistory();
+
   sets = [];
   setColors = [];
+  extendFromStart = [];
 
   if (selectedSetIndex >= params.lines) {
     selectedSetIndex = 0;
   }
 
   createSets();
+  commitParams();
   renderScene();
 }
 
@@ -2041,6 +2176,251 @@ function rebuildRoutes() {
  */
 function rebuildMap() {
   rebuildRoutes();
+}
+
+/* =========================================================
+   HISTORY
+   ========================================================= */
+
+/**
+ * Params last stored in history. The pane writes a new
+ * value before its change event, so snapshots use this
+ * copy instead of the live params object.
+ */
+let committed = {
+  lines: params.lines,
+  points: params.points,
+  showGrid: params.showGrid,
+  cells: params.cells,
+  bend: params.bend
+};
+
+function copyParams(source) {
+  return {
+    lines: source.lines,
+    points: source.points,
+    showGrid: source.showGrid,
+    cells: source.cells,
+    bend: source.bend
+  };
+}
+
+function commitParams() {
+  committed = copyParams(params);
+}
+
+function cloneSets(source) {
+  return source.map((points) => {
+    if (!points) {
+      return [];
+    }
+
+    return points.map((point) => {
+      return {
+        x: point.x,
+        y: point.y
+      };
+    });
+  });
+}
+
+/**
+ * Remembers the map so the next undo can put it back.
+ */
+function pushHistory() {
+  if (restoringHistory) {
+    return;
+  }
+
+  history.push({
+    sets: cloneSets(sets),
+    selectedSetIndex,
+    extendFromStart: extendFromStart.slice(),
+    params: copyParams(committed)
+  });
+
+  if (history.length > HISTORY_LIMIT) {
+    history.shift();
+  }
+}
+
+/**
+ * Restores the previous map, selection, and controls.
+ */
+function undo() {
+  const snapshot = history.pop();
+
+  if (!snapshot) {
+    return false;
+  }
+
+  restoringHistory = true;
+
+  sets = cloneSets(snapshot.sets);
+  setColors = [];
+
+  for (
+    let setIndex = 0;
+    setIndex < sets.length;
+    setIndex++
+  ) {
+    setColors[setIndex] = color(
+      METRO_PALETTE[
+        setIndex % METRO_PALETTE.length
+      ]
+    );
+  }
+
+  selectedSetIndex = snapshot.selectedSetIndex;
+
+  if (
+    sets.length === 0 ||
+    selectedSetIndex < 0 ||
+    selectedSetIndex >= sets.length
+  ) {
+    selectedSetIndex = 0;
+  }
+
+  extendFromStart =
+    snapshot.extendFromStart.slice();
+
+  while (extendFromStart.length < sets.length) {
+    extendFromStart.push(false);
+  }
+
+  extendFromStart.length = sets.length;
+
+  params.lines = snapshot.params.lines;
+  params.points = snapshot.params.points;
+  params.showGrid = snapshot.params.showGrid;
+  params.cells = snapshot.params.cells;
+  params.bend = snapshot.params.bend;
+
+  commitParams();
+  updateCellSize();
+  syncPane();
+
+  restoringHistory = false;
+  renderScene();
+
+  return true;
+}
+
+/**
+ * Updates the pane from params without rebuilding routes.
+ */
+function syncPane() {
+  if (!pane) {
+    return;
+  }
+
+  const wasRestoring = restoringHistory;
+
+  restoringHistory = true;
+  pane.refresh();
+  restoringHistory = wasRestoring;
+}
+
+/**
+ * Ctrl+Z or Cmd+Z steps back. Typing in a control keeps
+ * the field's own undo.
+ */
+function onUndoKey(event) {
+  const target = event.target;
+  const tag = target && target.tagName;
+
+  if (
+    tag === "INPUT" ||
+    tag === "TEXTAREA" ||
+    (target && target.isContentEditable)
+  ) {
+    return;
+  }
+
+  const pressedUndo =
+    (event.ctrlKey || event.metaKey) &&
+    !event.shiftKey &&
+    (event.key === "z" || event.key === "Z");
+
+  if (!pressedUndo) {
+    return;
+  }
+
+  event.preventDefault();
+  undo();
+}
+
+/**
+ * Marks the terminus that the next station will grow from.
+ */
+function drawActiveEndMarker() {
+  const points = sets[selectedSetIndex];
+
+  if (!points || points.length === 0) {
+    return;
+  }
+
+  const atStart =
+    points.length >= 2 &&
+    !!extendFromStart[selectedSetIndex];
+
+  const station = atStart
+    ? points[0]
+    : points[points.length - 1];
+
+  const halo =
+    getStationDiameter(station) +
+    getRouteWidth();
+
+  push();
+
+  noFill();
+  stroke(setColors[selectedSetIndex]);
+  strokeWeight(3);
+
+  circle(
+    station.x,
+    station.y,
+    halo
+  );
+
+  noStroke();
+  fill(setColors[selectedSetIndex]);
+
+  circle(
+    station.x,
+    station.y,
+    getStationStrokeWidth()
+  );
+
+  pop();
+}
+
+/**
+ * Chooses which end of the selected line new stations
+ * extend. A line with one station always grows at the end.
+ */
+function selectExtendEnd(stationIndex) {
+  const points = sets[selectedSetIndex];
+
+  if (!points || points.length < 2) {
+    return;
+  }
+
+  const atStart = stationIndex === 0;
+  const atEnd =
+    stationIndex === points.length - 1;
+
+  if (!atStart && !atEnd) {
+    return;
+  }
+
+  if (!!extendFromStart[selectedSetIndex] === atStart) {
+    return;
+  }
+
+  extendFromStart[selectedSetIndex] = atStart;
+  renderScene();
 }
 
 /* =========================================================
@@ -2057,6 +2437,7 @@ function rebuildMap() {
  */
 function mousePressed(event) {
   dragStationIndex = -1;
+  dragHistorySaved = false;
   pressAddsStation = false;
 
   if (
@@ -2083,6 +2464,11 @@ function mousePressed(event) {
   }
 
   if (!isLeftButton(event)) {
+    return false;
+  }
+
+  if (isAddLineAt(mouseX, mouseY)) {
+    addLine();
     return false;
   }
 
@@ -2148,6 +2534,11 @@ function mouseDragged() {
     return;
   }
 
+  if (!dragHistorySaved) {
+    pushHistory();
+    dragHistorySaved = true;
+  }
+
   point.x = cell.x;
   point.y = cell.y;
   renderScene();
@@ -2161,13 +2552,28 @@ function mouseReleased() {
   const shouldAdd = pressAddsStation;
   const startX = pressX;
   const startY = pressY;
-  const dragged = dragStationIndex !== -1;
+  const draggedIndex = dragStationIndex;
+  const historySaved = dragHistorySaved;
 
   dragStationIndex = -1;
+  dragHistorySaved = false;
   pressAddsStation = false;
   cursor(ARROW);
 
-  if (dragged || !shouldAdd) {
+  if (draggedIndex !== -1) {
+    const stayedPut =
+      !historySaved &&
+      dist(startX, startY, mouseX, mouseY) <=
+        gridSize();
+
+    if (stayedPut) {
+      selectExtendEnd(draggedIndex);
+    }
+
+    return false;
+  }
+
+  if (!shouldAdd) {
     return false;
   }
 
@@ -2184,16 +2590,21 @@ function mouseReleased() {
     return false;
   }
 
+  pushHistory();
+
   const placed = addPoint(
     startX,
     startY,
-    selectedSetIndex
+    selectedSetIndex,
+    !!extendFromStart[selectedSetIndex]
   );
 
-  if (placed) {
-    renderScene();
+  if (!placed) {
+    history.pop();
+    return false;
   }
 
+  renderScene();
   return false;
 }
 
@@ -2256,6 +2667,8 @@ function deleteSelectedStationAt(x, y) {
   if (stationIndex === -1) {
     return false;
   }
+
+  pushHistory();
 
   sets[selectedSetIndex].splice(
     stationIndex,
