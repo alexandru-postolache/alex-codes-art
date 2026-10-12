@@ -31,7 +31,6 @@ let setColors = [];
 
 let rawSegments = [];
 let atomicEdges = [];
-let intersectionStations = [];
 
 let selectedSetIndex = 0;
 let dragStationIndex = -1;
@@ -148,12 +147,8 @@ function renderScene() {
     createAllLineSegments()
   );
 
-  const network =
+  atomicEdges =
     buildAtomicNetwork(rawSegments);
-
-  atomicEdges = network.edges;
-  intersectionStations =
-    network.intersections;
 
   if (params.showGrid) {
     drawGrid(
@@ -169,7 +164,6 @@ function renderScene() {
   // Drawing order determines visual layering.
   drawBundledLines();
   drawEndOfLineCaps();
-  drawIntersectionStations();
   drawOriginalStations();
   drawRouteLegend();
 }
@@ -321,8 +315,6 @@ function buildAtomicNetwork(segments) {
   const splitPositions =
     segments.map(() => [0, 1]);
 
-  const intersections = [];
-
   for (let i = 0; i < segments.length; i++) {
     for (
       let j = i + 1;
@@ -348,29 +340,6 @@ function buildAtomicNetwork(segments) {
           splitPositions[j],
           result.u
         );
-
-        const insideA =
-          result.t > EPSILON &&
-          result.t < 1 - EPSILON;
-
-        const insideB =
-          result.u > EPSILON &&
-          result.u < 1 - EPSILON;
-
-        /*
-         * Parts of the same connection meet at their bend.
-         * That should not create an intersection station.
-         */
-        if (
-          segmentA.connectionId !==
-            segmentB.connectionId &&
-          (insideA || insideB)
-        ) {
-          addUniquePoint(
-            intersections,
-            result.point
-          );
-        }
       }
 
       if (result.type === "collinear") {
@@ -497,22 +466,7 @@ function buildAtomicNetwork(segments) {
     });
   }
 
-  /*
-   * Attach route information to each generated
-   * intersection station.
-   */
-  for (const station of intersections) {
-    station.setIndices =
-      getRouteIndicesAtPoint(
-        station,
-        edges
-      );
-  }
-
-  return {
-    edges,
-    intersections
-  };
+  return edges;
 }
 
 /**
@@ -1737,44 +1691,6 @@ function getRouteLanePositionAtPoint(
   };
 }
 
-/* =========================================================
-   INTERSECTION STATIONS
-   ========================================================= */
-
-/**
- * Draws automatically generated intersection stations.
- */
-function drawIntersectionStations() {
-  const originalStations =
-    getOriginalStationGroups();
-
-  for (
-    const station of intersectionStations
-  ) {
-    /*
-     * If an original station already exists here, it is
-     * drawn later by drawOriginalStations().
-     */
-    if (
-      containsPoint(
-        originalStations,
-        station
-      )
-    ) {
-      continue;
-    }
-
-    const routes =
-      station.setIndices ??
-      getRouteIndicesAtPoint(station);
-
-    drawMulticolorStation(
-      station,
-      routes
-    );
-  }
-}
-
 /**
  * Groups original stations that occupy the same position.
  */
@@ -2327,32 +2243,6 @@ function addUniqueNumber(
   if (!exists) {
     numbers.push(candidate);
   }
-}
-
-function addUniquePoint(
-  points,
-  candidate
-) {
-  if (!containsPoint(points, candidate)) {
-    points.push(candidate);
-  }
-}
-
-function containsPoint(
-  points,
-  candidate
-) {
-  const tolerance = 0.001;
-
-  return points.some((point) => {
-    return (
-      abs(point.x - candidate.x) <
-        tolerance &&
-
-      abs(point.y - candidate.y) <
-        tolerance
-    );
-  });
 }
 
 function edgeKey(start, end) {
