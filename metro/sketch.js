@@ -760,11 +760,11 @@ function drawEndOfLineCap(
     outward.x;
 
   /*
-   * Make the cap wider than the station so that both ends
-   * remain visible beside the route stem.
+   * The bar matches a normal one-line terminus, even when
+   * this station is an interchange and its circle is larger.
    */
   const capLength =
-    stationDiameter * 1.45;
+    getTerminusCapLength();
 
   const halfCapLength =
     capLength / 2;
@@ -813,6 +813,28 @@ function getEndOfLineExtension(
     stationDiameter / 2 +
     getRouteWidth()
   );
+}
+
+/**
+ * Length of every terminus bar.
+ *
+ * It follows the size of a one-line station, so an
+ * interchange at the end does not grow the bar.
+ */
+function getTerminusCapLength() {
+  const cell =
+    min(cellWidth, cellHeight);
+
+  const ringWidth =
+    getStationStrokeWidth();
+
+  const singleDiameter = max(
+    cell,
+    cell * 0.25 + 2 * ringWidth,
+    getRouteWidth() + ringWidth * 2
+  );
+
+  return singleDiameter * 1.45;
 }
 
 /**
