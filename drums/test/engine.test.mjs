@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NITRO_MAX } from "../js/kit.js";
 import { buildChart, formatSticking, parsePattern } from "../js/pattern.js";
-import { RUDIMENTS, chartFor } from "../js/rudiments.js";
+import {
+  RUDIMENTS,
+  chartFor,
+  defaultNoteValue,
+  noteValueOptions,
+  stepsForNoteValue,
+} from "../js/rudiments.js";
 import {
   graceLeads,
   registerHit,
@@ -44,6 +50,42 @@ test("the 40 PAS rudiments parse into playable snare charts", () => {
   assert.equal(byId["single-stroke-seven"].cellSteps, 16);
   assert.equal(byId.flam.notes.filter((note) => note.grace).length, 2);
   assert.equal(formatSticking(parsePattern("lRrL")), "lR rL");
+});
+
+test("every rudiment can be played as 8th notes or as 16th notes", () => {
+  const paradiddle = RUDIMENTS.find((rudiment) => rudiment.id === "paradiddle");
+  const eighths = chartFor(paradiddle, 1, 2);
+  const sixteenths = chartFor(paradiddle, 1, 4);
+  const primaries = (notes) => notes.filter((note) => !note.grace);
+  assert.equal(defaultNoteValue(paradiddle), "16");
+  assert.equal(stepsForNoteValue(paradiddle, "8"), 2);
+  assert.equal(stepsForNoteValue(paradiddle, "16"), 4);
+  assert.equal(primaries(eighths).length, 8);
+  assert.equal(eighths[1].beat, 0.5);
+  assert.equal(primaries(sixteenths).length, 16);
+  assert.equal(sixteenths[1].beat, 0.25);
+  assert.equal(chartFor(paradiddle, 1).length, primaries(sixteenths).length);
+
+  const flam = RUDIMENTS.find((rudiment) => rudiment.id === "flam");
+  assert.equal(defaultNoteValue(flam), "8");
+  assert.equal(noteValueOptions(flam).map((option) => option.id).join(","), "8,16");
+  const flam16 = chartFor(flam, 1, stepsForNoteValue(flam, "16"));
+  assert.equal(primaries(flam16).length, 16);
+  assert.ok(flam16.some((note) => note.grace));
+
+  const accent = RUDIMENTS.find((rudiment) => rudiment.id === "flam-accent");
+  assert.equal(defaultNoteValue(accent), "written");
+  assert.equal(stepsForNoteValue(accent, "written"), 3);
+  assert.ok(noteValueOptions(accent).some((option) => option.id === "written"));
+  assert.equal(chartFor(accent, 1, 4).filter((note) => !note.grace).length, 16);
+
+  for (const rudiment of RUDIMENTS) {
+    for (const grid of [2, 4]) {
+      const chart = chartFor(rudiment, 2, grid);
+      assert.ok(chart.length > 0, `${rudiment.name} at ${grid}`);
+      assert.ok(chart.every((note) => note.element === "snare"));
+    }
+  }
 });
 
 test("a flam is scored on the main stroke when the hit is on the beat", () => {

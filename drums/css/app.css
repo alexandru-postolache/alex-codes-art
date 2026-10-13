@@ -167,7 +167,7 @@ h1 { font-family: var(--serif); font-weight: 500; font-size: 40px; letter-spacin
 .sticking-line b.l { color: var(--hand-l); }
 .sticking-line b.dim { opacity: 0.7; font-weight: 500; }
 .about { color: var(--muted); max-width: 62ch; line-height: 1.45; margin-top: 8px; }
-.transport { width: 230px; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+.transport { width: 248px; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
 .bpm { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; align-items: center; }
 .bpm strong { font-family: var(--serif); font-size: 28px; font-weight: 500; }
 .bpm input, .cal input { width: 100%; accent-color: var(--good); }
@@ -182,6 +182,7 @@ h1 { font-family: var(--serif); font-weight: 500; font-size: 40px; letter-spacin
   color: var(--muted);
 }
 .bars button[aria-pressed="true"] { color: #1a120e; background: var(--ink); }
+#subdivision button { font-size: 13px; }
 .check { display: flex; gap: 8px; align-items: center; }
 .go { display: flex; gap: 8px; }
 .go button { flex: 1; }

@@ -3,7 +3,16 @@ import { createHighway } from "./highway.js";
 import { KEY_MAP, NITRO_MAX, PADS, elementLabel } from "./kit.js";
 import { createMidi } from "./midi.js";
 import { gridLabel } from "./pattern.js";
-import { FAMILY_FILTERS, chartFor, familyLabel, findRudiment, RUDIMENTS } from "./rudiments.js";
+import {
+  FAMILY_FILTERS,
+  chartFor,
+  defaultNoteValue,
+  familyLabel,
+  findRudiment,
+  noteValueOptions,
+  RUDIMENTS,
+  stepsForNoteValue,
+} from "./rudiments.js";
 import {
   expireMisses,
   registerHit,
@@ -53,6 +62,7 @@ const els = {
   about: $("#lesson-about"),
   bpm: $("#bpm"),
   bpmRead: $("#bpm-read"),
+  subdivision: $("#subdivision"),
   bars: $("#bars"),
   gridRead: $("#grid-read"),
   playPart: $("#play-part"),
@@ -77,6 +87,7 @@ const state = {
   family: "all",
   query: "",
   rudimentId: "paradiddle",
+  noteValue: "16",
   bpm: 80,
   bars: 4,
   phase: "idle",
@@ -97,12 +108,13 @@ let timer = 0;
 const shown = new Map();
 
 function stepsPerBeat() {
-  return state.custom ? state.custom.stepsPerBeat : findRudiment(state.rudimentId).stepsPerBeat;
+  if (state.custom) return state.custom.stepsPerBeat;
+  return stepsForNoteValue(findRudiment(state.rudimentId), state.noteValue);
 }
 
 function lessonNotes(bars) {
   if (state.custom) return materialize(state.custom.recipe, bars);
-  return chartFor(findRudiment(state.rudimentId), bars);
+  return chartFor(findRudiment(state.rudimentId), bars, stepsPerBeat());
 }
 
 function previewNotes() {
@@ -181,18 +193,32 @@ function renderTrain() {
   els.sticking.innerHTML = custom ? "" : stickingHTML(rudiment.sticking);
   els.about.textContent = custom ? custom.detail : rudiment.about;
   els.bpmRead.textContent = String(state.bpm);
-  els.gridRead.textContent = `${custom ? gridLabel(custom.stepsPerBeat) : rudiment.grid} · ${state.bars} bars`;
+  els.gridRead.textContent = `${gridLabel(stepsPerBeat())} · ${state.bars} bars`;
+  renderSubdivision(rudiment, custom);
   els.bars.querySelectorAll("button").forEach((button) => {
     button.setAttribute("aria-pressed", String(Number(button.dataset.bars) === state.bars));
   });
   const locked = running();
   els.bpm.disabled = locked;
+  els.subdivision.querySelectorAll("button").forEach((button) => { button.disabled = locked; });
   els.bars.querySelectorAll("button").forEach((button) => { button.disabled = locked; });
   els.hear.hidden = locked;
   els.start.hidden = locked;
   els.stop.hidden = !locked;
   renderBanner();
   renderRudimentList();
+}
+
+function renderSubdivision(rudiment, custom) {
+  els.subdivision.hidden = Boolean(custom);
+  if (custom) return;
+  const options = noteValueOptions(rudiment);
+  if (!options.some((option) => option.id === state.noteValue)) {
+    state.noteValue = defaultNoteValue(rudiment);
+  }
+  els.subdivision.innerHTML = options.map((option) => `
+    <button type="button" data-note-value="${option.id}" aria-pressed="${option.id === state.noteValue}">${option.label}</button>
+  `).join("");
 }
 
 function renderPads() {
@@ -452,6 +478,7 @@ function selectRudiment(id) {
   if (running()) stopLesson();
   state.rudimentId = id;
   state.custom = null;
+  state.noteValue = defaultNoteValue(rudiment);
   state.bpm = rudiment.defaultBpm;
   els.bpm.value = String(state.bpm);
   if (state.phase === "results") {
@@ -648,6 +675,13 @@ function bind() {
     state.bpm = Number(els.bpm.value);
     els.bpmRead.textContent = String(state.bpm);
     if (!running()) wakeSettings();
+  });
+  els.subdivision.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-note-value]");
+    if (!button || running() || state.custom) return;
+    state.noteValue = button.dataset.noteValue;
+    wakeSettings();
+    renderTrain();
   });
   els.bars.addEventListener("click", (event) => {
     const button = event.target.closest("[data-bars]");

@@ -125,6 +125,33 @@ export function findRudiment(id) {
   return RUDIMENTS.find((rudiment) => rudiment.id === id) || null;
 }
 
-export function chartFor(rudiment, bars) {
-  return buildChart(rudiment, { bars, stepsPerBeat: rudiment.stepsPerBeat });
+export function noteValueOptions(rudiment) {
+  const options = [
+    { id: "8", stepsPerBeat: 2, label: "8ths" },
+    { id: "16", stepsPerBeat: 4, label: "16ths" },
+  ];
+  if (rudiment.stepsPerBeat !== 2 && rudiment.stepsPerBeat !== 4) {
+    const label = rudiment.stepsPerBeat === 3
+      ? "Triplets"
+      : rudiment.stepsPerBeat === 6
+        ? "Sextuplets"
+        : gridLabel(rudiment.stepsPerBeat);
+    options.push({ id: "written", stepsPerBeat: rudiment.stepsPerBeat, label });
+  }
+  return options;
+}
+
+export function defaultNoteValue(rudiment) {
+  if (rudiment.stepsPerBeat === 2) return "8";
+  if (rudiment.stepsPerBeat === 4) return "16";
+  return "written";
+}
+
+export function stepsForNoteValue(rudiment, noteValue) {
+  const option = noteValueOptions(rudiment).find((item) => item.id === noteValue);
+  return option ? option.stepsPerBeat : rudiment.stepsPerBeat;
+}
+
+export function chartFor(rudiment, bars, stepsPerBeat = rudiment.stepsPerBeat) {
+  return buildChart(rudiment, { bars, stepsPerBeat });
 }
