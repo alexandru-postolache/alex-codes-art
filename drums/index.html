@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Handline</title>
+  <meta name="description" content="Rudiment trainer and sticking desk for the Alesis Nitro Max.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;1,9..144,500&family=Outfit:wght@380;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <div class="brand">
+        <p class="mark">Handline</p>
+        <p class="tag">Rudiments, timing, and stickings</p>
+      </div>
+      <nav class="modes" role="tablist" aria-label="Sections">
+        <button id="tab-train" type="button" role="tab" aria-selected="true" aria-controls="train">Rudiments</button>
+        <button id="tab-stick" type="button" role="tab" aria-selected="false" aria-controls="stick">Stickings</button>
+      </nav>
+      <div class="top-end">
+        <p id="midi-pill" class="pill">MIDI</p>
+        <button id="kit-open" type="button" aria-expanded="false" aria-controls="kit-panel">Kit &amp; keys</button>
+      </div>
+    </header>
+
+    <section id="kit-panel" class="kit-panel" hidden>
+      <div>
+        <h2>Alesis Nitro Max</h2>
+        <p id="midi-status" class="status">MIDI is not connected yet.</p>
+        <p id="midi-last" class="status"></p>
+        <button id="midi-connect" type="button">Connect MIDI</button>
+      </div>
+      <div>
+        <h3>Hit calibration</h3>
+        <label class="cal">
+          <span>Judged early</span>
+          <input id="calibration" type="range" min="-60" max="60" value="0" step="1">
+          <span>Judged late</span>
+        </label>
+        <p id="cal-read" class="status">0 ms. Move right if your hits are called late.</p>
+      </div>
+      <div>
+        <h3>Note map</h3>
+        <ul id="note-map" class="map"></ul>
+      </div>
+      <div>
+        <h3>Keys</h3>
+        <ul id="key-map" class="map"></ul>
+      </div>
+    </section>
+
+    <div id="train" class="train">
+      <aside class="library">
+        <label class="search">
+          <span class="sr">Search rudiments</span>
+          <input id="search" type="search" placeholder="Search rudiments" autocomplete="off">
+        </label>
+        <div id="families" class="chips" role="group" aria-label="Family"></div>
+        <div id="rudiment-list" class="rlist" role="listbox" aria-label="Rudiments"></div>
+      </aside>
+      <section class="stage">
+        <div class="stage-head">
+          <div class="lesson-copy">
+            <p id="lesson-kicker" class="kicker"></p>
+            <h1 id="lesson-title"></h1>
+            <p id="lesson-sticking" class="sticking-line"></p>
+            <p id="lesson-about" class="about"></p>
+          </div>
+          <div class="transport">
+            <label class="bpm">
+              <span>Tempo</span>
+              <strong id="bpm-read">80</strong>
+              <input id="bpm" type="range" min="40" max="200" value="80">
+            </label>
+            <div id="bars" class="bars" role="group" aria-label="Lesson length"></div>
+            <p id="grid-read" class="grid-read"></p>
+            <label class="check">
+              <input id="play-part" type="checkbox">
+              Play the part
+            </label>
+            <div class="go">
+              <button id="hear" type="button">Hear it</button>
+              <button id="start" type="button">Start</button>
+              <button id="stop" type="button" hidden>Stop</button>
+            </div>
+          </div>
+        </div>
+        <div id="custom-banner" class="banner" hidden></div>
+        <div class="highway-wrap">
+          <canvas id="highway" width="960" height="460" aria-label="Note highway"></canvas>
+          <div id="progress" class="progress" aria-hidden="true"><span></span></div>
+          <div id="results" class="results" hidden></div>
+        </div>
+        <div class="legend">
+          <span><i class="swatch r"></i>Right</span>
+          <span><i class="swatch l"></i>Left</span>
+          <span><i class="swatch f"></i>Kick</span>
+          <p id="live-judge" class="live-judge" aria-live="polite"></p>
+        </div>
+        <div id="pads" class="pads"></div>
+      </section>
+    </div>
+
+    <div id="stick" class="stick" hidden>
+      <aside class="library">
+        <div class="library-intro">
+          <h2>Sticking portfolio</h2>
+          <p>Patterns that show up in fills and grooves, and a few ways to put each one on the kit.</p>
+        </div>
+        <div id="stick-list" class="rlist" role="listbox" aria-label="Stickings"></div>
+      </aside>
+      <section class="stage stick-stage">
+        <form id="stick-form" class="stick-form">
+          <label class="stick-field">
+            <span>Sticking</span>
+            <input id="stick-input" type="text" spellcheck="false" autocapitalize="characters" placeholder="R L R R L R L L" autocomplete="off">
+          </label>
+          <div id="grid-chips" class="chips" role="group" aria-label="Timings"></div>
+          <p id="stick-error" class="error" hidden></p>
+        </form>
+        <article id="stick-essay" class="essay"></article>
+        <div id="arrangements" class="arrangements"></div>
+      </section>
+    </div>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
