@@ -2,7 +2,8 @@ import { createAudio } from "./audio.js";
 import { createHighway } from "./highway.js";
 import { KEY_MAP, NITRO_MAX, PADS, elementLabel } from "./kit.js";
 import { createMidi } from "./midi.js";
-import { FAMILY_FILTERS, chartFor, familyLabel, findRudiment, gridLabel, RUDIMENTS } from "./rudiments.js";
+import { gridLabel } from "./pattern.js";
+import { FAMILY_FILTERS, chartFor, familyLabel, findRudiment, RUDIMENTS } from "./rudiments.js";
 import {
   expireMisses,
   registerHit,

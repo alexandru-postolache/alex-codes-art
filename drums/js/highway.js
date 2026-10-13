@@ -130,14 +130,14 @@ export function createHighway(canvas) {
       ctx.stroke();
     });
 
-    labels.slice(-3).forEach((label, index) => {
+    labels.slice(-1).forEach((label) => {
       const age = (nowMs - label.at) / 640;
       ctx.globalAlpha = 1 - age;
       ctx.fillStyle = label.kind === "miss" || label.kind === "stray" ? colors.R : colors.good;
       ctx.font = "600 13px Outfit, sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "bottom";
-      ctx.fillText(label.text, hitX + 18, 28 + index * 16 - age * 10);
+      ctx.fillText(label.text, hitX + 18, 28 - age * 8);
       ctx.globalAlpha = 1;
     });
 
