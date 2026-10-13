@@ -614,7 +614,7 @@ function setupPane() {
   particleFolder.addInput(params, "weight", {
     label: "weight",
     min: 0.5,
-    max: 12,
+    max: 50,
     step: 0.1,
   });
   particleFolder.addInput(params, "respawn", { label: "respawn" });
