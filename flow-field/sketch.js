@@ -18,6 +18,7 @@ const params = {
   increaseBrightness: true,
   backgroundColor: "#ffffff",
   fade: 0,
+  spawnOnClick: true,
   paused: false,
   respawn: true,
   allowIntersect: true,
@@ -80,6 +81,7 @@ function createInk() {
   ink.strokeCap(ROUND);
   ink.noFill();
   ink.curveTightness(0);
+  ink.clear();
 }
 
 function draw() {
@@ -107,6 +109,8 @@ function draw() {
     }
   }
 
+  colorMode(RGB, 255);
+  background(params.backgroundColor);
   image(ink, 0, 0);
   if (params.showField) {
     drawField();
@@ -156,9 +160,26 @@ function generateNew() {
   resetParticles();
 }
 
-function spawnParticle() {
-  particles.push(new Particle(random(width), random(height), colorCursor));
+function spawnParticleAt(x, y) {
+  particles.push(new Particle(x, y, colorCursor));
   colorCursor += 1;
+}
+
+function spawnParticle() {
+  spawnParticleAt(random(width), random(height));
+}
+
+function mousePressed(event) {
+  if (!params.spawnOnClick || mouseButton !== LEFT) {
+    return;
+  }
+  if (event && event.target && event.target.tagName !== "CANVAS") {
+    return;
+  }
+  if (mouseX < 0 || mouseY < 0 || mouseX > width || mouseY > height) {
+    return;
+  }
+  spawnParticleAt(mouseX, mouseY);
 }
 
 function syncParticleCount() {
@@ -196,8 +217,7 @@ function clearCanvas() {
   colorMode(RGB, 255);
   background(params.backgroundColor);
   if (ink) {
-    ink.colorMode(RGB, 255);
-    ink.background(params.backgroundColor);
+    ink.clear();
   }
   clearOccupied();
   strokes = [];
@@ -499,8 +519,12 @@ function fadeBackground() {
     return;
   }
 
-  const c = color(params.backgroundColor);
-  ink.background(red(c), green(c), blue(c), params.fade);
+  ink.fill(255);
+  ink.noStroke();
+  ink.erase(params.fade, 0);
+  ink.rect(0, 0, width, height);
+  ink.noErase();
+  ink.noFill();
 }
 
 function drawField() {
@@ -594,6 +618,7 @@ function setupPane() {
     step: 0.1,
   });
   particleFolder.addInput(params, "respawn", { label: "respawn" });
+  particleFolder.addInput(params, "spawnOnClick", { label: "click to spawn" });
   particleFolder
     .addInput(params, "allowIntersect", { label: "intersect" })
     .on("change", updateSeparationVisibility);
