@@ -165,6 +165,7 @@ h1 { font-family: var(--serif); font-weight: 500; font-size: 40px; letter-spacin
 .sticking-line { font-size: 18px; letter-spacing: 0.04em; }
 .sticking-line b.r { color: var(--hand-r); }
 .sticking-line b.l { color: var(--hand-l); }
+.sticking-line b.f { color: var(--hand-f); }
 .sticking-line b.dim { opacity: 0.7; font-weight: 500; }
 .about { color: var(--muted); max-width: 62ch; line-height: 1.45; margin-top: 8px; }
 .transport { width: 248px; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }

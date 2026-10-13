@@ -177,6 +177,28 @@ test("fills use the kit, and linear grooves give 1 and 3 to the kick", () => {
   assert.ok(linear.some((note) => note.baseStep === 4 && note.element === "snare" && note.accent));
 });
 
+test("a written K is the kick and takes that step alone", () => {
+  const parsed = parseSticking("R L K L");
+  assert.deepEqual(parsed.hands, ["R", "L", "K", "L"]);
+  assert.deepEqual(parseSticking("rlk").hands, ["R", "L", "K"]);
+  const snare = expandHands(parsed.hands, 4, 1, "snare");
+  const at = (step) => snare.filter((note) => note.baseStep === step);
+  assert.deepEqual(at(0).map((note) => note.element), ["snare"]);
+  assert.deepEqual(at(2).map((note) => [note.element, note.hand]), [["kick", "F"]]);
+  const hats = expandHands(parsed.hands, 4, 1, "hats");
+  assert.equal(hats.filter((note) => note.baseStep === 0 && note.element === "kick").length, 0);
+  assert.equal(hats.find((note) => note.baseStep === 0).element, "hat");
+  assert.deepEqual(
+    hats.filter((note) => note.baseStep === 2).map((note) => note.element),
+    ["kick"],
+  );
+  const linear = expandHands(parsed.hands, 4, 1, "linear");
+  assert.equal(linear.find((note) => note.baseStep === 0).element, "hat");
+  assert.equal(linear.find((note) => note.baseStep === 2).element, "kick");
+  const plain = expandHands(["R", "L"], 4, 1, "hats");
+  assert.equal(plain.filter((note) => note.baseStep === 0 && note.element === "kick").length, 1);
+});
+
 test("custom stickings reject junk and generate both grids", () => {
   assert.ok(parseSticking("R L R R").hands);
   assert.ok(parseSticking("RLX").error);

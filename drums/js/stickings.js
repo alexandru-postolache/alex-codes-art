@@ -24,19 +24,19 @@ export function parseSticking(text) {
   const hands = [];
   for (const ch of String(text)) {
     const upper = ch.toUpperCase();
-    if (upper === "R" || upper === "L") {
+    if (upper === "R" || upper === "L" || upper === "K") {
       hands.push(upper);
       continue;
     }
     if (SKIP.has(ch)) continue;
-    return { error: `“${ch}” is not a hand. Use R and L.` };
+    return { error: `“${ch}” is not a stroke. Use R, L, and K.` };
   }
-  if (!hands.length) return { error: "Type a sticking, such as R L R R L R L L." };
+  if (!hands.length) return { error: "Type a sticking, such as R L K L or R L R R L R L L." };
   if (hands.length > 48) return { error: "Keep it to 48 strokes or fewer." };
   return { hands };
 }
 
-export function voiceStep(style, step, hand, stepsPerBeat) {
+export function voiceStep(style, step, hand, stepsPerBeat, { writtenKick = false } = {}) {
   const beat = Math.floor(step / stepsPerBeat) % 4;
   const downbeat = step % stepsPerBeat === 0;
   const backbeat = downbeat && (beat === 1 || beat === 3);
@@ -54,13 +54,13 @@ export function voiceStep(style, step, hand, stepsPerBeat) {
     return {
       element: backbeat ? "snare" : hand === "R" ? cymbal : "snare",
       accent: backbeat,
-      extras: pulse ? [kick] : [],
+      extras: pulse && !writtenKick ? [kick] : [],
       rest: false,
     };
   }
 
   if (style === "linear") {
-    if (pulse) return { element: "kick", accent: false, extras: [], rest: true, foot: kick };
+    if (pulse && !writtenKick) return { element: "kick", accent: false, extras: [], rest: true, foot: kick };
     if (backbeat) return { element: "snare", accent: true, extras: [], rest: false };
     return {
       element: hand === "R" ? "hat" : "snare",
@@ -75,7 +75,7 @@ export function voiceStep(style, step, hand, stepsPerBeat) {
     return {
       element: path[beat],
       accent: downbeat || barEnd,
-      extras: barEnd ? [{ ...kick, accent: true }] : [],
+      extras: barEnd && !writtenKick ? [{ ...kick, accent: true }] : [],
       rest: false,
     };
   }
@@ -85,7 +85,7 @@ export function voiceStep(style, step, hand, stepsPerBeat) {
     return {
       element: hand === "R" ? "snare" : leftPath[beat],
       accent: beat === 3 && downbeat,
-      extras: barEnd ? [kick] : [],
+      extras: barEnd && !writtenKick ? [kick] : [],
       rest: false,
     };
   }
@@ -130,10 +130,25 @@ function pushVoiced(out, note, decision) {
 
 export function expandHands(hands, stepsPerBeat, bars, style) {
   const steps = bars * 4 * stepsPerBeat;
+  const writtenKick = hands.includes("K");
   const notes = [];
   for (let step = 0; step < steps; step += 1) {
     const hand = hands[step % hands.length];
-    const decision = voiceStep(style, step, hand, stepsPerBeat);
+    if (hand === "K") {
+      notes.push({
+        beat: step / stepsPerBeat,
+        baseStep: step,
+        hand: "F",
+        element: "kick",
+        accent: false,
+        grace: false,
+        graceIndex: 0,
+        graceCount: 0,
+        group: `s${step}`,
+      });
+      continue;
+    }
+    const decision = voiceStep(style, step, hand, stepsPerBeat, { writtenKick });
     pushVoiced(notes, {
       beat: step / stepsPerBeat,
       baseStep: step,
@@ -214,13 +229,15 @@ function backbeatHands(notes, stepsPerBeat) {
   return found;
 }
 
-function describe(style, grid, notes, stepsPerBeat, resolves, handCount) {
+function describe(style, grid, notes, stepsPerBeat, resolves, handCount, writtenKick) {
   const turn = resolves
     ? `The ${handCount}-note sticking closes inside these bars.`
     : `It is ${handCount} notes long, so it turns around the bar and continues.`;
+  const placed = "K is the kick on the steps you wrote, and it plays alone.";
 
   if (style === "snare") {
-    return `${grid.label} on the snare, each hand in the color it plays. ${turn}`;
+    const foot = writtenKick ? ` ${placed}` : "";
+    return `${grid.label} on the snare, each hand in the color it plays.${foot} ${turn}`;
   }
   if (style === "hats" || style === "ride") {
     const cymbal = style === "hats" ? "hi-hat" : "ride";
@@ -230,25 +247,35 @@ function describe(style, grid, notes, stepsPerBeat, resolves, handCount) {
       : hands.length > 1
         ? "Both hands take backbeats somewhere in the phrase."
         : "No note lands on beat 2 or 4 in this slice, so nothing is moved to a backbeat.";
-    return `Right hand on the ${cymbal}, left hand on the snare, except beats 2 and 4: whichever hand lands there plays an accented snare. Kick on 1 and 3. ${who} ${turn}`;
+    const foot = writtenKick ? placed : "Kick on 1 and 3.";
+    return `Right hand on the ${cymbal}, left hand on the snare, except beats 2 and 4: whichever hand lands there plays an accented snare. ${foot} ${who} ${turn}`;
   }
   if (style === "linear") {
-    return `One surface at a time. Beats 1 and 3 are the kick, so the hand that would have played them rests. Beats 2 and 4 are accented snare. Other rights stay on the hi-hat and other lefts on the snare. ${turn}`;
+    const foot = writtenKick
+      ? placed
+      : "Beats 1 and 3 are the kick, so the hand that would have played them rests.";
+    return `One surface at a time. ${foot} Beats 2 and 4 are accented snare. Other rights stay on the hi-hat and other lefts on the snare. ${turn}`;
   }
   if (style === "down") {
-    return `Each beat moves to the next drum: snare, tom 1, tom 2, floor. The last note of the bar is played with the kick. ${turn}`;
+    const foot = writtenKick
+      ? placed
+      : "The last note of the bar is played with the kick.";
+    return `Each beat moves to the next drum: snare, tom 1, tom 2, floor. ${foot} ${turn}`;
   }
-  return `The right hand stays on the snare. The left hand starts there and moves through tom 1, tom 2, and the floor. The kick joins the last note of the bar. ${turn}`;
+  const foot = writtenKick
+    ? placed
+    : "The kick joins the last note of the bar.";
+  return `The right hand stays on the snare. The left hand starts there and moves through tom 1, tom 2, and the floor. ${foot} ${turn}`;
 }
 
-function arrangement({ id, style, grid, notes, bars, steps, resolves, handCount, recipe, timing }) {
+function arrangement({ id, style, grid, notes, bars, steps, resolves, handCount, recipe, timing, writtenKick = false }) {
   const meta = STYLE_BY_ID[style];
   return {
     id,
     title: meta.title,
     kind: meta.kind,
     timing: timing || grid.label,
-    summary: describe(style, grid, notes, grid.stepsPerBeat, resolves, handCount),
+    summary: describe(style, grid, notes, grid.stepsPerBeat, resolves, handCount, writtenKick),
     stepsPerBeat: grid.stepsPerBeat,
     steps,
     bars,
@@ -275,6 +302,7 @@ export function generateArrangements(hands, { grids = ["8", "16"], bars = 2 } = 
         steps,
         resolves: steps % hands.length === 0,
         handCount: hands.length,
+        writtenKick: hands.includes("K"),
         recipe: { type: "hands", hands: hands.slice(), grid: grid.id, style: style.id },
       }));
     }
@@ -423,6 +451,12 @@ export const STICKINGS = [
     name: "Singles",
     display: "R L",
     about: "Hand to hand. This is the 16th-note hi-hat when you play every note, and the cleanest way down the drums, because each hand takes a new surface.",
+  },
+  {
+    id: "kick-linear",
+    name: "Right, left, kick, left",
+    display: "R L K L",
+    about: "A linear cell with the kick written in. K takes that step by itself. On a groove the right stays on the cymbal and the lefts sit on the snare. On a fill the hands move, and the kick stays where you put it.",
   },
   {
     id: "doubles",

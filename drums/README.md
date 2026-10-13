@@ -30,7 +30,7 @@ Perfect is within 30 ms, great within 55, good within 90. Anything else is a mis
 
 ## Stickings
 
-The portfolio is a set of stickings that show up in everyday playing. Each one is written out as 8th notes and as 16th notes, on the snare, as hat and ride grooves, as a linear groove, and as two fills. Triplets are optional. Type any R/L sticking to generate the same set. **Practice this** loads that voicing into the highway.
+The portfolio is a set of stickings that show up in everyday playing. Each one is written out as 8th notes and as 16th notes, on the snare, as hat and ride grooves, as a linear groove, and as two fills. Triplets are optional. Type R, L, and K. K is the kick and takes its own step. A sticking with no K still puts the kick on beats 1 and 3 in the grooves. **Practice this** loads that voicing into the highway.
 
 ## Tests
 

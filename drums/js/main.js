@@ -139,6 +139,7 @@ function stickingHTML(text) {
   return [...text].map((ch) => {
     if (ch === "R" || ch === "r") return `<b class="r${ch === "r" ? " dim" : ""}">${ch}</b>`;
     if (ch === "L" || ch === "l") return `<b class="l${ch === "l" ? " dim" : ""}">${ch}</b>`;
+    if (ch === "K" || ch === "k") return `<b class="f">${ch.toUpperCase()}</b>`;
     return ch === " " ? " " : ch;
   }).join("");
 }
@@ -578,7 +579,7 @@ function renderStick() {
   els.stickError.textContent = error;
   els.essay.innerHTML = entry
     ? `<h2>${entry.name}</h2><p class="sticking-line">${stickingHTML(entry.display)}</p><p>${entry.about}</p>`
-    : `<h2>Custom sticking</h2><p>Rights lead cymbals in the grooves. Lefts sit on the snare unless a backbeat asks them to move. Fills walk the same sticking down the kit.</p>`;
+    : `<h2>Custom sticking</h2><p>R is the right hand, L the left, and K the kick. K takes its own step. Rights lead cymbals in the grooves. Lefts sit on the snare unless a backbeat asks them to move. Fills walk the hands down the kit.</p>`;
   renderStickList();
   if (error || !state.stickGrids.length) {
     els.arrangements.innerHTML = error ? "" : `<p class="status">Pick an 8th-note, 16th-note, or triplet grid.</p>`;
