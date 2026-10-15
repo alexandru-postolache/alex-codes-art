@@ -8,7 +8,7 @@ This repository contains the source code for interactive [p5.js](https://p5js.or
 
 | Folder | Description | Blog tutorial |
 |--------|-------------|---------------|
-| [`drums/`](drums/) | Rudiment trainer and sticking desk with Web MIDI for the Alesis Nitro Max | — |
+| [`drums/`](drums/) | Rudiment trainer, fill generator, and sticking desk with Web MIDI for the Alesis Nitro Max | — |
 | [`leaves/`](leaves/) | Deterministic watercolor leaves with flow-field placement and live controls | — |
 | [`wfc/`](wfc/) | Interactive Wave Function Collapse visualization with 2D tilesets, Wang tiles, and a 3D mode | [Article draft](wfc/article.md) |
 | [`metaballs/`](metaballs/) | Animated organic blobs rendered with GLSL shaders and signed distance functions | [Create Animated Metaballs with Shaders in p5.js](https://alexcodesart.com/create-animated-metaballs-with-shaders-in-p5-js-a-creative-coding-tutorial/) |

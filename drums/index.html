@@ -15,10 +15,11 @@
     <header class="top">
       <div class="brand">
         <p class="mark">Handline</p>
-        <p class="tag">Rudiments, timing, and stickings</p>
+        <p class="tag">Rudiments, fills, and stickings</p>
       </div>
       <nav class="modes" role="tablist" aria-label="Sections">
         <button id="tab-train" type="button" role="tab" aria-selected="true" aria-controls="train">Rudiments</button>
+        <button id="tab-fills" type="button" role="tab" aria-selected="false" aria-controls="fills">Fills</button>
         <button id="tab-stick" type="button" role="tab" aria-selected="false" aria-controls="stick">Stickings</button>
       </nav>
       <div class="top-end">
@@ -103,6 +104,28 @@
           <p id="live-judge" class="live-judge" aria-live="polite"></p>
         </div>
         <div id="pads" class="pads"></div>
+      </section>
+    </div>
+
+    <div id="fills" class="stick" hidden>
+      <aside class="library">
+        <div class="library-intro">
+          <h2>Fills</h2>
+          <p>Type a sticking. Each one is a beat, half a bar, or a full bar, and every fill uses both 8ths and 16ths.</p>
+        </div>
+        <div id="fill-presets" class="chips" role="group" aria-label="Sticking presets"></div>
+      </aside>
+      <section class="stage stick-stage">
+        <form id="fill-form" class="stick-form">
+          <label class="stick-field">
+            <span>Sticking</span>
+            <input id="fill-input" type="text" spellcheck="false" autocapitalize="characters" placeholder="R L R R L R L L" autocomplete="off">
+          </label>
+          <p class="status">R right, L left, K kick. K takes its own step inside the fill.</p>
+          <div id="fill-lengths" class="chips" role="group" aria-label="Fill length"></div>
+          <p id="fill-error" class="error" hidden></p>
+        </form>
+        <div id="fill-list" class="arrangements"></div>
       </section>
     </div>
 

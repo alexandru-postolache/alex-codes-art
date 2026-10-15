@@ -402,8 +402,8 @@ export function classicHertas() {
   ];
 }
 
-export function loopPhrase(notes, phraseBeats, totalBeats) {
-  const phraseSteps = notes.reduce((max, note) => Math.max(max, note.baseStep + 1), 0);
+export function loopPhrase(notes, phraseBeats, totalBeats, phraseSteps) {
+  const span = phraseSteps || notes.reduce((max, note) => Math.max(max, note.baseStep + 1), 0);
   const out = [];
   for (let origin = 0; origin < totalBeats - 1e-6; origin += phraseBeats) {
     for (const note of notes) {
@@ -412,7 +412,7 @@ export function loopPhrase(notes, phraseBeats, totalBeats) {
       out.push({
         ...note,
         beat,
-        baseStep: note.baseStep + Math.round(origin / phraseBeats) * phraseSteps,
+        baseStep: note.baseStep + Math.round(origin / phraseBeats) * span,
         result: null,
         deltaMs: null,
       });
@@ -432,7 +432,7 @@ export function materialize(recipe, bars = 4) {
     return voiceChart(chart, recipe.style, recipe.stepsPerBeat);
   }
   if (recipe.type === "phrase") {
-    return loopPhrase(recipe.notes, recipe.phraseBeats, bars * 4);
+    return loopPhrase(recipe.notes, recipe.phraseBeats, bars * 4, recipe.phraseSteps);
   }
   return [];
 }

@@ -1,6 +1,6 @@
 # Handline
 
-A browser drum desk with two jobs: practice the 40 PAS rudiments against a clock, and see how a sticking sits on the kit as a groove or a fill.
+A browser drum desk: practice the 40 PAS rudiments against a clock, generate fills from a sticking, and see how a sticking sits on the kit as a groove or a fill.
 
 Lessons scroll toward a hit line, Melodics-style, on a horizontal highway. Right hand is vermilion, left hand is blue, kick is gold. Each rudiment can be played as 8th notes or as 16th notes. A rudiment written in triplets or sextuplets also keeps that grid. At the end you get a timing score and a star rating.
 
@@ -27,6 +27,10 @@ Without the kit, use the on-screen pads or the keyboard: B or Space kick, D snar
 ## Timing
 
 Perfect is within 30 ms, great within 55, good within 90. Anything else is a miss. Grace notes get a slightly wider window and count at half weight. Five stars starts at a score of 93.
+
+## Fills
+
+Type R, L, and K. The generator writes that sticking as one beat, half a bar, and a full bar. Every fill mixes 8th notes and 16th notes, and the set moves the hands in different ways: down the kit, split between the hands, 16ths on the snare, or around the drums. **Practice this** loops the fill on the highway.
 
 ## Stickings
 

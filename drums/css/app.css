@@ -325,8 +325,8 @@ h1 { font-family: var(--serif); font-weight: 500; font-size: 40px; letter-spacin
 .grid-scroll { overflow-x: auto; padding-bottom: 4px; }
 .grid {
   display: grid;
-  grid-template-columns: 72px repeat(var(--cols), minmax(22px, 1fr));
-  min-width: calc(72px + var(--cols) * 22px);
+  grid-template-columns: 72px repeat(var(--cols), 44px);
+  width: max-content;
   gap: 2px 0;
   align-items: stretch;
 }

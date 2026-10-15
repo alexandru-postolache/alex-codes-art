@@ -1,4 +1,5 @@
 import { createAudio } from "./audio.js";
+import { FILL_PRESETS, generateFills } from "./fills.js";
 import { createHighway } from "./highway.js";
 import { KEY_MAP, NITRO_MAX, PADS, elementLabel } from "./kit.js";
 import { createMidi } from "./midi.js";
@@ -40,8 +41,10 @@ const $ = (id) => document.querySelector(id);
 
 const els = {
   train: $("#train"),
+  fills: $("#fills"),
   stick: $("#stick"),
   tabTrain: $("#tab-train"),
+  tabFills: $("#tab-fills"),
   tabStick: $("#tab-stick"),
   kit: $("#kit-panel"),
   kitOpen: $("#kit-open"),
@@ -80,6 +83,11 @@ const els = {
   stickError: $("#stick-error"),
   essay: $("#stick-essay"),
   arrangements: $("#arrangements"),
+  fillInput: $("#fill-input"),
+  fillPresets: $("#fill-presets"),
+  fillLengths: $("#fill-lengths"),
+  fillError: $("#fill-error"),
+  fillList: $("#fill-list"),
 };
 
 const state = {
@@ -101,11 +109,14 @@ const state = {
   stickText: "R L R R L R L L",
   stickGrids: ["8", "16"],
   pinnedId: null,
+  fillText: "R L R R L R L L",
+  fillLength: "all",
 };
 
 let sessionId = 0;
 let timer = 0;
 const shown = new Map();
+const fillShown = new Map();
 
 function stepsPerBeat() {
   if (state.custom) return state.custom.stepsPerBeat;
@@ -129,10 +140,13 @@ function running() {
 function setMode(mode) {
   state.mode = mode;
   els.train.hidden = mode !== "train";
+  els.fills.hidden = mode !== "fills";
   els.stick.hidden = mode !== "stick";
   els.tabTrain.setAttribute("aria-selected", String(mode === "train"));
+  els.tabFills.setAttribute("aria-selected", String(mode === "fills"));
   els.tabStick.setAttribute("aria-selected", String(mode === "stick"));
   if (mode === "stick") renderStick();
+  if (mode === "fills") renderFills();
 }
 
 function stickingHTML(text) {
@@ -615,15 +629,17 @@ function renderStick() {
   `).join("");
 }
 
-function practice(arrangement) {
+function practice(arrangement, source) {
   const steps = arrangement.recipe.type === "hands"
     ? GRIDS[arrangement.recipe.grid].stepsPerBeat
     : arrangement.recipe.stepsPerBeat;
-  const entry = state.pinnedId
-    ? STICKINGS.find((item) => item.id === state.pinnedId)
-    : matchEntry(parseSticking(els.stickInput.value).hands || []);
+  const entry = source
+    ? null
+    : state.pinnedId
+      ? STICKINGS.find((item) => item.id === state.pinnedId)
+      : matchEntry(parseSticking(els.stickInput.value).hands || []);
   state.custom = {
-    name: `${entry ? entry.name : "Custom"} · ${arrangement.title}`,
+    name: source ? `Fill · ${arrangement.title}` : `${entry ? entry.name : "Custom"} · ${arrangement.title}`,
     detail: arrangement.summary,
     timing: arrangement.timing,
     stepsPerBeat: steps,
@@ -641,6 +657,67 @@ function practice(arrangement) {
   renderTrain();
 }
 
+const FILL_LENGTHS = [
+  ["all", "All"],
+  ["One beat", "One beat"],
+  ["Half a bar", "Half a bar"],
+  ["One bar", "One bar"],
+];
+
+function renderFillPresets() {
+  els.fillPresets.innerHTML = FILL_PRESETS.map((preset) => `
+    <button type="button" data-fill-preset="${preset.sticking}" aria-pressed="${els.fillInput.value === preset.sticking}">${preset.label}</button>
+  `).join("");
+}
+
+function renderFillLengths() {
+  els.fillLengths.innerHTML = FILL_LENGTHS.map(([id, label]) => `
+    <button type="button" data-fill-length="${id}" aria-pressed="${state.fillLength === id}">${label}</button>
+  `).join("");
+}
+
+function renderFills() {
+  const parsed = parseSticking(els.fillInput.value);
+  renderFillPresets();
+  renderFillLengths();
+  els.fillError.hidden = !parsed.error;
+  els.fillError.textContent = parsed.error || "";
+  if (parsed.error) {
+    els.fillList.innerHTML = "";
+    return;
+  }
+  const fills = generateFills(parsed.hands).filter((fill) => state.fillLength === "all" || fill.timing === state.fillLength);
+  fillShown.clear();
+  const groups = [];
+  for (const fill of fills) {
+    let group = groups.find((item) => item.timing === fill.timing);
+    if (!group) {
+      group = { timing: fill.timing, items: [] };
+      groups.push(group);
+    }
+    group.items.push(fill);
+    fillShown.set(fill.id, fill);
+  }
+  els.fillList.innerHTML = groups.map((group) => `
+    <section class="group">
+      <h3>${group.timing}</h3>
+      ${group.items.map((fill) => `
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h4>${fill.title}</h4>
+              <p class="sticking-line">${stickingHTML(fill.sticking)}</p>
+              <p>${fill.summary}</p>
+            </div>
+            <button type="button" data-fill-practice="${fill.id}">Practice this</button>
+          </div>
+          ${renderGrid(fill)}
+        </article>
+      `).join("")}
+    </section>
+  `).join("") || `<p class="status">No fills for that length.</p>`;
+}
+
 function loop() {
   highway.frame(view());
   updateProgress();
@@ -648,7 +725,9 @@ function loop() {
 }
 
 function bind() {
+  document.querySelector("#fill-form").addEventListener("submit", (event) => event.preventDefault());
   els.tabTrain.addEventListener("click", () => setMode("train"));
+  els.tabFills.addEventListener("click", () => setMode("fills"));
   els.tabStick.addEventListener("click", () => setMode("stick"));
   els.kitOpen.addEventListener("click", () => {
     const open = els.kit.hidden;
@@ -741,6 +820,29 @@ function bind() {
     renderGridChips();
     renderStick();
   });
+  els.fillInput.addEventListener("input", () => {
+    state.fillText = els.fillInput.value;
+    renderFills();
+  });
+  els.fillPresets.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-fill-preset]");
+    if (!button) return;
+    els.fillInput.value = button.dataset.fillPreset;
+    state.fillText = button.dataset.fillPreset;
+    renderFills();
+  });
+  els.fillLengths.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-fill-length]");
+    if (!button) return;
+    state.fillLength = button.dataset.fillLength;
+    renderFills();
+  });
+  els.fillList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-fill-practice]");
+    if (!button) return;
+    const fill = fillShown.get(button.dataset.fillPractice);
+    if (fill) practice(fill, "fill");
+  });
   els.arrangements.addEventListener("click", (event) => {
     const button = event.target.closest("[data-practice]");
     if (!button) return;
@@ -777,6 +879,7 @@ els.bars.innerHTML = [2, 4, 8].map((bars) =>
 els.calibration.value = String(state.calibration);
 els.bpm.value = "80";
 els.stickInput.value = state.stickText;
+els.fillInput.value = state.fillText;
 renderFamilies();
 renderPads();
 renderKit();

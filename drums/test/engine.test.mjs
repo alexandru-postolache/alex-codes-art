@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { generateFills } from "../js/fills.js";
 import { NITRO_MAX } from "../js/kit.js";
 import { buildChart, formatSticking, parsePattern } from "../js/pattern.js";
 import {
@@ -24,6 +25,7 @@ import {
   classicHertas,
   expandHands,
   generateArrangements,
+  materialize,
   parseSticking,
 } from "../js/stickings.js";
 
@@ -216,6 +218,47 @@ test("flam taps keep a single main stroke per attack", () => {
     .find((item) => item.id === "snare-8");
   assert.equal(snare.notes.filter((note) => !note.grace).length, 8);
   assert.ok(snare.notes.some((note) => note.grace && note.element === "snare"));
+});
+
+function fillDurations(fill) {
+  const slots = [...new Set(fill.notes.map((note) => note.baseStep))].sort((a, b) => a - b);
+  const gaps = slots.slice(1).map((slot, index) => slot - slots[index]);
+  gaps.push(fill.slots - slots[slots.length - 1]);
+  return gaps;
+}
+
+test("fills mix 8ths and 16ths across three lengths", () => {
+  const fills = generateFills(["R", "L", "R", "R", "L", "R", "L", "L"]);
+  assert.equal(fills.length, 18);
+  const sigs = fills.map((fill) => fill.notes.map((note) => `${note.baseStep}:${note.element}:${note.hand}`).join("|"));
+  assert.equal(new Set(sigs).size, fills.length);
+  for (const beats of [1, 2, 4]) {
+    const group = fills.filter((fill) => fill.beats === beats);
+    assert.ok(group.length >= 4, `length ${beats}`);
+  }
+  for (const fill of fills) {
+    const durations = fillDurations(fill);
+    assert.ok(durations.includes(1) && durations.includes(2), fill.id);
+    assert.equal(durations.reduce((sum, duration) => sum + duration, 0), fill.slots);
+    assert.ok(durations.every((duration) => duration === 1 || duration === 2));
+    assert.ok(fill.notes.every((note) => ELEMENTS.has(note.element)));
+    assert.ok(new Set(fill.notes.map((note) => note.element)).size > 1, fill.id);
+  }
+  const quarter = fills.find((fill) => fill.beats === 1);
+  const looped = materialize(quarter.recipe, 1);
+  assert.equal(looped.length, quarter.notes.length * 4);
+  const keys = new Set(looped.map((note) => `${note.baseStep}:${note.element}:${note.hand}`));
+  assert.equal(keys.size, looped.length);
+  assert.ok(looped.every((note) => note.baseStep < 16));
+
+  const kicked = generateFills(["R", "L", "K", "L"]);
+  const landed = kicked.find((fill) => fill.id === "quarter-land-descend");
+  assert.deepEqual(landed.notes.filter((note) => note.baseStep === 2).map((note) => note.element), ["kick"]);
+  const button = fills.find((fill) => fill.id === "bar-build-punctuate");
+  const lastSlot = Math.max(...button.notes.map((note) => note.baseStep));
+  const ending = button.notes.filter((note) => note.baseStep === lastSlot).map((note) => note.element).sort();
+  assert.ok(ending.includes("crash") || ending.includes("floor"));
+  assert.ok(ending.includes("kick"));
 });
 
 test("library stickings and the classic herta rhythm", () => {
