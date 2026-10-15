@@ -10,6 +10,10 @@ This repository contains the source code for interactive [p5.js](https://p5js.or
 |--------|-------------|---------------|
 | [`drums/`](drums/) | Rudiment trainer, fill generator, and sticking desk with Web MIDI for the Alesis Nitro Max | — |
 | [`leaves/`](leaves/) | Deterministic watercolor leaves with flow-field placement and live controls | — |
+| [`flow-field/`](flow-field/) | Particles that trace a noise flow field, with color schemes, spacing controls, and high-resolution export | — |
+| [`metro/`](metro/) | Interactive transit diagram of colored routes, stations, shared paths, and 45-degree bends | — |
+| [`contour-lines/`](contour-lines/) | Animated topographic contours from a noise field, drawn with marching squares and optional fill bands | — |
+| [`contour-vector/`](contour-vector/) | Vector contour output for SVG and Figma, with a browser demo separate from the canvas sketch | — |
 | [`wfc/`](wfc/) | Interactive Wave Function Collapse visualization with 2D tilesets, Wang tiles, and a 3D mode | [Article draft](wfc/article.md) |
 | [`metaballs/`](metaballs/) | Animated organic blobs rendered with GLSL shaders and signed distance functions | [Create Animated Metaballs with Shaders in p5.js](https://alexcodesart.com/create-animated-metaballs-with-shaders-in-p5-js-a-creative-coding-tutorial/) |
 | [`mandala/`](mandala/) | Interactive mandala maker with symmetry, fading trails, curvy motion, and Web MIDI | [Mandala series (parts 1–3)](mandala/) |
@@ -37,4 +41,4 @@ Some sketches load p5.js or other libraries from a CDN, so an internet connectio
 
 ## About the blog
 
-[Alex Codes Art](https://alexcodesart.com/) publishes beginner-friendly tutorials on creative coding, generative art, shaders, and algorithmic music. Every project in this repo walks through the ideas behind the code in a full step-by-step article.
+[Alex Codes Art](https://alexcodesart.com/) publishes beginner-friendly tutorials on creative coding, generative art, shaders, and algorithmic music. Projects with a link in the table above have a step-by-step article on the blog.
