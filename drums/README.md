@@ -2,7 +2,7 @@
 
 A browser drum desk: practice the 40 PAS rudiments against a clock, learn a set of grooves, generate fills from a sticking, and see how a sticking sits on the kit as a groove or a fill.
 
-Lessons scroll toward a hit line, Melodics-style, on a horizontal highway. Right hand is vermilion, left hand is blue, kick is gold. Each rudiment can be played as 8th notes or as 16th notes. A rudiment written in triplets or sextuplets also keeps that grid. At the end you get a timing score and a star rating.
+Lessons scroll toward a hit line, Melodics-style, on a horizontal highway. Right hand is cyan, left hand is pink, kick is gold. Each rudiment can be played as 8th notes or as 16th notes. A rudiment written in triplets or sextuplets also keeps that grid. At the end you get a timing score and a star rating.
 
 ## Run it
 

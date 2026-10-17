@@ -206,7 +206,7 @@ export function createHighway(canvas) {
   function drawNote(note, x, y, laneH, slot) {
     const paint = notePaint(note);
     const color = paint ? colors[paint] : (colors[note.hand] || colors.F);
-    const lightInk = paint === "late" || paint === "miss" || (!paint && note.hand === "L");
+    const lightInk = paint === "late" || paint === "miss";
     const ink = lightInk ? "#f4f7ff" : "#1a100c";
     ctx.save();
     if (note.grace) {

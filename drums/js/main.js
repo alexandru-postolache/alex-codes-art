@@ -506,7 +506,11 @@ function onStrike(element, velocity = 100) {
   const side = ms === 0 ? "on the beat" : ms < 0 ? `${Math.abs(ms)} ms early` : `${ms} ms late`;
   highway.feedback(element, notePaint(hit), word);
   els.live.textContent = `${word} · ${side}`;
-  if (pad) pad.style.setProperty("--flash", hit.hand === "L" ? "#3d7dff" : hit.hand === "F" ? "#e7c56c" : "#ff4d3a");
+  if (pad) {
+    const paint = getComputedStyle(document.documentElement);
+    const flash = hit.hand === "L" ? "--hand-l" : hit.hand === "F" ? "--hand-f" : "--hand-r";
+    pad.style.setProperty("--flash", paint.getPropertyValue(flash).trim());
+  }
 }
 
 function selectRudiment(id) {
