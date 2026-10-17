@@ -8,7 +8,7 @@ This repository contains the source code for interactive [p5.js](https://p5js.or
 
 | Folder | Description | Blog tutorial |
 |--------|-------------|---------------|
-| [`drums/`](drums/) | Rudiment trainer, fill generator, and sticking desk with Web MIDI for the Alesis Nitro Max | — |
+| [`drums/`](drums/) | Rudiment trainer, groove lessons, fill generator, and sticking desk with Web MIDI for the Alesis Nitro Max | — |
 | [`leaves/`](leaves/) | Deterministic watercolor leaves with flow-field placement and live controls | — |
 | [`flow-field/`](flow-field/) | Particles that trace a noise flow field, with color schemes, spacing controls, and high-resolution export | — |
 | [`metro/`](metro/) | Interactive transit diagram of colored routes, stations, shared paths, and 45-degree bends | — |

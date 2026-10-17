@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Handline</title>
-  <meta name="description" content="Rudiment trainer and sticking desk for the Alesis Nitro Max.">
+  <meta name="description" content="Rudiment trainer, grooves, fills, and sticking desk for the Alesis Nitro Max.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;1,9..144,500&family=Outfit:wght@380;500;600&display=swap" rel="stylesheet">
@@ -15,11 +15,12 @@
     <header class="top">
       <div class="brand">
         <p class="mark">Handline</p>
-        <p class="tag">Rudiments, fills, and stickings</p>
+        <p class="tag">Rudiments, grooves, fills, and stickings</p>
       </div>
       <nav class="modes" role="tablist" aria-label="Sections">
         <button id="tab-train" type="button" role="tab" aria-selected="true" aria-controls="train">Rudiments</button>
         <button id="tab-fills" type="button" role="tab" aria-selected="false" aria-controls="fills">Fills</button>
+        <button id="tab-grooves" type="button" role="tab" aria-selected="false" aria-controls="grooves">Grooves</button>
         <button id="tab-stick" type="button" role="tab" aria-selected="false" aria-controls="stick">Stickings</button>
       </nav>
       <div class="top-end">
@@ -126,6 +127,34 @@
           <p id="fill-error" class="error" hidden></p>
         </form>
         <div id="fill-list" class="arrangements"></div>
+      </section>
+    </div>
+
+    <div id="grooves" class="stick" hidden>
+      <aside class="library">
+        <div class="library-intro">
+          <h2>Grooves</h2>
+          <p>Each groove loops, the way a fill does. They run from easy to hard, and each one is here for the skill it teaches.</p>
+        </div>
+        <div id="groove-levels" class="chips" role="group" aria-label="Level"></div>
+      </aside>
+      <section class="stage stick-stage">
+        <section class="card seq-card">
+          <div class="card-head">
+            <div>
+              <h4>Your groove</h4>
+              <p>One bar. Click a cell to add that voice, then play it. Hi-hat is the right hand, snare the left, kick the foot. A snare on 2 or 4 is accented.</p>
+            </div>
+          </div>
+          <div class="seq-tools">
+            <div id="seq-resolution" class="chips" role="group" aria-label="Sequencer resolution"></div>
+            <button id="seq-clear" type="button">Clear</button>
+            <button id="seq-play" type="button">Play</button>
+          </div>
+          <p id="seq-error" class="error" hidden></p>
+          <div id="sequencer"></div>
+        </section>
+        <div id="groove-list" class="arrangements"></div>
       </section>
     </div>
 

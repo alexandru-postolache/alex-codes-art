@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { generateFills } from "../js/fills.js";
+import { GROOVE_LEVELS, GROOVES, emptyGrid, remapGrid, sequencerGroove } from "../js/grooves.js";
 import { NITRO_MAX } from "../js/kit.js";
 import { buildChart, formatSticking, parsePattern } from "../js/pattern.js";
 import {
@@ -273,4 +274,133 @@ test("library stickings and the classic herta rhythm", () => {
   const gaps = steps.slice(1).map((step, index) => step - steps[index]);
   assert.ok(gaps.includes(1));
   assert.ok(gaps.includes(2));
+});
+
+function stepsOf(groove, element) {
+  return groove.notes.filter((note) => note.element === element).map((note) => note.baseStep);
+}
+
+test("grooves teach one skill each and loop like a fill", () => {
+  assert.equal(GROOVES.length, 10);
+  const rank = { Easy: 0, Medium: 1, Hard: 2 };
+  const skills = new Set();
+  for (let index = 0; index < GROOVES.length; index += 1) {
+    const groove = GROOVES[index];
+    assert.ok(GROOVE_LEVELS.includes(groove.level), groove.id);
+    assert.ok(groove.skill, groove.id);
+    skills.add(groove.skill);
+    if (index > 0) assert.ok(rank[groove.level] >= rank[GROOVES[index - 1].level]);
+    assert.equal(groove.recipe.type, "phrase");
+    assert.equal(groove.recipe.phraseBeats, groove.beats);
+    assert.equal(groove.recipe.phraseSteps, groove.steps);
+    assert.ok(groove.notes.length > 0, groove.id);
+    assert.ok(groove.notes.every((note) => ELEMENTS.has(note.element)));
+    const looped = materialize(groove.recipe, 4);
+    const repeats = (16 / groove.beats);
+    assert.equal(looped.length, groove.notes.length * repeats, groove.id);
+    const keys = new Set(looped.map((note) => `${note.baseStep}:${note.element}:${note.hand}`));
+    assert.equal(keys.size, looped.length, groove.id);
+    assert.ok(looped.every((note) => note.baseStep < groove.stepsPerBeat * 16), groove.id);
+  }
+  assert.equal(skills.size, GROOVES.length);
+  for (const level of GROOVE_LEVELS) {
+    assert.ok(GROOVES.filter((groove) => groove.level === level).length >= 3, level);
+  }
+
+  const backbeat = GROOVES.find((groove) => groove.id === "backbeat");
+  assert.deepEqual(stepsOf(backbeat, "kick"), [0, 4]);
+  assert.deepEqual(stepsOf(backbeat, "snare"), [2, 6]);
+  assert.ok(backbeat.notes.filter((note) => note.element === "snare").every((note) => note.accent));
+  assert.equal(stepsOf(backbeat, "hat").length, 8);
+  assert.ok(backbeat.notes.filter((note) => note.element === "hat").every((note) => note.hand === "R"));
+
+  const floor = GROOVES.find((groove) => groove.id === "four-on-the-floor");
+  assert.deepEqual(stepsOf(floor, "kick"), [0, 2, 4, 6]);
+
+  const offbeat = GROOVES.find((groove) => groove.id === "offbeat-hats");
+  assert.deepEqual(stepsOf(offbeat, "hat"), [1, 3, 5, 7]);
+
+  const sixteenths = GROOVES.find((groove) => groove.id === "sixteenth-hats");
+  assert.equal(sixteenths.stepsPerBeat, 4);
+  assert.equal(stepsOf(sixteenths, "hat").length, 16);
+
+  const displaced = GROOVES.find((groove) => groove.id === "displaced-kick");
+  assert.deepEqual(stepsOf(displaced, "kick"), [0, 3, 4]);
+
+  const shuffle = GROOVES.find((groove) => groove.id === "shuffle");
+  assert.equal(shuffle.stepsPerBeat, 3);
+  assert.deepEqual(stepsOf(shuffle, "hat"), [0, 2, 3, 5, 6, 8, 9, 11]);
+  assert.deepEqual(stepsOf(shuffle, "kick"), [0, 6]);
+  assert.deepEqual(stepsOf(shuffle, "snare"), [3, 9]);
+
+  const half = GROOVES.find((groove) => groove.id === "half-time");
+  assert.deepEqual(stepsOf(half, "kick"), [0]);
+  assert.deepEqual(stepsOf(half, "snare"), [4]);
+
+  const ghosts = GROOVES.find((groove) => groove.id === "ghost-notes");
+  const ghostSnares = ghosts.notes.filter((note) => note.element === "snare");
+  assert.deepEqual(ghostSnares.filter((note) => note.accent).map((note) => note.baseStep), [4, 12]);
+  const quiet = ghostSnares.filter((note) => !note.accent);
+  assert.equal(quiet.length, 8);
+  assert.ok(quiet.every((note) => note.velocity < 70));
+
+  const linear = GROOVES.find((groove) => groove.id === "linear");
+  const occupied = new Map();
+  for (const note of linear.notes) occupied.set(note.baseStep, (occupied.get(note.baseStep) || 0) + 1);
+  assert.equal(linear.notes.length, 16);
+  assert.ok([...occupied.values()].every((count) => count === 1));
+  assert.deepEqual(stepsOf(linear, "snare").filter((step) => linear.notes.find((note) => note.element === "snare" && note.baseStep === step && note.accent)), [4, 12]);
+
+  const phrase = GROOVES.find((groove) => groove.id === "two-bar");
+  assert.equal(phrase.beats, 8);
+  assert.deepEqual(stepsOf(phrase, "kick"), [0, 4, 8, 11, 12, 15]);
+  assert.deepEqual(stepsOf(phrase, "snare"), [2, 6, 10, 14]);
+});
+
+test("the step sequencer builds a looping bar from toggles", () => {
+  const grid = emptyGrid("8");
+  grid.hat[0] = true;
+  grid.snare[2] = true;
+  grid.kick[0] = true;
+  grid.kick[4] = true;
+  const groove = sequencerGroove(grid, "8");
+  assert.equal(groove.notes.length, 4);
+  assert.equal(groove.recipe.phraseSteps, 8);
+  assert.equal(groove.recipe.stepsPerBeat, 2);
+  const snare = groove.notes.find((note) => note.element === "snare");
+  assert.equal(snare.hand, "L");
+  assert.equal(snare.accent, true);
+  assert.equal(groove.notes.find((note) => note.element === "hat").hand, "R");
+  assert.equal(groove.notes.find((note) => note.element === "kick").hand, "F");
+
+  const wide = remapGrid(grid, "8", "16");
+  assert.equal(wide.hat.length, 16);
+  assert.equal(wide.hat[0], true);
+  assert.equal(wide.hat[1], false);
+  assert.equal(wide.snare[4], true);
+  assert.equal(wide.kick[0], true);
+  assert.equal(wide.kick[8], true);
+
+  const back = remapGrid(wide, "16", "8");
+  assert.equal(back.hat[0], true);
+  assert.equal(back.snare[2], true);
+  assert.equal(back.kick[4], true);
+
+  const odd = emptyGrid("16");
+  odd.hat[1] = true;
+  odd.snare[3] = true;
+  const collapsed = remapGrid(odd, "16", "8");
+  assert.equal(collapsed.hat[0], true);
+  assert.equal(collapsed.snare[1], true);
+  assert.equal(collapsed.kick[0], false);
+
+  const empty = sequencerGroove(emptyGrid("16"), "16");
+  assert.equal(empty.notes.length, 0);
+  assert.equal(empty.steps, 16);
+
+  const looped = materialize(groove.recipe, 4);
+  assert.equal(looped.length, groove.notes.length * 4);
+  const keys = new Set(looped.map((note) => `${note.baseStep}:${note.element}:${note.hand}`));
+  assert.equal(keys.size, looped.length);
+  assert.ok(looped.every((note) => note.baseStep < 32));
 });

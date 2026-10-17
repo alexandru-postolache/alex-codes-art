@@ -1,5 +1,14 @@
 import { createAudio } from "./audio.js";
 import { FILL_PRESETS, generateFills } from "./fills.js";
+import {
+  GROOVE_LEVELS,
+  GROOVES,
+  RESOLUTIONS,
+  SEQUENCER_VOICES,
+  emptyGrid,
+  remapGrid,
+  sequencerGroove,
+} from "./grooves.js";
 import { createHighway } from "./highway.js";
 import { KEY_MAP, NITRO_MAX, PADS, elementLabel } from "./kit.js";
 import { createMidi } from "./midi.js";
@@ -42,9 +51,11 @@ const $ = (id) => document.querySelector(id);
 const els = {
   train: $("#train"),
   fills: $("#fills"),
+  grooves: $("#grooves"),
   stick: $("#stick"),
   tabTrain: $("#tab-train"),
   tabFills: $("#tab-fills"),
+  tabGrooves: $("#tab-grooves"),
   tabStick: $("#tab-stick"),
   kit: $("#kit-panel"),
   kitOpen: $("#kit-open"),
@@ -88,6 +99,11 @@ const els = {
   fillLengths: $("#fill-lengths"),
   fillError: $("#fill-error"),
   fillList: $("#fill-list"),
+  grooveLevels: $("#groove-levels"),
+  grooveList: $("#groove-list"),
+  seqResolution: $("#seq-resolution"),
+  sequencer: $("#sequencer"),
+  seqError: $("#seq-error"),
 };
 
 const state = {
@@ -111,6 +127,9 @@ const state = {
   pinnedId: null,
   fillText: "R L R R L R L L",
   fillLength: "all",
+  grooveLevel: "all",
+  seqResolution: "8",
+  seqGrid: emptyGrid("8"),
 };
 
 let sessionId = 0;
@@ -141,12 +160,15 @@ function setMode(mode) {
   state.mode = mode;
   els.train.hidden = mode !== "train";
   els.fills.hidden = mode !== "fills";
+  els.grooves.hidden = mode !== "grooves";
   els.stick.hidden = mode !== "stick";
   els.tabTrain.setAttribute("aria-selected", String(mode === "train"));
   els.tabFills.setAttribute("aria-selected", String(mode === "fills"));
+  els.tabGrooves.setAttribute("aria-selected", String(mode === "grooves"));
   els.tabStick.setAttribute("aria-selected", String(mode === "stick"));
   if (mode === "stick") renderStick();
   if (mode === "fills") renderFills();
+  if (mode === "grooves") renderGrooves();
 }
 
 function stickingHTML(text) {
@@ -413,7 +435,7 @@ function runLesson(preview) {
         while (guide < state.chart.length && state.chart[guide].time < horizon) {
           const note = state.chart[guide];
           if (note.time >= audio.currentTime() - 0.02) {
-            audio.drum(Math.max(note.time, audio.currentTime()), note.element, note.accent ? 115 : 78);
+            audio.drum(Math.max(note.time, audio.currentTime()), note.element, note.velocity ?? (note.accent ? 115 : 78));
           }
           guide += 1;
         }
@@ -629,6 +651,8 @@ function renderStick() {
   `).join("");
 }
 
+const SOURCE_LABEL = { fill: "Fill", groove: "Groove" };
+
 function practice(arrangement, source) {
   const steps = arrangement.recipe.type === "hands"
     ? GRIDS[arrangement.recipe.grid].stepsPerBeat
@@ -639,7 +663,9 @@ function practice(arrangement, source) {
       ? STICKINGS.find((item) => item.id === state.pinnedId)
       : matchEntry(parseSticking(els.stickInput.value).hands || []);
   state.custom = {
-    name: source ? `Fill · ${arrangement.title}` : `${entry ? entry.name : "Custom"} · ${arrangement.title}`,
+    name: source
+      ? `${SOURCE_LABEL[source] || "Fill"} · ${arrangement.title}`
+      : `${entry ? entry.name : "Custom"} · ${arrangement.title}`,
     detail: arrangement.summary,
     timing: arrangement.timing,
     stepsPerBeat: steps,
@@ -718,6 +744,79 @@ function renderFills() {
   `).join("") || `<p class="status">No fills for that length.</p>`;
 }
 
+const grooveShown = new Map();
+
+function renderGrooveLevels() {
+  const levels = [["all", "All"], ...GROOVE_LEVELS.map((level) => [level, level])];
+  els.grooveLevels.innerHTML = levels.map(([id, label]) => `
+    <button type="button" data-groove-level="${id}" aria-pressed="${state.grooveLevel === id}">${label}</button>
+  `).join("");
+}
+
+function renderGrooveList() {
+  const grooves = GROOVES.filter((groove) => state.grooveLevel === "all" || groove.level === state.grooveLevel);
+  grooveShown.clear();
+  const groups = [];
+  for (const groove of grooves) {
+    let group = groups.find((item) => item.level === groove.level);
+    if (!group) {
+      group = { level: groove.level, items: [] };
+      groups.push(group);
+    }
+    group.items.push(groove);
+    grooveShown.set(groove.id, groove);
+  }
+  els.grooveList.innerHTML = groups.map((group) => `
+    <section class="group">
+      <h3>${group.level}</h3>
+      ${group.items.map((groove) => `
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h4>${groove.title}</h4>
+              <p class="skill">Teaches ${groove.skill.toLowerCase()}</p>
+              <p>${groove.summary}</p>
+            </div>
+            <button type="button" data-groove-practice="${groove.id}">Practice this</button>
+          </div>
+          ${renderGrid(groove)}
+        </article>
+      `).join("")}
+    </section>
+  `).join("") || `<p class="status">No grooves at that level.</p>`;
+}
+
+function renderSequencer() {
+  const spec = RESOLUTIONS[state.seqResolution];
+  els.seqResolution.innerHTML = Object.values(RESOLUTIONS).map((item) => `
+    <button type="button" data-seq-res="${item.id}" aria-pressed="${item.id === state.seqResolution}">${item.label}</button>
+  `).join("");
+  const head = [`<span></span>`];
+  for (let step = 0; step < spec.steps; step += 1) {
+    const beat = step % spec.stepsPerBeat === 0 ? " beat" : "";
+    head.push(`<span class="head${beat}">${subdivisionLabel(step, spec.stepsPerBeat)}</span>`);
+  }
+  const rows = SEQUENCER_VOICES.map((voice) => {
+    const cells = [`<span class="lane">${voice.label}</span>`];
+    for (let step = 0; step < spec.steps; step += 1) {
+      const on = state.seqGrid[voice.id][step];
+      const beat = step % spec.stepsPerBeat === 0 ? " beat" : "";
+      const beatInBar = Math.floor(step / spec.stepsPerBeat) % 4;
+      const accent = on && voice.id === "snare" && step % spec.stepsPerBeat === 0 && (beatInBar === 1 || beatInBar === 3) ? " accent" : "";
+      const tone = voice.hand === "L" ? "l" : voice.hand === "F" ? "f" : "r";
+      cells.push(`<button type="button" class="seq-cell${on ? ` on ${tone}` : ""}${accent}${beat}" data-seq-voice="${voice.id}" data-seq-step="${step}" aria-pressed="${on}" aria-label="${voice.label} ${subdivisionLabel(step, spec.stepsPerBeat) || "step"}">${on ? voice.token : ""}</button>`);
+    }
+    return cells.join("");
+  });
+  els.sequencer.innerHTML = `<div class="seq-scroll"><div class="seq" style="--cols:${spec.steps}">${head.join("")}${rows.join("")}</div></div>`;
+}
+
+function renderGrooves() {
+  renderGrooveLevels();
+  renderSequencer();
+  renderGrooveList();
+}
+
 function loop() {
   highway.frame(view());
   updateProgress();
@@ -728,6 +827,7 @@ function bind() {
   document.querySelector("#fill-form").addEventListener("submit", (event) => event.preventDefault());
   els.tabTrain.addEventListener("click", () => setMode("train"));
   els.tabFills.addEventListener("click", () => setMode("fills"));
+  els.tabGrooves.addEventListener("click", () => setMode("grooves"));
   els.tabStick.addEventListener("click", () => setMode("stick"));
   els.kitOpen.addEventListener("click", () => {
     const open = els.kit.hidden;
@@ -842,6 +942,50 @@ function bind() {
     if (!button) return;
     const fill = fillShown.get(button.dataset.fillPractice);
     if (fill) practice(fill, "fill");
+  });
+  els.grooveLevels.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-groove-level]");
+    if (!button) return;
+    state.grooveLevel = button.dataset.grooveLevel;
+    renderGrooveLevels();
+    renderGrooveList();
+  });
+  els.grooveList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-groove-practice]");
+    if (!button) return;
+    const groove = grooveShown.get(button.dataset.groovePractice);
+    if (groove) practice(groove, "groove");
+  });
+  els.seqResolution.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-seq-res]");
+    if (!button || button.dataset.seqRes === state.seqResolution) return;
+    state.seqGrid = remapGrid(state.seqGrid, state.seqResolution, button.dataset.seqRes);
+    state.seqResolution = button.dataset.seqRes;
+    els.seqError.hidden = true;
+    renderSequencer();
+  });
+  els.sequencer.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-seq-voice]");
+    if (!button) return;
+    const voice = button.dataset.seqVoice;
+    const step = Number(button.dataset.seqStep);
+    state.seqGrid[voice][step] = !state.seqGrid[voice][step];
+    els.seqError.hidden = true;
+    renderSequencer();
+  });
+  document.querySelector("#seq-clear").addEventListener("click", () => {
+    state.seqGrid = emptyGrid(state.seqResolution);
+    els.seqError.hidden = true;
+    renderSequencer();
+  });
+  document.querySelector("#seq-play").addEventListener("click", () => {
+    const groove = sequencerGroove(state.seqGrid, state.seqResolution);
+    if (!groove.notes.length) {
+      els.seqError.hidden = false;
+      els.seqError.textContent = "Add at least one hit.";
+      return;
+    }
+    practice(groove, "groove");
   });
   els.arrangements.addEventListener("click", (event) => {
     const button = event.target.closest("[data-practice]");
