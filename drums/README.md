@@ -28,6 +28,8 @@ Without the kit, use the on-screen pads or the keyboard: B or Space kick, D snar
 
 Perfect is within 30 ms, great within 55, good within 90. Anything else is a miss. Grace notes get a slightly wider window and count at half weight. Five stars starts at a score of 93.
 
+The playhead sits in from the left. Notes keep scrolling past it, so you can see how they landed. A perfect hit turns green, an early one orange, a late one purple, and a miss red.
+
 ## Grooves
 
 Grooves loop the same phrase on the highway, the way a fill does. The set runs from easy to hard, and each groove is there for one skill: the backbeat, a constant kick, the offbeat hat, even 16ths, a kick that moves, the shuffle, half time, ghost notes, playing one limb at a time, and a two-bar phrase. **Practice this** loads that groove.

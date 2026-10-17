@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { generateFills } from "../js/fills.js";
+import { notePaint } from "../js/highway.js";
 import { GROOVE_LEVELS, GROOVES, emptyGrid, remapGrid, sequencerGroove } from "../js/grooves.js";
 import { NITRO_MAX } from "../js/kit.js";
 import { buildChart, formatSticking, parsePattern } from "../js/pattern.js";
@@ -355,6 +356,15 @@ test("grooves teach one skill each and loop like a fill", () => {
   assert.equal(phrase.beats, 8);
   assert.deepEqual(stepsOf(phrase, "kick"), [0, 4, 8, 11, 12, 15]);
   assert.deepEqual(stepsOf(phrase, "snare"), [2, 6, 10, 14]);
+});
+
+test("judged notes paint the way a Melodics playhead does", () => {
+  assert.equal(notePaint({ result: null }), null);
+  assert.equal(notePaint({ result: "perfect", deltaMs: -8 }), "perfect");
+  assert.equal(notePaint({ result: "perfect", deltaMs: 12 }), "perfect");
+  assert.equal(notePaint({ result: "great", deltaMs: -40 }), "early");
+  assert.equal(notePaint({ result: "good", deltaMs: 70 }), "late");
+  assert.equal(notePaint({ result: "miss", deltaMs: null }), "miss");
 });
 
 test("the step sequencer builds a looping bar from toggles", () => {

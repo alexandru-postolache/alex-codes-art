@@ -1,6 +1,14 @@
 import { laneOrder, letterFor } from "./kit.js";
 
 const LOOKAHEAD = 2.2;
+const HISTORY = 0.36;
+
+export function notePaint(note) {
+  if (!note?.result) return null;
+  if (note.result === "miss") return "miss";
+  if (note.result === "perfect") return "perfect";
+  return (note.deltaMs ?? 0) < 0 ? "early" : "late";
+}
 
 export function createHighway(canvas) {
   const ctx = canvas.getContext("2d");
@@ -22,6 +30,10 @@ export function createHighway(canvas) {
       stage: pick("--stage"),
       good: pick("--good"),
       line: pick("--line"),
+      perfect: pick("--hit-perfect"),
+      early: pick("--hit-early"),
+      late: pick("--hit-late"),
+      miss: pick("--hit-miss"),
     };
   }
 
@@ -60,7 +72,7 @@ export function createHighway(canvas) {
     const nowMs = performance.now();
     prune(nowMs);
     const labelW = 92;
-    const hitX = 124;
+    const hitX = labelW + Math.round((width - labelW) * HISTORY);
     const pxPerSec = (width - hitX - 28) / LOOKAHEAD;
     const beatDur = 60 / bpm;
     const pxPerBeat = beatDur * pxPerSec;
@@ -82,6 +94,9 @@ export function createHighway(canvas) {
       ctx.fillText(lane.label.toUpperCase(), 16, y + laneH / 2);
     });
 
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.fillRect(labelW, top, Math.max(0, hitX - labelW), height - 24);
+
     const beat0 = Math.floor(currentBeat) - 1;
     const beat1 = currentBeat + LOOKAHEAD / beatDur + 1;
     for (let beat = beat0; beat < beat1; beat += 1) {
@@ -100,15 +115,20 @@ export function createHighway(canvas) {
     }
 
     const stepSec = beatDur / stepsPerBeat;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(labelW, 0, width - labelW, height);
+    ctx.clip();
     for (const note of notes) {
       const laneIndex = lanes.findIndex((lane) => lane.id === note.element);
       if (laneIndex < 0) continue;
       const x = hitX + (note.time - now) * pxPerSec;
-      if (x < labelW - 30 || x > width + 40) continue;
+      if (x < labelW - 36 || x > width + 40) continue;
       const y = top + laneIndex * laneH + laneH / 2;
       const slot = Math.max(16, stepSec * pxPerSec);
       drawNote(note, x, y, laneH, slot);
     }
+    ctx.restore();
 
     const pulse = phase === "countin" || phase === "playing" || phase === "preview"
       ? Math.max(0, 1 - ((currentBeat % 1 + 1) % 1) / 0.12)
@@ -133,11 +153,11 @@ export function createHighway(canvas) {
     labels.slice(-1).forEach((label) => {
       const age = (nowMs - label.at) / 640;
       ctx.globalAlpha = 1 - age;
-      ctx.fillStyle = label.kind === "miss" || label.kind === "stray" ? colors.R : colors.good;
+      ctx.fillStyle = colors[label.kind] || colors.ink;
       ctx.font = "600 13px Outfit, sans-serif";
-      ctx.textAlign = "left";
+      ctx.textAlign = "right";
       ctx.textBaseline = "bottom";
-      ctx.fillText(label.text, hitX + 18, 28 - age * 8);
+      ctx.fillText(label.text, hitX - 16, 26);
       ctx.globalAlpha = 1;
     });
 
@@ -184,22 +204,22 @@ export function createHighway(canvas) {
   }
 
   function drawNote(note, x, y, laneH, slot) {
-    const color = colors[note.hand] || colors.F;
-    const passed = note.result && note.result !== "miss";
-    const missed = note.result === "miss";
+    const paint = notePaint(note);
+    const color = paint ? colors[paint] : (colors[note.hand] || colors.F);
+    const lightInk = paint === "late" || paint === "miss" || (!paint && note.hand === "L");
+    const ink = lightInk ? "#f4f7ff" : "#1a100c";
     ctx.save();
-    if (missed) ctx.globalAlpha = 0.45;
     if (note.grace) {
       const radius = Math.max(6, Math.min(11, laneH * 0.16));
       ctx.beginPath();
       ctx.fillStyle = color;
       ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = note.hand === "L" ? "#f4f7ff" : "#1a100c";
+      ctx.fillStyle = ink;
       ctx.font = "600 9px Outfit, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(letterFor(note).toLowerCase(), x, y + 0.5);
+      ctx.fillText(paint === "miss" ? "×" : letterFor(note).toLowerCase(), x, y + 0.5);
       ctx.restore();
       return;
     }
@@ -209,29 +229,20 @@ export function createHighway(canvas) {
     ctx.fillStyle = color;
     roundRect(x - w / 2, y - h / 2, w, h, 8);
     ctx.fill();
-    if (note.accent) {
+    if (note.accent && paint !== "miss") {
       ctx.lineWidth = 2;
       ctx.strokeStyle = "rgba(255,255,255,0.85)";
       ctx.stroke();
     }
-    if (missed) {
-      ctx.strokeStyle = colors.ink;
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(x - 6, y - 6);
-      ctx.lineTo(x + 6, y + 6);
-      ctx.moveTo(x + 6, y - 6);
-      ctx.lineTo(x - 6, y + 6);
-      ctx.stroke();
+    ctx.fillStyle = ink;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    if (paint === "miss") {
+      ctx.font = `600 ${w < 24 ? 13 : 16}px Outfit, sans-serif`;
+      ctx.fillText("×", x, y + 0.5);
     } else {
-      ctx.fillStyle = note.hand === "L" ? "#f4f7ff" : "#1a100c";
       ctx.font = `600 ${w < 24 ? 11 : 14}px Outfit, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
       ctx.fillText(letterFor(note), x, y + 0.5);
-    }
-    if (passed) {
-      ctx.globalAlpha = 0.9;
     }
     ctx.restore();
   }

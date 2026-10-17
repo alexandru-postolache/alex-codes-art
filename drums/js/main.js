@@ -9,7 +9,7 @@ import {
   remapGrid,
   sequencerGroove,
 } from "./grooves.js";
-import { createHighway } from "./highway.js";
+import { createHighway, notePaint } from "./highway.js";
 import { KEY_MAP, NITRO_MAX, PADS, elementLabel } from "./kit.js";
 import { createMidi } from "./midi.js";
 import { gridLabel } from "./pattern.js";
@@ -396,7 +396,7 @@ function announceMisses() {
     if (note.result !== "miss" || note.announced) continue;
     note.announced = true;
     if (!shownMiss) {
-      highway.feedback(note.element, "stray", "MISS");
+      highway.feedback(note.element, "miss", "MISS");
       els.live.textContent = "MISS";
       shownMiss = true;
     }
@@ -504,7 +504,7 @@ function onStrike(element, velocity = 100) {
   const word = hit.result === "perfect" ? "PERFECT" : hit.deltaMs < 0 ? "EARLY" : "LATE";
   const ms = Math.round(hit.deltaMs);
   const side = ms === 0 ? "on the beat" : ms < 0 ? `${Math.abs(ms)} ms early` : `${ms} ms late`;
-  highway.feedback(element, hit.hand, word);
+  highway.feedback(element, notePaint(hit), word);
   els.live.textContent = `${word} · ${side}`;
   if (pad) pad.style.setProperty("--flash", hit.hand === "L" ? "#3d7dff" : hit.hand === "F" ? "#e7c56c" : "#ff4d3a");
 }
@@ -887,7 +887,7 @@ function bind() {
   window.addEventListener("keydown", (event) => {
     if (event.repeat) return;
     const target = event.target;
-    if (target && (target.matches("input, textarea") || target.isContentEditable)) return;
+    if (target instanceof Element && (target.matches("input, textarea") || target.isContentEditable)) return;
     const element = KEY_MAP[event.code];
     if (!element) return;
     event.preventDefault();
