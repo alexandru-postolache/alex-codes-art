@@ -191,9 +191,9 @@ function maskBlurRadius() {
 
   const cells = params.mode === "ALL_3X3" ? 3 : gridSize;
   const cell = shapePx / Math.max(cells, 1);
-  const lip = Math.min(18, Math.max(10, cell * 0.22));
+  const lip = Math.min(8, Math.max(5, cell * 0.2));
 
-  return lip * pixelDensity() * 0.65;
+  return lip * pixelDensity();
 }
 
 function glassOptions() {
@@ -204,13 +204,13 @@ function glassOptions() {
     frosting: params.softness,
     chromaticAberration: 0.5,
     glassOpacity: 0,
-    lightStrength: params.shine * (2.175 / 0.9),
+    lightStrength: 0.55 + params.shine * 1.7,
     lightX: 0.7,
     lightY: 0.3,
     edgeSmoothness: 2,
     ior: 1 + refraction * 0.62,
     borderRadius: 0,
-    specularShininess: 32,
+    specularShininess: 64,
     thickness: 0.2 + refraction * 0.95,
     tintColor: colorUnit(params.tint),
     tintStrength: 0.22,
@@ -254,6 +254,7 @@ async function presentGlass(ticket) {
     realGlass = new RealGlass();
   }
 
+  realGlass.renderDensity = pixelDensity();
   await realGlass.usePlate(drawingContext.canvas);
 
   if (ticket !== glassTicket) {
