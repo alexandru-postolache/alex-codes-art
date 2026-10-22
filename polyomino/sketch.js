@@ -5,12 +5,13 @@
       Generate all unique 3×3 partitions.
 
   "RANDOM_ONE"
-      Generate one random partition at the chosen grid size.
+      Generate random partitions at the chosen grid size.
+      x and y choose how many are drawn across and down.
 
   The Tweakpane panel edits these settings live.
   "Any count" chooses a valid region count at random.
-  "Look" chooses an ink outline or liquid glass.
-  Liquid glass is the RealGlass library. The choices live in looks.js.
+  "Equal sizes" lets every region cover the same number of cells.
+  Otherwise every region has a different size.
 */
 
 const RANDOM_CANVAS = 700;
@@ -30,6 +31,14 @@ const params = {
   anyCount: true,
   regionCount: 4,
 
+  // Checked: every region has the same size.
+  // Unchecked: every region has a different size.
+  equalSizes: false,
+
+  // How many random partitions to draw, across and down.
+  countX: 1,
+  countY: 1,
+
   // Same seed reproduces the same random partition.
   seed: Math.floor(Math.random() * 1000000),
 
@@ -39,26 +48,9 @@ const params = {
   pageMargin: 35,
   shapeSize: 66,
 
-  // Drawing. Liquid glass uses the RealGlass demo's starting values.
-  // https://real-glass.vercel.app/
-  look: "liquidGlass",
   outlineColor: "#292932",
   backgroundColor: "#eeeae1",
   strokeWidth: 2.2,
-  chromaticAberration: 50,
-  frosting: 0,
-  glassOpacity: 0,
-  lightStrength: 0.39,
-  edgeSmoothness: 10,
-  ior: 1.52,
-  borderRadius: 50,
-  specularShininess: 2,
-  thickness: 2.1,
-  tintColor: "#438c98",
-  tintStrength: 0.5,
-  maskSmoothing: 0.15,
-  maskSmoothingInset: 0.1,
-
   // Measured relative to one grid cell.
   regionInset: 0.095,
 
@@ -81,18 +73,7 @@ let seedInput;
 let layoutFolder;
 let scaleInput;
 let summaryMonitor;
-let outlineInput;
-let strokeInput;
-let materialFolder;
-
-let realGlass = null;
-let maskCanvas = null;
-let glassTicket = 0;
-let glassChain = Promise.resolve();
-let activeLookId = "liquidGlass";
-let panX = 0;
-let panY = 0;
-let shapeDrag = null;
+let columnsInput;
 
 const readout = {
   summary: ""
@@ -105,7 +86,6 @@ function setup() {
   );
 
   canvas.parent("sketch");
-  canvas.style("cursor", "grab");
   pixelDensity(2);
 
   noLoop();
@@ -117,48 +97,32 @@ function draw() {
   document.body.style.background =
     cssColor(params.backgroundColor);
 
+  background(cssColor(params.backgroundColor));
+
   if (partitions.length === 0) {
-    clearGlass();
-    background(cssColor(params.backgroundColor));
     return;
   }
 
-  const look = polyominoLook(params.look);
-
-  if (!look || look.kind === "stroke") {
-    clearGlass();
-    background(cssColor(params.backgroundColor));
-    paintPartitions(drawingContext, "stroke");
-    return;
-  }
-
-  paintBackdrop();
-
-  const ticket = ++glassTicket;
-  glassChain = glassChain
-    .then(() => presentGlass(ticket))
-    .catch((error) => {
-      console.error(error);
-    });
+  paintPartitions(drawingContext, "stroke");
 }
 
 function paintPartitions(target, style) {
-  if (params.mode === "ALL_3X3") {
+  if (usesSheet()) {
+    const columns = sheetColumns();
+
     for (let i = 0; i < partitions.length; i++) {
-      const col = i % params.columns;
-      const row = floor(i / params.columns);
+      const col = i % columns;
+      const row = floor(i / columns);
 
       const centerX =
         params.pageMargin +
         col * params.tileSize +
-        params.tileSize / 2 +
-        panX;
+        params.tileSize / 2;
 
       const centerY =
         params.pageMargin +
         row * params.tileSize +
-        params.tileSize / 2 +
-        panY;
+        params.tileSize / 2;
 
       drawPartition(
         partitions[i],
@@ -175,192 +139,27 @@ function paintPartitions(target, style) {
 
   drawPartition(
     partitions[0],
-    width / 2 + panX,
-    height / 2 + panY,
+    width / 2,
+    height / 2,
     min(width, height) * params.shapeScale,
     style,
     target
   );
 }
 
-function paintBackdrop() {
-  paintGlassScene({
-    drawingContext,
-    canvas: drawingContext.canvas
-  });
-}
-
-function clearGlass() {
-  glassTicket += 1;
-
-  if (realGlass) {
-    realGlass.destroy();
-    realGlass = null;
-  }
-}
-
-function glassOptions() {
-  return {
-    chromaticAberration: params.chromaticAberration,
-    frosting: params.frosting,
-    glassOpacity: params.glassOpacity,
-    lightStrength: params.lightStrength,
-    edgeSmoothness: params.edgeSmoothness,
-    ior: params.ior,
-    borderRadius: params.borderRadius,
-    specularShininess: params.specularShininess,
-    thickness: params.thickness,
-    tintColor: params.tintColor,
-    tintStrength: params.tintStrength,
-    maskSmoothing: params.maskSmoothing,
-    maskSmoothingInset: params.maskSmoothingInset,
-    useMask: true,
-    maskImage: renderMaskCanvas()
-  };
-}
-
-function renderMaskCanvas() {
-  if (!maskCanvas) {
-    maskCanvas = document.createElement("canvas");
-  }
-
-  maskCanvas.width = width;
-  maskCanvas.height = height;
-
-  const ctx = maskCanvas.getContext("2d");
-
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-  paintPartitions(ctx, "fill");
-
-  return maskCanvas;
-}
-
-async function presentGlass(ticket) {
-  if (ticket !== glassTicket) {
-    return;
-  }
-
-  const host = document.getElementById("glass-host");
-
-  if (!host || typeof RealGlass !== "function") {
-    return;
-  }
-
-  if (!realGlass) {
-    realGlass = new RealGlass();
-  }
-
-  await realGlass.usePlate(drawingContext.canvas);
-
-  if (ticket !== glassTicket) {
-    return;
-  }
-
-  await realGlass.apply(host, glassOptions());
-
-  if (ticket !== glassTicket && realGlass) {
-    realGlass.destroy();
-    realGlass = null;
-  }
-}
-
-function paintGlassScene(layer) {
-  const ctx = layer.drawingContext;
-  const bufferWidth = layer.canvas.width;
-  const bufferHeight = layer.canvas.height;
-  const minSide = Math.min(bufferWidth, bufferHeight);
-  const paper = cssColor(params.backgroundColor);
-
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-
-  const gradient = ctx.createLinearGradient(
-    0,
-    0,
-    bufferWidth,
-    bufferHeight * 0.9
-  );
-  gradient.addColorStop(0, "#f6c7ae");
-  gradient.addColorStop(0.38, paper);
-  gradient.addColorStop(1, "#b7d0ef");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, bufferWidth, bufferHeight);
-
-  const blobs = [
-    [0.14, 0.18, 0.36, "#4f9fe8"],
-    [0.86, 0.14, 0.28, "#ef7d55"],
-    [0.74, 0.8, 0.4, "#63b890"],
-    [0.16, 0.84, 0.3, "#f3a9b8"],
-    [0.48, 0.4, 0.18, "#fff4e4"],
-    [0.58, 0.62, 0.11, "#f0c85a"]
-  ];
-
-  for (let i = 0; i < blobs.length; i++) {
-    const blob = blobs[i];
-    ctx.beginPath();
-    ctx.fillStyle = blob[3];
-    ctx.arc(
-      blob[0] * bufferWidth,
-      blob[1] * bufferHeight,
-      blob[2] * minSide,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
-  }
-
-  ctx.restore();
-}
-
-
-function pointerOnCanvas() {
+function usesSheet() {
   return (
-    mouseX >= 0 &&
-    mouseY >= 0 &&
-    mouseX <= width &&
-    mouseY <= height
+    params.mode === "ALL_3X3" ||
+    params.countX * params.countY > 1
   );
 }
 
-function mousePressed() {
-  if (!pointerOnCanvas()) {
-    return;
+function sheetColumns() {
+  if (params.mode === "ALL_3X3") {
+    return params.columns;
   }
 
-  shapeDrag = {
-    x: mouseX,
-    y: mouseY
-  };
-
-  const host = document.getElementById("sketch");
-
-  if (host) {
-    host.classList.add("dragging");
-  }
-}
-
-function mouseDragged() {
-  if (!shapeDrag) {
-    return;
-  }
-
-  panX += mouseX - shapeDrag.x;
-  panY += mouseY - shapeDrag.y;
-  shapeDrag.x = mouseX;
-  shapeDrag.y = mouseY;
-  draw();
-  return false;
-}
-
-function mouseReleased() {
-  shapeDrag = null;
-
-  const host = document.getElementById("sketch");
-
-  if (host) {
-    host.classList.remove("dragging");
-  }
+  return params.countX;
 }
 
 function keyPressed() {
@@ -410,40 +209,47 @@ function activeGridSize() {
 function maximumRegionCount(size) {
   const cellCount = size * size;
 
+  if (params.equalSizes) {
+    return cellCount;
+  }
+
   return floor(
     (sqrt(8 * cellCount + 1) - 1) / 2
   );
 }
 
-function savePartition() {
-  const name =
-    params.mode === "ALL_3X3"
-      ? "partitions-3x3"
-      : `partition-${gridSize}x${gridSize}`;
+function nearestEqualRegionCount(size, count) {
+  const cellCount = size * size;
+  let chosen = cellCount;
+  let chosenDistance = cellCount;
 
-  const overlay =
-    realGlass &&
-    realGlass.p5Instance &&
-    realGlass.p5Instance.canvas;
+  for (let regions = 2; regions <= cellCount; regions++) {
+    if (cellCount % regions !== 0) {
+      continue;
+    }
 
-  if (!overlay) {
-    saveCanvas(name, "png");
-    return;
+    const distance = Math.abs(regions - count);
+
+    if (distance < chosenDistance) {
+      chosen = regions;
+      chosenDistance = distance;
+    }
   }
 
-  const source = drawingContext.canvas;
-  const out = document.createElement("canvas");
-  out.width = source.width;
-  out.height = source.height;
+  return chosen;
+}
 
-  const ctx = out.getContext("2d");
-  ctx.drawImage(source, 0, 0);
-  ctx.drawImage(overlay, 0, 0, out.width, out.height);
+function savePartition() {
+  let name = `partition-${gridSize}x${gridSize}`;
 
-  const link = document.createElement("a");
-  link.download = `${name}.png`;
-  link.href = out.toDataURL("image/png");
-  link.click();
+  if (params.mode === "ALL_3X3") {
+    name = "partitions-3x3";
+  } else if (params.countX * params.countY > 1) {
+    name =
+      `partitions-${params.countX}x${params.countY}`;
+  }
+
+  saveCanvas(name, "png");
 }
 
 function randomizePartition() {
@@ -464,19 +270,6 @@ const DRAWING_KEYS = new Set([
   "outlineColor",
   "backgroundColor",
   "strokeWidth",
-  "chromaticAberration",
-  "frosting",
-  "glassOpacity",
-  "lightStrength",
-  "edgeSmoothness",
-  "ior",
-  "borderRadius",
-  "specularShininess",
-  "thickness",
-  "tintColor",
-  "tintStrength",
-  "maskSmoothing",
-  "maskSmoothingInset",
   "regionInset",
   "cornerRadius",
   "shapeScale"
@@ -493,7 +286,10 @@ const STRUCTURAL_KEYS = new Set([
   "mode",
   "gridSize",
   "anyCount",
+  "equalSizes",
   "regionCount",
+  "countX",
+  "countY",
   "seed"
 ]);
 
@@ -509,7 +305,7 @@ function setupPane() {
   pane.addInput(params, "mode", {
     label: "mode",
     options: {
-      "One random": "RANDOM_ONE",
+      "Random": "RANDOM_ONE",
       "All 3×3": "ALL_3X3"
     }
   });
@@ -529,13 +325,31 @@ function setupPane() {
     label: "any count"
   });
 
+  generationFolder.addInput(params, "equalSizes", {
+    label: "equal sizes"
+  });
+
+  generationFolder.addInput(params, "countX", {
+    label: "x",
+    min: 1,
+    max: 8,
+    step: 1
+  });
+
+  generationFolder.addInput(params, "countY", {
+    label: "y",
+    min: 1,
+    max: 8,
+    step: 1
+  });
+
   regionInput = generationFolder.addInput(
     params,
     "regionCount",
     {
       label: "regions",
       min: 2,
-      max: maximumRegionCount(MAX_GRID_SIZE),
+      max: MAX_GRID_SIZE * MAX_GRID_SIZE,
       step: 1
     }
   );
@@ -565,7 +379,7 @@ function setupPane() {
     title: "Layout"
   });
 
-  layoutFolder.addInput(params, "columns", {
+  columnsInput = layoutFolder.addInput(params, "columns", {
     label: "columns",
     min: 1,
     max: 10,
@@ -597,131 +411,19 @@ function setupPane() {
     title: "Drawing"
   });
 
-  const lookOptions = {};
-
-  for (let i = 0; i < POLYOMINO_LOOKS.length; i++) {
-    lookOptions[POLYOMINO_LOOKS[i].label] =
-      POLYOMINO_LOOKS[i].id;
-  }
-
-  drawingFolder.addInput(params, "look", {
-    label: "look",
-    options: lookOptions
-  });
-
   drawingFolder.addInput(params, "backgroundColor", {
     label: "background"
   });
 
-  outlineInput = drawingFolder.addInput(
-    params,
-    "outlineColor",
-    {
-      label: "outline"
-    }
-  );
-
-  strokeInput = drawingFolder.addInput(
-    params,
-    "strokeWidth",
-    {
-      label: "stroke",
-      min: 0.5,
-      max: 16,
-      step: 0.1
-    }
-  );
-
-  materialFolder = drawingFolder.addFolder({
-    title: "Material"
+  drawingFolder.addInput(params, "outlineColor", {
+    label: "outline"
   });
 
-  materialFolder.addInput(params, "chromaticAberration", {
-    label: "chromatic",
-    min: 0,
-    max: 100,
+  drawingFolder.addInput(params, "strokeWidth", {
+    label: "stroke",
+    min: 0.5,
+    max: 16,
     step: 0.1
-  });
-
-  materialFolder.addInput(params, "frosting", {
-    label: "frosting",
-    min: 0,
-    max: 1,
-    step: 0.01
-  });
-
-  materialFolder.addInput(params, "glassOpacity", {
-    label: "opacity",
-    min: 0,
-    max: 1,
-    step: 0.01
-  });
-
-  materialFolder.addInput(params, "lightStrength", {
-    label: "light",
-    min: 0,
-    max: 5,
-    step: 0.01
-  });
-
-  materialFolder.addInput(params, "edgeSmoothness", {
-    label: "edge",
-    min: 0,
-    max: 100,
-    step: 0.1
-  });
-
-  materialFolder.addInput(params, "ior", {
-    label: "ior",
-    min: 1.1,
-    max: 2.5,
-    step: 0.01
-  });
-
-  materialFolder.addInput(params, "borderRadius", {
-    label: "radius",
-    min: 0,
-    max: 100,
-    step: 1
-  });
-
-  materialFolder.addInput(params, "specularShininess", {
-    label: "shininess",
-    min: 0,
-    max: 100,
-    step: 1
-  });
-
-  materialFolder.addInput(params, "thickness", {
-    label: "thickness",
-    min: 0.1,
-    max: 3,
-    step: 0.01
-  });
-
-  materialFolder.addInput(params, "tintColor", {
-    label: "tint"
-  });
-
-  materialFolder.addInput(params, "tintStrength", {
-    label: "tint amount",
-    min: 0,
-    max: 1,
-    step: 0.01
-  });
-
-  materialFolder.addInput(params, "maskSmoothing", {
-    label: "mask",
-    min: 0.001,
-    max: 0.25,
-    step: 0.001
-  });
-
-  materialFolder.addInput(params, "maskSmoothingInset", {
-    label: "mask inset",
-    min: 0,
-    max: 1,
-    step: 0.01
   });
 
   drawingFolder.addInput(params, "regionInset", {
@@ -771,15 +473,6 @@ function setupPane() {
       return;
     }
 
-    if (presetKey === "look") {
-      rememberLook(activeLookId);
-      activeLookId = params.look;
-      applyLookPreset(params.look);
-      updateLookVisibility();
-      draw();
-      return;
-    }
-
     if (DRAWING_KEYS.has(presetKey)) {
       draw();
       return;
@@ -790,7 +483,10 @@ function setupPane() {
       return;
     }
 
-    if (presetKey === "gridSize") {
+    if (
+      presetKey === "gridSize" ||
+      presetKey === "equalSizes"
+    ) {
       clampRegionCount();
     }
 
@@ -810,91 +506,29 @@ function setupPane() {
 }
 
 function clampRegionCount() {
-  const max = maximumRegionCount(params.gridSize);
+  let limit = maximumRegionCount(params.gridSize);
 
-  if (regionInput) {
-    regionInput.maxValue = max;
+  if (params.equalSizes && !params.anyCount) {
+    params.regionCount = nearestEqualRegionCount(
+      params.gridSize,
+      params.regionCount
+    );
   }
 
-  if (params.regionCount > max) {
-    params.regionCount = max;
+  if (regionInput) {
+    regionInput.maxValue = limit;
+  }
 
-    if (regionInput) {
-      regionInput.refresh();
-    }
+  if (params.regionCount > limit) {
+    params.regionCount = limit;
   }
 
   if (params.regionCount < 2) {
     params.regionCount = 2;
-
-    if (regionInput) {
-      regionInput.refresh();
-    }
-  }
-}
-
-function rememberLook(id) {
-  const look = polyominoLook(id);
-
-  if (!look || look.kind !== "shader") {
-    return;
   }
 
-  look.chromaticAberration = params.chromaticAberration;
-  look.frosting = params.frosting;
-  look.glassOpacity = params.glassOpacity;
-  look.lightStrength = params.lightStrength;
-  look.edgeSmoothness = params.edgeSmoothness;
-  look.ior = params.ior;
-  look.borderRadius = params.borderRadius;
-  look.specularShininess = params.specularShininess;
-  look.thickness = params.thickness;
-  look.tintColor = params.tintColor;
-  look.tintStrength = params.tintStrength;
-  look.maskSmoothing = params.maskSmoothing;
-  look.maskSmoothingInset = params.maskSmoothingInset;
-}
-
-function applyLookPreset(id) {
-  const look = polyominoLook(id);
-
-  if (!look || look.kind !== "shader") {
-    return;
-  }
-
-  params.chromaticAberration = look.chromaticAberration;
-  params.frosting = look.frosting;
-  params.glassOpacity = look.glassOpacity;
-  params.lightStrength = look.lightStrength;
-  params.edgeSmoothness = look.edgeSmoothness;
-  params.ior = look.ior;
-  params.borderRadius = look.borderRadius;
-  params.specularShininess = look.specularShininess;
-  params.thickness = look.thickness;
-  params.tintColor = look.tintColor;
-  params.tintStrength = look.tintStrength;
-  params.maskSmoothing = look.maskSmoothing;
-  params.maskSmoothingInset = look.maskSmoothingInset;
-
-  if (pane) {
-    pane.refresh();
-  }
-}
-
-function updateLookVisibility() {
-  const look = polyominoLook(params.look);
-  const shaderLook = look && look.kind === "shader";
-
-  if (outlineInput) {
-    outlineInput.hidden = shaderLook;
-  }
-
-  if (strokeInput) {
-    strokeInput.hidden = shaderLook;
-  }
-
-  if (materialFolder) {
-    materialFolder.hidden = !shaderLook;
+  if (regionInput) {
+    regionInput.refresh();
   }
 }
 
@@ -906,26 +540,31 @@ function updateRegionCountAvailability() {
 
 function updatePaneVisibility() {
   const randomMode = params.mode === "RANDOM_ONE";
+  const sheet = randomMode && params.countX * params.countY > 1;
 
   if (generationFolder) {
     generationFolder.hidden = !randomMode;
   }
 
   if (layoutFolder) {
-    layoutFolder.hidden = randomMode;
+    layoutFolder.hidden = randomMode && !sheet;
+  }
+
+  if (columnsInput) {
+    columnsInput.hidden = randomMode;
   }
 
   if (scaleInput) {
-    scaleInput.hidden = !randomMode;
+    scaleInput.hidden = !randomMode || sheet;
   }
 
   updateRegionCountAvailability();
-  updateLookVisibility();
 
   if (summaryMonitor) {
-    summaryMonitor.label = randomMode
-      ? "sizes"
-      : "count";
+    summaryMonitor.label =
+      randomMode && params.countX * params.countY === 1
+        ? "sizes"
+        : "count";
   }
 }
 
@@ -950,7 +589,7 @@ function rebuild(regenerate) {
       `${partitions.length} unique partitions`;
   } else if (
     regenerate ||
-    partitions.length !== 1 ||
+    partitions.length !== params.countX * params.countY ||
     partitions[0].length !== nextGridSize * nextGridSize
   ) {
     const previousGridSize = gridSize;
@@ -963,19 +602,26 @@ function rebuild(regenerate) {
         ? null
         : params.regionCount;
 
-      const next = generateRandomUnequalPartition(
-        gridSize,
-        requested
-      );
+      const total = params.countX * params.countY;
+      const next = [];
 
-      partitions = [next];
+      for (let index = 0; index < total; index++) {
+        next.push(
+          generateRandomPartition(
+            gridSize,
+            requested,
+            params.equalSizes,
+            params.seed + index * 100003
+          )
+        );
+      }
 
-      const sizes = getRegionSizes(next)
-        .slice()
-        .sort((a, b) => a - b);
+      partitions = next;
+      readout.summary = partitionSummary(next);
 
-      readout.summary = sizes.join(", ");
-      printPartitionInfo(next);
+      if (next.length === 1) {
+        printPartitionInfo(next[0]);
+      }
     } catch (error) {
       gridSize = previousGridSize;
       partitions = previousPartitions;
@@ -985,11 +631,7 @@ function rebuild(regenerate) {
   } else {
     gridSize = nextGridSize;
 
-    const sizes = getRegionSizes(partitions[0])
-      .slice()
-      .sort((a, b) => a - b);
-
-    readout.summary = sizes.join(", ");
+    readout.summary = partitionSummary(partitions);
   }
 
   updatePaneVisibility();
@@ -1001,18 +643,28 @@ function rebuild(regenerate) {
   fitCanvas();
 }
 
+function partitionSummary(grids) {
+  if (grids.length === 1) {
+    return getRegionSizes(grids[0])
+      .slice()
+      .sort((a, b) => a - b)
+      .join(", ");
+  }
+
+  return `${grids.length} partitions`;
+}
+
 function fitCanvas() {
   let nextWidth = RANDOM_CANVAS;
   let nextHeight = RANDOM_CANVAS;
 
-  if (params.mode === "ALL_3X3") {
-    const rows = ceil(
-      partitions.length / params.columns
-    );
+  if (usesSheet()) {
+    const columns = sheetColumns();
+    const rows = ceil(partitions.length / columns);
 
     nextWidth =
       params.pageMargin * 2 +
-      params.columns * params.tileSize;
+      columns * params.tileSize;
 
     nextHeight =
       params.pageMargin * 2 +
@@ -1129,6 +781,22 @@ function hasUnequalRegionSizes(grid) {
   const uniqueSizes = new Set(sizes);
 
   return uniqueSizes.size === sizes.length;
+}
+
+function hasEqualRegionSizes(grid) {
+  const sizes = getRegionSizes(grid);
+
+  if (sizes.length < 2) {
+    return false;
+  }
+
+  for (let i = 1; i < sizes.length; i++) {
+    if (sizes[i] !== sizes[0]) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function allRegionsConnected(grid) {
@@ -1843,35 +1511,52 @@ function distanceBetween(a, b) {
     1. Generate a random spanning tree over the grid.
     2. Remove regionCount - 1 edges.
     3. Find the resulting connected components.
-    4. Keep the result if all component sizes differ.
+    4. Keep the result when the region sizes match the request.
+       Equal sizes means every region covers the same number of cells.
+       Otherwise every region has a different size.
 */
 
-function generateRandomUnequalPartition(
+function generateRandomPartition(
   size,
-  requestedRegionCount = null
+  requestedRegionCount,
+  equalSizes,
+  seed
 ) {
-  randomSeed(params.seed);
+  randomSeed(seed);
 
-  const maximumRegions = maximumRegionCount(size);
+  const cellCount = size * size;
+  const maximumRegions = equalSizes
+    ? cellCount
+    : floor((sqrt(8 * cellCount + 1) - 1) / 2);
 
   if (maximumRegions < 2) {
     throw new Error(
-      "The grid is too small to contain multiple regions " +
-      "with unequal sizes."
+      "The grid is too small to contain multiple regions."
     );
   }
 
   let regionCount = requestedRegionCount;
 
   if (regionCount === null) {
-    regionCount = floor(
-      random(2, maximumRegions + 1)
-    );
+    if (equalSizes) {
+      const choices = [];
+
+      for (let regions = 2; regions <= cellCount; regions++) {
+        if (cellCount % regions === 0) {
+          choices.push(regions);
+        }
+      }
+
+      regionCount = choices[floor(random(choices.length))];
+    } else {
+      regionCount = floor(random(2, maximumRegions + 1));
+    }
   }
 
   if (
     regionCount < 2 ||
-    regionCount > maximumRegions
+    regionCount > maximumRegions ||
+    (equalSizes && cellCount % regionCount !== 0)
   ) {
     throw new Error(
       `Invalid region count ${regionCount}. ` +
@@ -1880,7 +1565,6 @@ function generateRandomUnequalPartition(
     );
   }
 
-  const cellCount = size * size;
   const maximumAttempts = 30000;
 
   for (
@@ -1904,9 +1588,13 @@ function generateRandomUnequalPartition(
       remainingEdges
     );
 
+    const sizesMatch = equalSizes
+      ? hasEqualRegionSizes(grid)
+      : hasUnequalRegionSizes(grid);
+
     if (
       getRegionLabels(grid).length === regionCount &&
-      hasUnequalRegionSizes(grid)
+      sizesMatch
     ) {
       return normalizeLabels(grid);
     }

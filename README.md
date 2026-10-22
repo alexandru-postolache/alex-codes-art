@@ -12,7 +12,7 @@ This repository contains the source code for interactive [p5.js](https://p5js.or
 | [`leaves/`](leaves/) | Deterministic watercolor leaves with flow-field placement and live controls | — |
 | [`flow-field/`](flow-field/) | Particles that trace a noise flow field, with color schemes, spacing controls, and high-resolution export | — |
 | [`metro/`](metro/) | Interactive transit diagram of colored routes, stations, shared paths, and 45-degree bends | — |
-| [`polyomino/`](polyomino/) | Unequal connected polyomino partitions, drawn as ink outlines or liquid glass | — |
+| [`polyomino/`](polyomino/) | Connected polyomino partitions, drawn as ink outlines. Regions can differ in size or match, and several can be drawn on one sheet. | — |
 | [`contour-lines/`](contour-lines/) | Animated topographic contours from a noise field, drawn with marching squares and optional fill bands | — |
 | [`contour-vector/`](contour-vector/) | Vector contour output for SVG and Figma, with a browser demo separate from the canvas sketch | — |
 | [`wfc/`](wfc/) | Interactive Wave Function Collapse visualization with 2D tilesets, Wang tiles, and a 3D mode | [Article draft](wfc/article.md) |
