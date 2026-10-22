@@ -45,9 +45,9 @@ const params = {
   backgroundColor: "#eeeae1",
   strokeWidth: 2.2,
   tint: "#f4f7fb",
-  refraction: 0.72,
-  softness: 0.32,
-  shine: 0.95,
+  refraction: 0.85,
+  softness: 0.28,
+  shine: 0.9,
 
   // Measured relative to one grid cell.
   regionInset: 0.095,
@@ -77,6 +77,9 @@ let materialFolder;
 let refractionInput;
 
 let maskLayer;
+let edgeLayer;
+let sceneLayer;
+let sceneSoftLayer;
 let shadeLayer;
 let lookShader;
 let activeLookId = "liquidGlass";
@@ -158,13 +161,17 @@ function paintPartitions(target, style) {
   );
 }
 
-function shapeSpread() {
+function bevelWidth() {
   const shapePx =
     params.mode === "ALL_3X3"
       ? params.shapeSize
       : min(width, height) * params.shapeScale;
 
-  return max(12, shapePx * 0.18) * pixelDensity();
+  const cells = params.mode === "ALL_3X3" ? 3 : gridSize;
+  const cell = shapePx / max(cells, 1);
+  const lip = constrain(cell * 0.38, 14, 26);
+
+  return lip * pixelDensity();
 }
 
 function ensureShadeLayers() {
@@ -172,6 +179,9 @@ function ensureShadeLayers() {
 
   if (
     maskLayer &&
+    edgeLayer &&
+    sceneLayer &&
+    sceneSoftLayer &&
     shadeLayer &&
     lookShader &&
     maskLayer.width === width &&
@@ -184,12 +194,30 @@ function ensureShadeLayers() {
     maskLayer.remove();
   }
 
+  if (edgeLayer) {
+    edgeLayer.remove();
+  }
+
+  if (sceneLayer) {
+    sceneLayer.remove();
+  }
+
+  if (sceneSoftLayer) {
+    sceneSoftLayer.remove();
+  }
+
   if (shadeLayer) {
     shadeLayer.remove();
   }
 
   maskLayer = createGraphics(width, height);
+  edgeLayer = createGraphics(width, height);
+  sceneLayer = createGraphics(width, height);
+  sceneSoftLayer = createGraphics(width, height);
   maskLayer.pixelDensity(density);
+  edgeLayer.pixelDensity(density);
+  sceneLayer.pixelDensity(density);
+  sceneSoftLayer.pixelDensity(density);
 
   shadeLayer = createGraphics(width, height, WEBGL);
   shadeLayer.pixelDensity(density);
@@ -200,16 +228,83 @@ function ensureShadeLayers() {
   );
 }
 
+function blurGraphics(source, target, radiusPx) {
+  const ctx = target.drawingContext;
+  const bufferWidth = source.canvas.width;
+  const bufferHeight = source.canvas.height;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, bufferWidth, bufferHeight);
+  ctx.filter = `blur(${Math.max(radiusPx, 0.5)}px)`;
+  ctx.drawImage(source.canvas, 0, 0);
+  ctx.filter = "none";
+}
+
+function paintGlassScene(layer) {
+  const ctx = layer.drawingContext;
+  const bufferWidth = layer.canvas.width;
+  const bufferHeight = layer.canvas.height;
+  const minSide = Math.min(bufferWidth, bufferHeight);
+  const paper = cssColor(params.backgroundColor);
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  const gradient = ctx.createLinearGradient(
+    0,
+    0,
+    bufferWidth,
+    bufferHeight * 0.9
+  );
+  gradient.addColorStop(0, "#f6c7ae");
+  gradient.addColorStop(0.38, paper);
+  gradient.addColorStop(1, "#b7d0ef");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, bufferWidth, bufferHeight);
+
+  const blobs = [
+    [0.14, 0.18, 0.36, "#4f9fe8"],
+    [0.86, 0.14, 0.28, "#ef7d55"],
+    [0.74, 0.8, 0.4, "#63b890"],
+    [0.16, 0.84, 0.3, "#f3a9b8"],
+    [0.48, 0.4, 0.18, "#fff4e4"],
+    [0.58, 0.62, 0.11, "#f0c85a"]
+  ];
+
+  for (let i = 0; i < blobs.length; i++) {
+    const blob = blobs[i];
+    ctx.beginPath();
+    ctx.fillStyle = blob[3];
+    ctx.arc(
+      blob[0] * bufferWidth,
+      blob[1] * bufferHeight,
+      blob[2] * minSide,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+  }
+}
+
 function renderShaderLook(look) {
   ensureShadeLayers();
 
   maskLayer.background(0);
   paintPartitions(maskLayer.drawingContext, "fill");
+  paintGlassScene(sceneLayer);
 
-  const spread = shapeSpread();
+  const bevel = bevelWidth();
+  const frost = look.mode < 0.5
+    ? Math.max(8, bevel * (0.22 + params.softness * 0.35))
+    : bevel * (0.9 + params.softness * 1.4);
+
+  blurGraphics(maskLayer, edgeLayer, bevel * 0.55);
+  blurGraphics(sceneLayer, sceneSoftLayer, frost);
 
   shadeLayer.shader(lookShader);
   lookShader.setUniform("uMask", maskLayer);
+  lookShader.setUniform("uEdge", edgeLayer);
+  lookShader.setUniform("uScene", sceneLayer);
+  lookShader.setUniform("uSceneSoft", sceneSoftLayer);
   lookShader.setUniform("uResolution", [
     width * pixelDensity(),
     height * pixelDensity()
@@ -229,7 +324,7 @@ function renderShaderLook(look) {
   lookShader.setUniform("uSoftness", params.softness);
   lookShader.setUniform("uShine", params.shine);
   lookShader.setUniform("uMode", look.mode);
-  lookShader.setUniform("uSpread", spread);
+  lookShader.setUniform("uSpread", bevel);
 
   shadeLayer.clear();
   shadeLayer.noStroke();
