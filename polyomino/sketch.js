@@ -9,6 +9,8 @@
 
   The Tweakpane panel edits these settings live.
   "Any count" chooses a valid region count at random.
+  "Look" chooses an outline or a shader material.
+  The choices live in looks.js.
 */
 
 const RANDOM_CANVAS = 700;
@@ -37,10 +39,15 @@ const params = {
   pageMargin: 35,
   shapeSize: 66,
 
-  // Drawing.
+  // Drawing. Shader presets live on each entry in POLYOMINO_LOOKS.
+  look: "liquidGlass",
   outlineColor: "#292932",
   backgroundColor: "#eeeae1",
   strokeWidth: 2.2,
+  tint: "#f4f7fb",
+  refraction: 0.72,
+  softness: 0.32,
+  shine: 0.95,
 
   // Measured relative to one grid cell.
   regionInset: 0.095,
@@ -64,6 +71,15 @@ let seedInput;
 let layoutFolder;
 let scaleInput;
 let summaryMonitor;
+let outlineInput;
+let strokeInput;
+let materialFolder;
+let refractionInput;
+
+let maskLayer;
+let shadeLayer;
+let lookShader;
+let activeLookId = "liquidGlass";
 
 const readout = {
   summary: ""
@@ -84,15 +100,26 @@ function setup() {
 }
 
 function draw() {
-  background(cssColor(params.backgroundColor));
-
   document.body.style.background =
     cssColor(params.backgroundColor);
 
   if (partitions.length === 0) {
+    background(cssColor(params.backgroundColor));
     return;
   }
 
+  const look = polyominoLook(params.look);
+
+  if (!look || look.kind === "stroke") {
+    background(cssColor(params.backgroundColor));
+    paintPartitions(drawingContext, "stroke");
+    return;
+  }
+
+  renderShaderLook(look);
+}
+
+function paintPartitions(target, style) {
   if (params.mode === "ALL_3X3") {
     for (let i = 0; i < partitions.length; i++) {
       const col = i % params.columns;
@@ -112,17 +139,115 @@ function draw() {
         partitions[i],
         centerX,
         centerY,
-        params.shapeSize
+        params.shapeSize,
+        style,
+        target
       );
     }
-  } else {
-    drawPartition(
-      partitions[0],
-      width / 2,
-      height / 2,
-      min(width, height) * params.shapeScale
-    );
+
+    return;
   }
+
+  drawPartition(
+    partitions[0],
+    width / 2,
+    height / 2,
+    min(width, height) * params.shapeScale,
+    style,
+    target
+  );
+}
+
+function shapeSpread() {
+  const shapePx =
+    params.mode === "ALL_3X3"
+      ? params.shapeSize
+      : min(width, height) * params.shapeScale;
+
+  return max(12, shapePx * 0.18) * pixelDensity();
+}
+
+function ensureShadeLayers() {
+  const density = pixelDensity();
+
+  if (
+    maskLayer &&
+    shadeLayer &&
+    lookShader &&
+    maskLayer.width === width &&
+    maskLayer.height === height
+  ) {
+    return;
+  }
+
+  if (maskLayer) {
+    maskLayer.remove();
+  }
+
+  if (shadeLayer) {
+    shadeLayer.remove();
+  }
+
+  maskLayer = createGraphics(width, height);
+  maskLayer.pixelDensity(density);
+
+  shadeLayer = createGraphics(width, height, WEBGL);
+  shadeLayer.pixelDensity(density);
+
+  lookShader = shadeLayer.createShader(
+    POLYOMINO_LOOK_VERTEX,
+    POLYOMINO_LOOK_FRAGMENT
+  );
+}
+
+function renderShaderLook(look) {
+  ensureShadeLayers();
+
+  maskLayer.background(0);
+  paintPartitions(maskLayer.drawingContext, "fill");
+
+  const spread = shapeSpread();
+
+  shadeLayer.shader(lookShader);
+  lookShader.setUniform("uMask", maskLayer);
+  lookShader.setUniform("uResolution", [
+    width * pixelDensity(),
+    height * pixelDensity()
+  ]);
+  lookShader.setUniform(
+    "uPaper",
+    colorUnit(params.backgroundColor)
+  );
+  lookShader.setUniform(
+    "uGlassTint",
+    colorUnit(params.tint)
+  );
+  lookShader.setUniform(
+    "uRefraction",
+    params.refraction
+  );
+  lookShader.setUniform("uSoftness", params.softness);
+  lookShader.setUniform("uShine", params.shine);
+  lookShader.setUniform("uMode", look.mode);
+  lookShader.setUniform("uSpread", spread);
+
+  shadeLayer.clear();
+  shadeLayer.noStroke();
+  shadeLayer.rectMode(CENTER);
+  shadeLayer.rect(0, 0, width, height);
+
+  background(cssColor(params.backgroundColor));
+  image(shadeLayer, 0, 0, width, height);
+}
+
+function colorUnit(value) {
+  const paint = color(cssColor(value));
+
+  return [
+    red(paint) / 255,
+    green(paint) / 255,
+    blue(paint) / 255
+  ];
 }
 
 function keyPressed() {
@@ -204,6 +329,10 @@ const DRAWING_KEYS = new Set([
   "outlineColor",
   "backgroundColor",
   "strokeWidth",
+  "tint",
+  "refraction",
+  "softness",
+  "shine",
   "regionInset",
   "cornerRadius",
   "shapeScale"
@@ -324,19 +453,72 @@ function setupPane() {
     title: "Drawing"
   });
 
+  const lookOptions = {};
+
+  for (let i = 0; i < POLYOMINO_LOOKS.length; i++) {
+    lookOptions[POLYOMINO_LOOKS[i].label] =
+      POLYOMINO_LOOKS[i].id;
+  }
+
+  drawingFolder.addInput(params, "look", {
+    label: "look",
+    options: lookOptions
+  });
+
   drawingFolder.addInput(params, "backgroundColor", {
     label: "background"
   });
 
-  drawingFolder.addInput(params, "outlineColor", {
-    label: "outline"
+  outlineInput = drawingFolder.addInput(
+    params,
+    "outlineColor",
+    {
+      label: "outline"
+    }
+  );
+
+  strokeInput = drawingFolder.addInput(
+    params,
+    "strokeWidth",
+    {
+      label: "stroke",
+      min: 0.5,
+      max: 16,
+      step: 0.1
+    }
+  );
+
+  materialFolder = drawingFolder.addFolder({
+    title: "Material"
   });
 
-  drawingFolder.addInput(params, "strokeWidth", {
-    label: "stroke",
-    min: 0.5,
-    max: 16,
-    step: 0.1
+  materialFolder.addInput(params, "tint", {
+    label: "tint"
+  });
+
+  refractionInput = materialFolder.addInput(
+    params,
+    "refraction",
+    {
+      label: "refraction",
+      min: 0,
+      max: 1,
+      step: 0.01
+    }
+  );
+
+  materialFolder.addInput(params, "softness", {
+    label: "softness",
+    min: 0,
+    max: 1,
+    step: 0.01
+  });
+
+  materialFolder.addInput(params, "shine", {
+    label: "shine",
+    min: 0,
+    max: 1,
+    step: 0.01
   });
 
   drawingFolder.addInput(params, "regionInset", {
@@ -383,6 +565,15 @@ function setupPane() {
     const presetKey = event.presetKey;
 
     if (!presetKey) {
+      return;
+    }
+
+    if (presetKey === "look") {
+      rememberLook(activeLookId);
+      activeLookId = params.look;
+      applyLookPreset(params.look);
+      updateLookVisibility();
+      draw();
       return;
     }
 
@@ -439,6 +630,58 @@ function clampRegionCount() {
   }
 }
 
+function rememberLook(id) {
+  const look = polyominoLook(id);
+
+  if (!look || look.kind !== "shader") {
+    return;
+  }
+
+  look.tint = params.tint;
+  look.refraction = params.refraction;
+  look.softness = params.softness;
+  look.shine = params.shine;
+}
+
+function applyLookPreset(id) {
+  const look = polyominoLook(id);
+
+  if (!look || look.kind !== "shader") {
+    return;
+  }
+
+  params.tint = look.tint;
+  params.refraction = look.refraction;
+  params.softness = look.softness;
+  params.shine = look.shine;
+
+  if (pane) {
+    pane.refresh();
+  }
+}
+
+function updateLookVisibility() {
+  const look = polyominoLook(params.look);
+  const shaderLook = look && look.kind === "shader";
+
+  if (outlineInput) {
+    outlineInput.hidden = shaderLook;
+  }
+
+  if (strokeInput) {
+    strokeInput.hidden = shaderLook;
+  }
+
+  if (materialFolder) {
+    materialFolder.hidden = !shaderLook;
+  }
+
+  if (refractionInput) {
+    refractionInput.hidden =
+      !shaderLook || look.id === "enamel";
+  }
+}
+
 function updateRegionCountAvailability() {
   if (regionInput) {
     regionInput.disabled = params.anyCount;
@@ -461,6 +704,7 @@ function updatePaneVisibility() {
   }
 
   updateRegionCountAvailability();
+  updateLookVisibility();
 
   if (summaryMonitor) {
     summaryMonitor.label = randomMode
@@ -852,22 +1096,30 @@ function reflectGrid(grid) {
    PARTITION DRAWING
    ========================================================= */
 
-function drawPartition(grid, centerX, centerY, size) {
+function drawPartition(
+  grid,
+  centerX,
+  centerY,
+  size,
+  style,
+  ctx
+) {
   const regions = getRegionLabels(grid);
 
   const originX = centerX - size / 2;
   const originY = centerY - size / 2;
   const cellSize = size / gridSize;
 
-  const ctx = drawingContext;
+  const target = ctx || drawingContext;
+  const paint = style || "stroke";
 
-  ctx.save();
+  target.save();
 
-  ctx.strokeStyle = cssColor(params.outlineColor);
-  ctx.lineWidth = params.strokeWidth;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.fillStyle = "transparent";
+  target.strokeStyle = cssColor(params.outlineColor);
+  target.lineWidth = params.strokeWidth;
+  target.lineCap = "round";
+  target.lineJoin = "round";
+  target.fillStyle = "#ffffff";
 
   for (const region of regions) {
     const edges = getBoundaryEdges(grid, region);
@@ -896,14 +1148,15 @@ function drawPartition(grid, centerX, centerY, size) {
       }));
 
       drawRoundedContour(
-        ctx,
+        target,
         pixelPoints,
-        params.cornerRadius
+        params.cornerRadius,
+        paint
       );
     }
   }
 
-  ctx.restore();
+  target.restore();
 }
 
 /* =========================================================
@@ -1264,7 +1517,7 @@ function crossProduct(a, b) {
    ROUNDED POLYGON DRAWING
    ========================================================= */
 
-function drawRoundedContour(ctx, points, radius) {
+function drawRoundedContour(ctx, points, radius, style) {
   if (points.length < 3) {
     return;
   }
@@ -1334,6 +1587,12 @@ function drawRoundedContour(ctx, points, radius) {
   }
 
   ctx.closePath();
+
+  if (style === "fill") {
+    ctx.fill();
+    return;
+  }
+
   ctx.stroke();
 }
 
