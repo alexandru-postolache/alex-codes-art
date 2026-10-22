@@ -9,6 +9,12 @@
     0  liquid glass
     1  frosted glass
     2  enamel
+
+  Liquid glass uses the circular lens profile
+  distortion = 1 - sqrt(1 - d^2), with d = 1 on the rim
+  and d = 0 once the bezel flattens. The bezel is a narrow
+  blur of the mask, so the interior stays optically flat
+  and only the rim bends the backdrop.
 */
 
 const POLYOMINO_LOOKS = [
@@ -18,9 +24,9 @@ const POLYOMINO_LOOKS = [
     kind: "shader",
     mode: 0,
     tint: "#f4f7fb",
-    refraction: 0.72,
-    softness: 0.32,
-    shine: 0.95
+    refraction: 0.85,
+    softness: 0.28,
+    shine: 0.9
   },
   {
     id: "frosted",
@@ -28,9 +34,9 @@ const POLYOMINO_LOOKS = [
     kind: "shader",
     mode: 1,
     tint: "#f7f4ef",
-    refraction: 0.18,
-    softness: 0.86,
-    shine: 0.42
+    refraction: 0.35,
+    softness: 0.9,
+    shine: 0.4
   },
   {
     id: "enamel",
@@ -40,7 +46,7 @@ const POLYOMINO_LOOKS = [
     tint: "#d4654c",
     refraction: 0,
     softness: 0.22,
-    shine: 0.78
+    shine: 0.7
   },
   {
     id: "outline",
@@ -82,6 +88,9 @@ precision highp float;
 varying vec2 vTexCoord;
 
 uniform sampler2D uMask;
+uniform sampler2D uEdge;
+uniform sampler2D uScene;
+uniform sampler2D uSceneSoft;
 uniform vec2 uResolution;
 uniform vec3 uPaper;
 // p5 writes its own uTint while drawing, so the glass color uses another name.
@@ -92,147 +101,105 @@ uniform float uShine;
 uniform float uMode;
 uniform float uSpread;
 
-float sampleMask(vec2 uv) {
-  uv = clamp(uv, vec2(0.001), vec2(0.999));
-  return texture2D(uMask, uv).r;
+vec2 clipUv(vec2 uv) {
+  return clamp(uv, vec2(0.001), vec2(0.999));
 }
 
-float blurMask(vec2 uv, float radius) {
-  vec2 texel = 1.0 / uResolution;
-  vec2 r = texel * max(radius, 1.0);
-
-  float sum = sampleMask(uv) * 2.0;
-  sum += sampleMask(uv + vec2(r.x, 0.0));
-  sum += sampleMask(uv - vec2(r.x, 0.0));
-  sum += sampleMask(uv + vec2(0.0, r.y));
-  sum += sampleMask(uv - vec2(0.0, r.y));
-  sum += sampleMask(uv + vec2(r.x, r.y) * 0.72);
-  sum += sampleMask(uv + vec2(-r.x, r.y) * 0.72);
-  sum += sampleMask(uv + vec2(r.x, -r.y) * 0.72);
-  sum += sampleMask(uv + vec2(-r.x, -r.y) * 0.72);
-  sum += sampleMask(uv + vec2(r.x * 0.38, r.y * 0.22));
-  sum += sampleMask(uv + vec2(-r.x * 0.38, r.y * 0.22));
-  sum += sampleMask(uv + vec2(r.x * 0.22, -r.y * 0.38));
-  sum += sampleMask(uv + vec2(-r.x * 0.22, -r.y * 0.38));
-
-  return sum / 14.0;
+float sampleEdge(vec2 uv) {
+  return texture2D(uEdge, clipUv(uv)).r;
 }
 
-vec3 wallpaper(vec2 uv) {
-  vec2 p = uv * vec2(uResolution.x / max(uResolution.y, 1.0), 1.0);
-  p *= 3.4;
-
-  float a = sin(p.x * 1.6 + p.y * 0.7);
-  float b = sin(p.x * 0.85 - p.y * 1.35 + 1.4);
-  float c = sin((p.x + p.y) * 1.15 + 0.6);
-
-  vec3 warm = vec3(0.93, 0.55, 0.38);
-  vec3 cool = vec3(0.36, 0.58, 0.90);
-  vec3 leaf = vec3(0.46, 0.70, 0.56);
-  vec3 blush = vec3(0.94, 0.72, 0.76);
-
-  vec3 field = mix(warm, cool, 0.5 + 0.5 * a);
-  field = mix(field, leaf, 0.22 + 0.22 * b);
-  field = mix(field, blush, 0.12 + 0.12 * c);
-
-  return field;
-}
-
-vec3 blurredWallpaper(vec2 uv, float radius) {
-  vec2 texel = 1.0 / uResolution;
-  vec2 r = texel * radius;
-  vec3 sum = wallpaper(uv) * 2.0;
-
-  sum += wallpaper(uv + vec2(r.x, 0.0));
-  sum += wallpaper(uv - vec2(r.x, 0.0));
-  sum += wallpaper(uv + vec2(0.0, r.y));
-  sum += wallpaper(uv - vec2(0.0, r.y));
-  sum += wallpaper(uv + vec2(r.x, r.y) * 0.7);
-  sum += wallpaper(uv + vec2(-r.x, r.y) * 0.7);
-  sum += wallpaper(uv + vec2(r.x, -r.y) * 0.7);
-  sum += wallpaper(uv + vec2(-r.x, -r.y) * 0.7);
-
-  return sum / 10.0;
+vec3 sampleScene(sampler2D tex, vec2 pixel) {
+  return texture2D(tex, clipUv(pixel / uResolution)).rgb;
 }
 
 void main() {
   vec2 uv = vec2(vTexCoord.x, 1.0 - vTexCoord.y);
+  vec2 pixel = uv * uResolution;
   vec2 texel = 1.0 / uResolution;
 
-  float mask = sampleMask(uv);
-  float cover = smoothstep(0.28, 0.72, mask);
+  float mask = texture2D(uMask, clipUv(uv)).r;
+  float cover = smoothstep(0.35, 0.75, mask);
 
-  float radius = max(uSpread, 8.0);
-  float heightHere = blurMask(uv, radius);
-  float stepPx = 3.0;
-  float heightX = blurMask(uv + vec2(texel.x * stepPx, 0.0), radius);
-  float heightY = blurMask(uv + vec2(0.0, texel.y * stepPx), radius);
-  vec2 slope = vec2(heightX - heightHere, heightY - heightHere);
+  float field = sampleEdge(uv);
+  float distFromEdge = 1.0 - smoothstep(0.5, 0.98, field);
+  distFromEdge = clamp(distFromEdge, 0.0, 1.0);
 
-  vec3 normal = normalize(vec3(-slope.x * 28.0, -slope.y * 28.0, 1.0));
-  vec3 lightDir = normalize(vec3(-0.35, -0.72, 0.60));
-  vec3 viewDir = vec3(0.0, 0.0, 1.0);
-  vec3 halfDir = normalize(lightDir + viewDir);
+  float left = sampleEdge(uv - vec2(texel.x * 2.0, 0.0));
+  float right = sampleEdge(uv + vec2(texel.x * 2.0, 0.0));
+  float down = sampleEdge(uv - vec2(0.0, texel.y * 2.0));
+  float up = sampleEdge(uv + vec2(0.0, texel.y * 2.0));
+  vec2 inward = vec2(right - left, up - down);
+  float inwardLength = length(inward);
+  vec2 dir = inwardLength > 0.015
+    ? inward / inwardLength
+    : vec2(0.0);
 
-  float lambert = clamp(dot(normal, lightDir), 0.0, 1.0);
-  float facing = dot(normalize(slope + vec2(0.0001)), normalize(vec2(-0.35, -0.85)));
-  float spec = pow(clamp(dot(normal, halfDir), 0.0, 1.0), mix(24.0, 64.0, uShine));
+  float curve = 1.0 - sqrt(max(
+    0.0,
+    1.0 - distFromEdge * distFromEdge
+  ));
 
-  float hardL = sampleMask(uv - vec2(texel.x * 1.5, 0.0));
-  float hardR = sampleMask(uv + vec2(texel.x * 1.5, 0.0));
-  float hardD = sampleMask(uv - vec2(0.0, texel.y * 1.5));
-  float hardU = sampleMask(uv + vec2(0.0, texel.y * 1.5));
-  float edge = length(vec2(hardR - hardL, hardU - hardD));
-  float rim = smoothstep(0.12, 0.95, edge);
+  float refractAmount = uRefraction;
+  if (uMode > 0.5 && uMode < 1.5) {
+    refractAmount = max(uRefraction, 0.28);
+  }
+  if (uMode > 1.5) {
+    refractAmount = 0.0;
+  }
 
-  vec2 bend = slope * uRefraction * 5.5;
-  vec2 bent = clamp(uv + bend, vec2(0.02), vec2(0.98));
+  float refractPx = curve * refractAmount * max(uSpread, 8.0) * 1.65;
+  vec2 bent = pixel + dir * refractPx;
 
-  float blurPx = mix(10.0, radius * 0.55, uSoftness);
-  vec3 scene = blurredWallpaper(bent, blurPx);
+  vec2 shift = dir * distFromEdge * refractAmount * 8.0;
 
-  float chroma = rim * uRefraction * 0.012;
-  vec2 chromaDir = normalize(slope + vec2(0.0001));
-  vec3 dispersed;
-  dispersed.r = blurredWallpaper(bent + chromaDir * chroma, blurPx * 0.5).r;
-  dispersed.g = scene.g;
-  dispersed.b = blurredWallpaper(bent - chromaDir * chroma, blurPx * 0.5).b;
+  vec3 sharpColor = vec3(
+    sampleScene(uScene, bent - shift).r,
+    sampleScene(uScene, bent).g,
+    sampleScene(uScene, bent + shift).b
+  );
+  vec3 softColor = vec3(
+    sampleScene(uSceneSoft, bent - shift).r,
+    sampleScene(uSceneSoft, bent).g,
+    sampleScene(uSceneSoft, bent + shift).b
+  );
 
-  vec3 through = mix(scene, dispersed, uMode < 0.5 ? 0.85 : 0.2);
+  float frost = mix(0.16, 0.46, uSoftness);
+  if (uMode > 0.5) {
+    frost = mix(0.8, 0.97, uSoftness);
+  }
+  frost *= mix(0.35, 1.0, 1.0 - distFromEdge);
 
-  float milk = uMode < 0.5 ? 0.1 : 0.72;
-  vec3 body = mix(through, uGlassTint, milk);
+  vec3 glass = mix(sharpColor, softColor, frost);
+  glass = mix(glass, glass * uGlassTint, 0.2);
+  glass = mix(glass, uGlassTint, uMode < 0.5 ? 0.04 : 0.55);
+
+  vec3 bevelNormal = normalize(vec3(-dir, 0.7));
+  vec3 lightDir = normalize(vec3(-0.42, -0.78, 0.55));
+  float lambert = clamp(dot(bevelNormal, lightDir), 0.0, 1.0);
 
   if (uMode > 1.5) {
-    float shade = 0.72 + 0.28 * lambert;
-    body = uGlassTint * shade;
-    body = mix(body, uPaper, 0.06);
+    glass = uGlassTint * (0.74 + 0.26 * lambert);
+    glass = mix(glass, uPaper, 0.05);
   }
 
-  float lightRim = rim * pow(clamp(facing, 0.0, 1.0), 1.2);
-  float darkRim = rim * pow(clamp(-facing, 0.0, 1.0), 1.5);
-  float broad = pow(clamp(lambert, 0.0, 1.0), 3.0) * cover;
+  vec2 lightFlat = normalize(vec2(-0.42, -0.82));
+  float lit = clamp(dot(-dir, lightFlat), 0.0, 1.0);
+  float fresnel = pow(distFromEdge, 1.7);
+  float ring = smoothstep(0.55, 0.92, distFromEdge);
 
-  vec3 glass = body;
-  glass += vec3(1.0) * spec * uShine * (uMode > 1.5 ? 0.22 : 0.38);
-  glass += vec3(1.0) * lightRim * uShine * 0.42;
-  glass += vec3(0.75, 0.86, 1.0) * broad * uShine * (uMode < 0.5 ? 0.16 : 0.05);
-  glass *= 1.0 - darkRim * (uMode > 1.5 ? 0.12 : 0.38);
+  float shineScale = uMode > 1.5 ? 0.45 : 1.0;
+  glass += vec3(1.0) * fresnel * lit * uShine * 0.42 * shineScale;
+  glass += vec3(1.0) * ring * lit * uShine * 0.34 * shineScale;
+  glass += vec3(0.78, 0.88, 1.0) * fresnel * (1.0 - lit) * uShine * 0.1;
+  glass *= 1.0 - fresnel * (1.0 - lit) * 0.2 * shineScale;
 
-  if (uMode < 1.5) {
-    float clearCenter = smoothstep(0.2, 0.75, heightHere);
-    glass = mix(glass, through, clearCenter * (uMode < 0.5 ? 0.35 : 0.1));
-  }
+  vec2 shadowPixel = pixel - vec2(uSpread * 0.22, uSpread * 0.36);
+  float shadowField = sampleEdge(shadowPixel / uResolution);
+  float shadow = smoothstep(0.2, 0.65, shadowField) * (1.0 - cover);
 
-  vec2 shadowUv = uv - vec2(10.0, 14.0) / uResolution;
-  float shadowMask = blurMask(shadowUv, radius * 0.45);
-  float shadow = smoothstep(0.12, 0.55, shadowMask) * (1.0 - cover);
-
-  vec3 page = uPaper;
-  if (uMode < 1.5) {
-    page = mix(uPaper, wallpaper(uv), 0.14);
-  }
-  page *= 1.0 - shadow * 0.34;
+  vec3 page = sampleScene(uScene, pixel);
+  page *= 1.0 - shadow * 0.36;
 
   vec3 color = mix(page, clamp(glass, 0.0, 1.0), cover);
   gl_FragColor = vec4(color, 1.0);
