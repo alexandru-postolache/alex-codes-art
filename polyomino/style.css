@@ -2,6 +2,31 @@ html, body {
   margin: 0;
   padding: 0;
 }
+
+body {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
+  background: #eeeae1;
+}
+
 canvas {
   display: block;
+}
+
+#controls {
+  position: sticky;
+  top: 16px;
+  width: 280px;
+  flex: 0 0 auto;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+
+#controls .tp-dfwv {
+  position: relative;
+  top: auto;
+  right: auto;
+  width: 280px !important;
 }
