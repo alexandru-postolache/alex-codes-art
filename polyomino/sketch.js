@@ -6,103 +6,113 @@
 
   "RANDOM_ONE"
       Generate one random partition at the chosen grid size.
+
+  The Tweakpane panel edits these settings live.
+  "Any count" chooses a valid region count at random.
 */
 
-const MODE = "RANDOM_ONE";
+const RANDOM_CANVAS = 700;
 
-// Used only in RANDOM_ONE mode.
-const RANDOM_GRID_SIZE = 5;
+const MAX_GRID_SIZE = 12;
 
-/*
-  null = choose a random valid number of regions.
+const params = {
+  mode: "RANDOM_ONE",
 
-  Or specify a number:
-    2, 3, 4, etc.
+  // Used only in RANDOM_ONE mode.
+  gridSize: 5,
 
-  The number must allow distinct positive region sizes.
-*/
-const RANDOM_REGION_COUNT = null;
+  /*
+    anyCount chooses a valid region count at random.
+    Otherwise regionCount must allow distinct positive sizes.
+  */
+  anyCount: true,
+  regionCount: 4,
 
-// ALL_3X3 always uses 3.
-const GRID_SIZE =
-  MODE === "ALL_3X3"
-    ? 3
-    : RANDOM_GRID_SIZE;
+  // Same seed reproduces the same random partition.
+  seed: Math.floor(Math.random() * 1000000),
 
-// Layout for ALL_3X3.
-const COLS = 5;
-const TILE_SIZE = 105;
-const PAGE_MARGIN = 35;
-const SHAPE_SIZE = 66;
+  // Layout for ALL_3X3.
+  columns: 5,
+  tileSize: 105,
+  pageMargin: 35,
+  shapeSize: 66,
 
-// Drawing.
-const OUTLINE_COLOR = "#292932";
-const BACKGROUND_COLOR = "#eeeae1";
-const STROKE_WIDTH = 2.2;
+  // Drawing.
+  outlineColor: "#292932",
+  backgroundColor: "#eeeae1",
+  strokeWidth: 2.2,
 
-// Measured relative to one grid cell.
-const REGION_INSET = 0.095;
+  // Measured relative to one grid cell.
+  regionInset: 0.095,
 
-// Measured in pixels.
-const CORNER_RADIUS = 20;
+  // Measured in pixels. Random mode scales the shape
+  // by this fraction of the canvas.
+  cornerRadius: 20,
+  shapeScale: 0.72
+};
+
+// Active grid size. ALL_3X3 always uses 3.
+let gridSize = params.gridSize;
 
 let partitions = [];
+let catalogPartitions = null;
+
+let pane;
+let generationFolder;
+let regionInput;
+let seedInput;
+let layoutFolder;
+let scaleInput;
+let summaryMonitor;
+
+const readout = {
+  summary: ""
+};
 
 function setup() {
+  const canvas = createCanvas(
+    RANDOM_CANVAS,
+    RANDOM_CANVAS
+  );
+
+  canvas.parent("sketch");
   pixelDensity(2);
 
-  if (MODE === "ALL_3X3") {
-    partitions = generatePartitions();
-
-    partitions.sort((a, b) =>
-      canonicalForm(a).localeCompare(canonicalForm(b))
-    );
-
-    const rows = ceil(partitions.length / COLS);
-
-    createCanvas(
-      PAGE_MARGIN * 2 + COLS * TILE_SIZE,
-      PAGE_MARGIN * 2 + rows * TILE_SIZE
-    );
-  } else {
-    createCanvas(700, 700);
-
-    partitions = [
-      generateRandomUnequalPartition(
-        GRID_SIZE,
-        RANDOM_REGION_COUNT
-      )
-    ];
-
-    printPartitionInfo(partitions[0]);
-  }
-
   noLoop();
+  setupPane();
+  rebuild(true);
 }
 
 function draw() {
-  background(BACKGROUND_COLOR);
+  background(cssColor(params.backgroundColor));
 
-  if (MODE === "ALL_3X3") {
+  document.body.style.background =
+    cssColor(params.backgroundColor);
+
+  if (partitions.length === 0) {
+    return;
+  }
+
+  if (params.mode === "ALL_3X3") {
     for (let i = 0; i < partitions.length; i++) {
-      const col = i % COLS;
-      const row = floor(i / COLS);
+      const col = i % params.columns;
+      const row = floor(i / params.columns);
 
       const centerX =
-        PAGE_MARGIN +
-        col * TILE_SIZE +
-        TILE_SIZE / 2;
+        params.pageMargin +
+        col * params.tileSize +
+        params.tileSize / 2;
 
       const centerY =
-        PAGE_MARGIN +
-        row * TILE_SIZE +
-        TILE_SIZE / 2;
+        params.pageMargin +
+        row * params.tileSize +
+        params.tileSize / 2;
 
       drawPartition(
         partitions[i],
         centerX,
         centerY,
-        SHAPE_SIZE
+        params.shapeSize
       );
     }
   } else {
@@ -110,33 +120,454 @@ function draw() {
       partitions[0],
       width / 2,
       height / 2,
-      min(width, height) * 0.72
+      min(width, height) * params.shapeScale
     );
   }
 }
 
 function keyPressed() {
+  const target = document.activeElement;
+
+  if (
+    target &&
+    (
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA"
+    )
+  ) {
+    return;
+  }
+
   // Generate another random partition.
   if (
-    MODE === "RANDOM_ONE" &&
+    params.mode === "RANDOM_ONE" &&
     (key === "r" || key === "R")
   ) {
-    partitions[0] =
-      generateRandomUnequalPartition(
-        GRID_SIZE,
-        RANDOM_REGION_COUNT
-      );
-
-    printPartitionInfo(partitions[0]);
-    redraw();
+    randomizePartition();
   }
 
   if (key === "s" || key === "S") {
-    saveCanvas(
-      `partition-${GRID_SIZE}x${GRID_SIZE}`,
-      "png"
-    );
+    savePartition();
   }
+}
+
+function activeGridSize() {
+  if (params.mode === "ALL_3X3") {
+    return 3;
+  }
+
+  return params.gridSize;
+}
+
+/*
+  For k regions to have distinct positive sizes,
+  the smallest possible total is:
+
+    1 + 2 + 3 + ... + k
+
+  which equals:
+
+    k * (k + 1) / 2
+*/
+function maximumRegionCount(size) {
+  const cellCount = size * size;
+
+  return floor(
+    (sqrt(8 * cellCount + 1) - 1) / 2
+  );
+}
+
+function savePartition() {
+  const name =
+    params.mode === "ALL_3X3"
+      ? "partitions-3x3"
+      : `partition-${gridSize}x${gridSize}`;
+
+  saveCanvas(name, "png");
+}
+
+function randomizePartition() {
+  params.seed = floor(Math.random() * 1000000);
+
+  if (seedInput) {
+    seedInput.refresh();
+  }
+
+  rebuild(true);
+}
+
+/* =========================================================
+   CONTROLS
+   ========================================================= */
+
+const DRAWING_KEYS = new Set([
+  "outlineColor",
+  "backgroundColor",
+  "strokeWidth",
+  "regionInset",
+  "cornerRadius",
+  "shapeScale"
+]);
+
+const LAYOUT_KEYS = new Set([
+  "columns",
+  "tileSize",
+  "pageMargin",
+  "shapeSize"
+]);
+
+const STRUCTURAL_KEYS = new Set([
+  "mode",
+  "gridSize",
+  "anyCount",
+  "regionCount",
+  "seed"
+]);
+
+function setupPane() {
+  const container =
+    document.getElementById("controls");
+
+  pane = new Tweakpane.Pane({
+    container,
+    title: "Polyomino"
+  });
+
+  pane.addInput(params, "mode", {
+    label: "mode",
+    options: {
+      "One random": "RANDOM_ONE",
+      "All 3×3": "ALL_3X3"
+    }
+  });
+
+  generationFolder = pane.addFolder({
+    title: "Generation"
+  });
+
+  generationFolder.addInput(params, "gridSize", {
+    label: "grid size",
+    min: 2,
+    max: MAX_GRID_SIZE,
+    step: 1
+  });
+
+  generationFolder.addInput(params, "anyCount", {
+    label: "any count"
+  });
+
+  regionInput = generationFolder.addInput(
+    params,
+    "regionCount",
+    {
+      label: "regions",
+      min: 2,
+      max: maximumRegionCount(MAX_GRID_SIZE),
+      step: 1
+    }
+  );
+
+  regionInput.maxValue = maximumRegionCount(
+    params.gridSize
+  );
+
+  seedInput = generationFolder.addInput(
+    params,
+    "seed",
+    {
+      label: "seed",
+      min: 0,
+      max: 999999,
+      step: 1
+    }
+  );
+
+  generationFolder.addButton({
+    title: "New partition"
+  }).on("click", () => {
+    randomizePartition();
+  });
+
+  layoutFolder = pane.addFolder({
+    title: "Layout"
+  });
+
+  layoutFolder.addInput(params, "columns", {
+    label: "columns",
+    min: 1,
+    max: 10,
+    step: 1
+  });
+
+  layoutFolder.addInput(params, "tileSize", {
+    label: "tile size",
+    min: 70,
+    max: 180,
+    step: 1
+  });
+
+  layoutFolder.addInput(params, "pageMargin", {
+    label: "margin",
+    min: 0,
+    max: 80,
+    step: 1
+  });
+
+  layoutFolder.addInput(params, "shapeSize", {
+    label: "shape size",
+    min: 24,
+    max: 150,
+    step: 1
+  });
+
+  const drawingFolder = pane.addFolder({
+    title: "Drawing"
+  });
+
+  drawingFolder.addInput(params, "backgroundColor", {
+    label: "background"
+  });
+
+  drawingFolder.addInput(params, "outlineColor", {
+    label: "outline"
+  });
+
+  drawingFolder.addInput(params, "strokeWidth", {
+    label: "stroke",
+    min: 0.5,
+    max: 16,
+    step: 0.1
+  });
+
+  drawingFolder.addInput(params, "regionInset", {
+    label: "inset",
+    min: 0,
+    max: 0.35,
+    step: 0.005
+  });
+
+  drawingFolder.addInput(params, "cornerRadius", {
+    label: "corners",
+    min: 0,
+    max: 80,
+    step: 1
+  });
+
+  scaleInput = drawingFolder.addInput(
+    params,
+    "shapeScale",
+    {
+      label: "scale",
+      min: 0.35,
+      max: 0.92,
+      step: 0.01
+    }
+  );
+
+  summaryMonitor = pane.addMonitor(
+    readout,
+    "summary",
+    {
+      label: "sizes",
+      interval: 0
+    }
+  );
+
+  pane.addButton({
+    title: "Save PNG"
+  }).on("click", () => {
+    savePartition();
+  });
+
+  pane.on("change", (event) => {
+    const presetKey = event.presetKey;
+
+    if (!presetKey) {
+      return;
+    }
+
+    if (DRAWING_KEYS.has(presetKey)) {
+      draw();
+      return;
+    }
+
+    // Sliders apply structural changes on release.
+    if (event.last === false) {
+      return;
+    }
+
+    if (presetKey === "gridSize") {
+      clampRegionCount();
+    }
+
+    if (presetKey === "anyCount") {
+      updateRegionCountAvailability();
+    }
+
+    if (STRUCTURAL_KEYS.has(presetKey)) {
+      rebuild(true);
+      return;
+    }
+
+    if (LAYOUT_KEYS.has(presetKey)) {
+      fitCanvas();
+    }
+  });
+}
+
+function clampRegionCount() {
+  const max = maximumRegionCount(params.gridSize);
+
+  if (regionInput) {
+    regionInput.maxValue = max;
+  }
+
+  if (params.regionCount > max) {
+    params.regionCount = max;
+
+    if (regionInput) {
+      regionInput.refresh();
+    }
+  }
+
+  if (params.regionCount < 2) {
+    params.regionCount = 2;
+
+    if (regionInput) {
+      regionInput.refresh();
+    }
+  }
+}
+
+function updateRegionCountAvailability() {
+  if (regionInput) {
+    regionInput.disabled = params.anyCount;
+  }
+}
+
+function updatePaneVisibility() {
+  const randomMode = params.mode === "RANDOM_ONE";
+
+  if (generationFolder) {
+    generationFolder.hidden = !randomMode;
+  }
+
+  if (layoutFolder) {
+    layoutFolder.hidden = randomMode;
+  }
+
+  if (scaleInput) {
+    scaleInput.hidden = !randomMode;
+  }
+
+  updateRegionCountAvailability();
+
+  if (summaryMonitor) {
+    summaryMonitor.label = randomMode
+      ? "sizes"
+      : "count";
+  }
+}
+
+function rebuild(regenerate) {
+  const nextGridSize = activeGridSize();
+
+  if (params.mode === "ALL_3X3") {
+    gridSize = 3;
+
+    if (!catalogPartitions) {
+      catalogPartitions = generatePartitions();
+
+      catalogPartitions.sort((a, b) =>
+        canonicalForm(a).localeCompare(
+          canonicalForm(b)
+        )
+      );
+    }
+
+    partitions = catalogPartitions;
+    readout.summary =
+      `${partitions.length} unique partitions`;
+  } else if (
+    regenerate ||
+    partitions.length !== 1 ||
+    partitions[0].length !== nextGridSize * nextGridSize
+  ) {
+    const previousGridSize = gridSize;
+    const previousPartitions = partitions;
+
+    gridSize = nextGridSize;
+
+    try {
+      const requested = params.anyCount
+        ? null
+        : params.regionCount;
+
+      const next = generateRandomUnequalPartition(
+        gridSize,
+        requested
+      );
+
+      partitions = [next];
+
+      const sizes = getRegionSizes(next)
+        .slice()
+        .sort((a, b) => a - b);
+
+      readout.summary = sizes.join(", ");
+      printPartitionInfo(next);
+    } catch (error) {
+      gridSize = previousGridSize;
+      partitions = previousPartitions;
+      readout.summary = "No partition found";
+      console.error(error);
+    }
+  } else {
+    gridSize = nextGridSize;
+
+    const sizes = getRegionSizes(partitions[0])
+      .slice()
+      .sort((a, b) => a - b);
+
+    readout.summary = sizes.join(", ");
+  }
+
+  updatePaneVisibility();
+
+  if (summaryMonitor) {
+    summaryMonitor.refresh();
+  }
+
+  fitCanvas();
+}
+
+function fitCanvas() {
+  let nextWidth = RANDOM_CANVAS;
+  let nextHeight = RANDOM_CANVAS;
+
+  if (params.mode === "ALL_3X3") {
+    const rows = ceil(
+      partitions.length / params.columns
+    );
+
+    nextWidth =
+      params.pageMargin * 2 +
+      params.columns * params.tileSize;
+
+    nextHeight =
+      params.pageMargin * 2 +
+      rows * params.tileSize;
+  }
+
+  resizeCanvas(nextWidth, nextHeight);
+}
+
+function cssColor(value) {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  return `rgb(${value.r}, ${value.g}, ${value.b})`;
 }
 
 /* =========================================================
@@ -161,7 +592,7 @@ function generatePartitions() {
   const results = [];
   const seen = new Set();
 
-  const grid = new Array(GRID_SIZE * GRID_SIZE).fill(0);
+  const grid = new Array(gridSize * gridSize).fill(0);
 
   // The first cell always belongs to region 0.
   grid[0] = 0;
@@ -277,8 +708,8 @@ function isRegionConnected(grid, region) {
 
     visited.add(index);
 
-    const x = index % GRID_SIZE;
-    const y = floor(index / GRID_SIZE);
+    const x = index % gridSize;
+    const y = floor(index / gridSize);
 
     const neighbours = [
       [x + 1, y],
@@ -292,7 +723,7 @@ function isRegionConnected(grid, region) {
         continue;
       }
 
-      const neighbourIndex = ny * GRID_SIZE + nx;
+      const neighbourIndex = ny * gridSize + nx;
 
       if (
         grid[neighbourIndex] === region &&
@@ -309,9 +740,9 @@ function isRegionConnected(grid, region) {
 function insideGrid(x, y) {
   return (
     x >= 0 &&
-    x < GRID_SIZE &&
+    x < gridSize &&
     y >= 0 &&
-    y < GRID_SIZE
+    y < gridSize
   );
 }
 
@@ -320,7 +751,7 @@ function getCell(grid, x, y) {
     return -1;
   }
 
-  return grid[y * GRID_SIZE + x];
+  return grid[y * gridSize + x];
 }
 
 /* =========================================================
@@ -389,13 +820,13 @@ function canonicalForm(grid) {
 function rotateGrid(grid) {
   const result = new Array(grid.length);
 
-  for (let y = 0; y < GRID_SIZE; y++) {
-    for (let x = 0; x < GRID_SIZE; x++) {
-      const newX = GRID_SIZE - 1 - y;
+  for (let y = 0; y < gridSize; y++) {
+    for (let x = 0; x < gridSize; x++) {
+      const newX = gridSize - 1 - y;
       const newY = x;
 
-      result[newY * GRID_SIZE + newX] =
-        grid[y * GRID_SIZE + x];
+      result[newY * gridSize + newX] =
+        grid[y * gridSize + x];
     }
   }
 
@@ -405,12 +836,12 @@ function rotateGrid(grid) {
 function reflectGrid(grid) {
   const result = new Array(grid.length);
 
-  for (let y = 0; y < GRID_SIZE; y++) {
-    for (let x = 0; x < GRID_SIZE; x++) {
-      const newX = GRID_SIZE - 1 - x;
+  for (let y = 0; y < gridSize; y++) {
+    for (let x = 0; x < gridSize; x++) {
+      const newX = gridSize - 1 - x;
 
-      result[y * GRID_SIZE + newX] =
-        grid[y * GRID_SIZE + x];
+      result[y * gridSize + newX] =
+        grid[y * gridSize + x];
     }
   }
 
@@ -426,14 +857,14 @@ function drawPartition(grid, centerX, centerY, size) {
 
   const originX = centerX - size / 2;
   const originY = centerY - size / 2;
-  const cellSize = size / GRID_SIZE;
+  const cellSize = size / gridSize;
 
   const ctx = drawingContext;
 
   ctx.save();
 
-  ctx.strokeStyle = OUTLINE_COLOR;
-  ctx.lineWidth = STROKE_WIDTH;
+  ctx.strokeStyle = cssColor(params.outlineColor);
+  ctx.lineWidth = params.strokeWidth;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.fillStyle = "transparent";
@@ -456,7 +887,7 @@ function drawPartition(grid, centerX, centerY, size) {
       */
       points = offsetPolygon(
         points,
-        REGION_INSET
+        params.regionInset
       );
 
       const pixelPoints = points.map(point => ({
@@ -467,7 +898,7 @@ function drawPartition(grid, centerX, centerY, size) {
       drawRoundedContour(
         ctx,
         pixelPoints,
-        CORNER_RADIUS
+        params.cornerRadius
       );
     }
   }
@@ -494,8 +925,8 @@ function drawPartition(grid, centerX, centerY, size) {
 function getBoundaryEdges(grid, region) {
   const edges = [];
 
-  for (let y = 0; y < GRID_SIZE; y++) {
-    for (let x = 0; x < GRID_SIZE; x++) {
+  for (let y = 0; y < gridSize; y++) {
+    for (let x = 0; x < gridSize; x++) {
       if (getCell(grid, x, y) !== region) {
         continue;
       }
@@ -569,10 +1000,11 @@ function traceAllContours(edges) {
     let currentDirection = first.direction;
 
     let safety = 0;
+    const safetyLimit = remaining.length + contour.length + 2;
 
     while (
       !pointsEqual(currentPoint, first.start) &&
-      safety < 100
+      safety < safetyLimit
     ) {
       safety++;
 
@@ -943,23 +1375,11 @@ function generateRandomUnequalPartition(
   size,
   requestedRegionCount = null
 ) {
-  const cellCount = size * size;
+  randomSeed(params.seed);
 
-  /*
-    For k regions to have distinct positive sizes,
-    the smallest possible total is:
+  const maximumRegions = maximumRegionCount(size);
 
-      1 + 2 + 3 + ... + k
-
-    which equals:
-
-      k * (k + 1) / 2
-  */
-  const maximumRegionCount = floor(
-    (sqrt(8 * cellCount + 1) - 1) / 2
-  );
-
-  if (maximumRegionCount < 2) {
+  if (maximumRegions < 2) {
     throw new Error(
       "The grid is too small to contain multiple regions " +
       "with unequal sizes."
@@ -970,21 +1390,22 @@ function generateRandomUnequalPartition(
 
   if (regionCount === null) {
     regionCount = floor(
-      random(2, maximumRegionCount + 1)
+      random(2, maximumRegions + 1)
     );
   }
 
   if (
     regionCount < 2 ||
-    regionCount > maximumRegionCount
+    regionCount > maximumRegions
   ) {
     throw new Error(
       `Invalid region count ${regionCount}. ` +
       `For a ${size}×${size} grid, choose between ` +
-      `2 and ${maximumRegionCount}.`
+      `2 and ${maximumRegions}.`
     );
   }
 
+  const cellCount = size * size;
   const maximumAttempts = 30000;
 
   for (
@@ -1184,7 +1605,7 @@ function printPartitionInfo(grid) {
 
   console.log("--------------------------");
   console.log(
-    `Grid: ${GRID_SIZE}×${GRID_SIZE}`
+    `Grid: ${gridSize}×${gridSize}`
   );
   console.log(
     `Number of regions: ${sizes.length}`
@@ -1198,12 +1619,12 @@ function printPartitionInfo(grid) {
 }
 
 function printGridToConsole(grid) {
-  for (let y = 0; y < GRID_SIZE; y++) {
+  for (let y = 0; y < gridSize; y++) {
     let line = "";
 
-    for (let x = 0; x < GRID_SIZE; x++) {
+    for (let x = 0; x < gridSize; x++) {
       const value =
-        grid[y * GRID_SIZE + x];
+        grid[y * gridSize + x];
 
       line +=
         String(value).padStart(2, " ") +
