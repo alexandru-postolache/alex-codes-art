@@ -39,15 +39,25 @@ const params = {
   pageMargin: 35,
   shapeSize: 66,
 
-  // Drawing. Shader presets live on each entry in POLYOMINO_LOOKS.
+  // Drawing. Liquid glass uses the RealGlass demo's starting values.
+  // https://real-glass.vercel.app/
   look: "liquidGlass",
   outlineColor: "#292932",
   backgroundColor: "#eeeae1",
   strokeWidth: 2.2,
-  tint: "#f4f7fb",
-  refraction: 0.85,
-  softness: 0,
-  shine: 0.9,
+  chromaticAberration: 50,
+  frosting: 0,
+  glassOpacity: 0,
+  lightStrength: 0.39,
+  edgeSmoothness: 10,
+  ior: 1.52,
+  borderRadius: 50,
+  specularShininess: 2,
+  thickness: 2.1,
+  tintColor: "#438c98",
+  tintStrength: 0.5,
+  maskSmoothing: 0.15,
+  maskSmoothingInset: 0.1,
 
   // Measured relative to one grid cell.
   regionInset: 0.095,
@@ -183,57 +193,38 @@ function clearGlass() {
   }
 }
 
-function maskBlurRadius() {
-  const shapePx =
-    params.mode === "ALL_3X3"
-      ? params.shapeSize
-      : Math.min(width, height) * params.shapeScale;
-
-  const cells = params.mode === "ALL_3X3" ? 3 : gridSize;
-  const cell = shapePx / Math.max(cells, 1);
-  const lip = Math.min(8, Math.max(5, cell * 0.2));
-
-  return lip * pixelDensity();
-}
-
 function glassOptions() {
-  const refraction = params.refraction;
-
   return {
+    chromaticAberration: params.chromaticAberration,
+    frosting: params.frosting,
+    glassOpacity: params.glassOpacity,
+    lightStrength: params.lightStrength,
+    edgeSmoothness: params.edgeSmoothness,
+    ior: params.ior,
+    borderRadius: params.borderRadius,
+    specularShininess: params.specularShininess,
+    thickness: params.thickness,
+    tintColor: params.tintColor,
+    tintStrength: params.tintStrength,
+    maskSmoothing: params.maskSmoothing,
+    maskSmoothingInset: params.maskSmoothingInset,
     useMask: true,
-    frosting: params.softness,
-    chromaticAberration: 0.5,
-    glassOpacity: 0,
-    lightStrength: 0.55 + params.shine * 1.7,
-    lightX: 0.7,
-    lightY: 0.3,
-    edgeSmoothness: 2,
-    ior: 1 + refraction * 0.62,
-    borderRadius: 0,
-    specularShininess: 64,
-    thickness: 0.2 + refraction * 0.95,
-    tintColor: colorUnit(params.tint),
-    tintStrength: 0.22,
-    maskSmoothingInset: 0.1
+    maskImage: renderMaskCanvas()
   };
 }
 
 function renderMaskCanvas() {
-  const source = drawingContext.canvas;
-
   if (!maskCanvas) {
     maskCanvas = document.createElement("canvas");
   }
 
-  maskCanvas.width = source.width;
-  maskCanvas.height = source.height;
+  maskCanvas.width = width;
+  maskCanvas.height = height;
 
   const ctx = maskCanvas.getContext("2d");
-  const density = pixelDensity();
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-  ctx.setTransform(density, 0, 0, density, 0, 0);
   paintPartitions(ctx, "fill");
 
   return maskCanvas;
@@ -254,14 +245,12 @@ async function presentGlass(ticket) {
     realGlass = new RealGlass();
   }
 
-  realGlass.renderDensity = pixelDensity();
   await realGlass.usePlate(drawingContext.canvas);
 
   if (ticket !== glassTicket) {
     return;
   }
 
-  realGlass.setMaskCanvas(renderMaskCanvas(), maskBlurRadius());
   await realGlass.apply(host, glassOptions());
 
   if (ticket !== glassTicket && realGlass) {
@@ -315,15 +304,6 @@ function paintGlassScene(layer) {
   }
 }
 
-function colorUnit(value) {
-  const paint = color(cssColor(value));
-
-  return [
-    red(paint) / 255,
-    green(paint) / 255,
-    blue(paint) / 255
-  ];
-}
 
 function keyPressed() {
   const target = document.activeElement;
@@ -426,10 +406,19 @@ const DRAWING_KEYS = new Set([
   "outlineColor",
   "backgroundColor",
   "strokeWidth",
-  "tint",
-  "refraction",
-  "softness",
-  "shine",
+  "chromaticAberration",
+  "frosting",
+  "glassOpacity",
+  "lightStrength",
+  "edgeSmoothness",
+  "ior",
+  "borderRadius",
+  "specularShininess",
+  "thickness",
+  "tintColor",
+  "tintStrength",
+  "maskSmoothing",
+  "maskSmoothingInset",
   "regionInset",
   "cornerRadius",
   "shapeScale"
@@ -589,30 +578,89 @@ function setupPane() {
     title: "Material"
   });
 
-  materialFolder.addInput(params, "tint", {
-    label: "tint"
+  materialFolder.addInput(params, "chromaticAberration", {
+    label: "chromatic",
+    min: 0,
+    max: 100,
+    step: 0.1
   });
 
-  materialFolder.addInput(
-    params,
-    "refraction",
-    {
-      label: "refraction",
-      min: 0,
-      max: 1,
-      step: 0.01
-    }
-  );
-
-  materialFolder.addInput(params, "softness", {
-    label: "softness",
+  materialFolder.addInput(params, "frosting", {
+    label: "frosting",
     min: 0,
     max: 1,
     step: 0.01
   });
 
-  materialFolder.addInput(params, "shine", {
-    label: "shine",
+  materialFolder.addInput(params, "glassOpacity", {
+    label: "opacity",
+    min: 0,
+    max: 1,
+    step: 0.01
+  });
+
+  materialFolder.addInput(params, "lightStrength", {
+    label: "light",
+    min: 0,
+    max: 5,
+    step: 0.01
+  });
+
+  materialFolder.addInput(params, "edgeSmoothness", {
+    label: "edge",
+    min: 0,
+    max: 100,
+    step: 0.1
+  });
+
+  materialFolder.addInput(params, "ior", {
+    label: "ior",
+    min: 1.1,
+    max: 2.5,
+    step: 0.01
+  });
+
+  materialFolder.addInput(params, "borderRadius", {
+    label: "radius",
+    min: 0,
+    max: 100,
+    step: 1
+  });
+
+  materialFolder.addInput(params, "specularShininess", {
+    label: "shininess",
+    min: 0,
+    max: 100,
+    step: 1
+  });
+
+  materialFolder.addInput(params, "thickness", {
+    label: "thickness",
+    min: 0.1,
+    max: 3,
+    step: 0.01
+  });
+
+  materialFolder.addInput(params, "tintColor", {
+    label: "tint"
+  });
+
+  materialFolder.addInput(params, "tintStrength", {
+    label: "tint amount",
+    min: 0,
+    max: 1,
+    step: 0.01
+  });
+
+  materialFolder.addInput(params, "maskSmoothing", {
+    label: "mask",
+    min: 0.001,
+    max: 0.25,
+    step: 0.001
+  });
+
+  materialFolder.addInput(params, "maskSmoothingInset", {
+    label: "mask inset",
     min: 0,
     max: 1,
     step: 0.01
@@ -734,10 +782,19 @@ function rememberLook(id) {
     return;
   }
 
-  look.tint = params.tint;
-  look.refraction = params.refraction;
-  look.softness = params.softness;
-  look.shine = params.shine;
+  look.chromaticAberration = params.chromaticAberration;
+  look.frosting = params.frosting;
+  look.glassOpacity = params.glassOpacity;
+  look.lightStrength = params.lightStrength;
+  look.edgeSmoothness = params.edgeSmoothness;
+  look.ior = params.ior;
+  look.borderRadius = params.borderRadius;
+  look.specularShininess = params.specularShininess;
+  look.thickness = params.thickness;
+  look.tintColor = params.tintColor;
+  look.tintStrength = params.tintStrength;
+  look.maskSmoothing = params.maskSmoothing;
+  look.maskSmoothingInset = params.maskSmoothingInset;
 }
 
 function applyLookPreset(id) {
@@ -747,10 +804,19 @@ function applyLookPreset(id) {
     return;
   }
 
-  params.tint = look.tint;
-  params.refraction = look.refraction;
-  params.softness = look.softness;
-  params.shine = look.shine;
+  params.chromaticAberration = look.chromaticAberration;
+  params.frosting = look.frosting;
+  params.glassOpacity = look.glassOpacity;
+  params.lightStrength = look.lightStrength;
+  params.edgeSmoothness = look.edgeSmoothness;
+  params.ior = look.ior;
+  params.borderRadius = look.borderRadius;
+  params.specularShininess = look.specularShininess;
+  params.thickness = look.thickness;
+  params.tintColor = look.tintColor;
+  params.tintStrength = look.tintStrength;
+  params.maskSmoothing = look.maskSmoothing;
+  params.maskSmoothingInset = look.maskSmoothingInset;
 
   if (pane) {
     pane.refresh();

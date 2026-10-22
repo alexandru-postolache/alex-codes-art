@@ -139,7 +139,7 @@ float roundedRectDistance(vec2 uv, vec2 cardSize, float radiusPx) {
 float getMaskValue(vec2 uv) {
     if (uUseMask) {
         float maskValue = texture2D(uBlurredMaskTexture, uv).r;
-        return smoothstep(0.46, 0.58, maskValue);
+        return floor(maskValue + (1.0 - uMaskSmoothingInset));
     } else {
         float rectDist = roundedRectDistance(uv, uCardSize, uBorderRadius);
         float edgeSmoothnessPx = uEdgeSmoothness / min(uCardSize.x, uCardSize.y);
@@ -202,9 +202,8 @@ vec3 calculateNormal(vec2 uv, float edgeDistance, float thickness, vec2 cardSize
         // We create a normal from the gradient, but then clamp its xy components.
         // This prevents the normal from becoming too steep, which is what causes
         // the refract() function to fail and produce rainbow artifacts at the edges.
-        // Masks use a higher strength so a narrow bevel still bends the backdrop.
-        float strength = 8.0;
-        float max_tilt = 0.65;
+        float strength = 2.0;   // Controls the "height" of the beveled edge
+        float max_tilt = 0.7;   // The maximum steepness allowed. Prevents TIR.
         
         vec3 gradient_normal = vec3(gradient * strength, 1.0);
         gradient_normal.xy = clamp(gradient_normal.xy, -max_tilt, max_tilt);
@@ -254,23 +253,13 @@ float calculateEdgeHighlight(vec2 uv, float edgeDistance, vec2 lightPos, vec2 ca
         lightFromCenter = -lightFromCenter;
     }
     
-    float fromLen = length(fromCenter);
-    float alignment = fromLen > 0.001
-        ? dot(fromCenter / fromLen, normalize(lightFromCenter))
-        : 0.0;
+    float alignment = dot(normalize(fromCenter), normalize(lightFromCenter));
     
-    float isNearEdge;
-    if (uUseMask) {
-        // Thickness stays high across a masked shape, so the rect highlight
-        // was lighting the whole interior. Keep the glint on the bevel.
-        float maskValue = texture2D(uBlurredMaskTexture, uv).r;
-        isNearEdge = smoothstep(0.25, 0.55, maskValue) * (1.0 - smoothstep(0.72, 0.96, maskValue));
-    } else {
-        float edgeInfluence = interpEdgeThickness(edgeDistance, uBorderRadius, cardSize, uv);
-        isNearEdge = smoothstep(0.3, 0.8, edgeInfluence);
-    }
+    float normalizedRadius = uBorderRadius / min(cardSize.x, cardSize.y);
+    float edgeInfluence = interpEdgeThickness(edgeDistance, uBorderRadius, cardSize, uv);
+    float isNearEdge = smoothstep(0.3, 0.8, edgeInfluence);
     
-    float highlightWidth = uUseMask ? 0.62 : 0.15;
+    float highlightWidth = 0.15;
     float highlight = smoothstep(1.0 - highlightWidth, 1.0, alignment) * isNearEdge;
     
     return highlight;
@@ -369,11 +358,9 @@ void main() {
     // Apply tint
     finalColor = mix(finalColor, finalColor * uTintColor, uTintStrength);
 
-    // The WebGL canvas is premultiplied. Alpha has to scale the color,
-    // or the page divides by 0.8 and the glass clips to white.
-    float finalAlpha = mask * (0.97 + uGlassOpacity * 0.03);
+    float finalAlpha = mask * (0.8 + uGlassOpacity * 0.2);
     
-    gl_FragColor = vec4(finalColor * finalAlpha, finalAlpha);
+    gl_FragColor = vec4(finalColor * mask, finalAlpha);
 }`;
   }
 
@@ -892,13 +879,11 @@ void main() {
       frostedTexture
     };
 
-    const density = this.renderDensity || window.devicePixelRatio || 1;
     const sameSize =
       this.p5Instance &&
       this.canvasContainer &&
       this._appliedWidth === config.width &&
-      this._appliedHeight === config.height &&
-      this._appliedDensity === density;
+      this._appliedHeight === config.height;
 
     element.setAttribute("data-html2canvas-ignore", "true");
     element.style.background = "transparent";
@@ -910,7 +895,6 @@ void main() {
 
     this._appliedWidth = config.width;
     this._appliedHeight = config.height;
-    this._appliedDensity = density;
 
     if (!this.plateMode) {
       await new Promise((resolve) => setTimeout(resolve, 1));
@@ -953,7 +937,6 @@ void main() {
     const sketch = (p) => {
       p.setup = () => {
         p.createCanvas(config.width, config.height, p.WEBGL);
-        p.pixelDensity(this.renderDensity || window.devicePixelRatio || 1);
         p.noStroke();
 
         this.shaderProgram = p.createShader(
