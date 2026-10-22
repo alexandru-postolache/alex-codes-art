@@ -9,8 +9,8 @@
 
   The Tweakpane panel edits these settings live.
   "Any count" chooses a valid region count at random.
-  "Look" chooses an outline or a shader material.
-  The choices live in looks.js.
+  "Look" chooses an ink outline or liquid glass.
+  Liquid glass is the RealGlass library. The choices live in looks.js.
 */
 
 const RANDOM_CANVAS = 700;
@@ -46,7 +46,7 @@ const params = {
   strokeWidth: 2.2,
   tint: "#f4f7fb",
   refraction: 0.85,
-  softness: 0.28,
+  softness: 0,
   shine: 0.9,
 
   // Measured relative to one grid cell.
@@ -74,14 +74,11 @@ let summaryMonitor;
 let outlineInput;
 let strokeInput;
 let materialFolder;
-let refractionInput;
 
-let maskLayer;
-let edgeLayer;
-let sceneLayer;
-let sceneSoftLayer;
-let shadeLayer;
-let lookShader;
+let realGlass = null;
+let maskCanvas = null;
+let glassTicket = 0;
+let glassChain = Promise.resolve();
 let activeLookId = "liquidGlass";
 
 const readout = {
@@ -107,6 +104,7 @@ function draw() {
     cssColor(params.backgroundColor);
 
   if (partitions.length === 0) {
+    clearGlass();
     background(cssColor(params.backgroundColor));
     return;
   }
@@ -114,12 +112,20 @@ function draw() {
   const look = polyominoLook(params.look);
 
   if (!look || look.kind === "stroke") {
+    clearGlass();
     background(cssColor(params.backgroundColor));
     paintPartitions(drawingContext, "stroke");
     return;
   }
 
-  renderShaderLook(look);
+  paintBackdrop();
+
+  const ticket = ++glassTicket;
+  glassChain = glassChain
+    .then(() => presentGlass(ticket))
+    .catch((error) => {
+      console.error(error);
+    });
 }
 
 function paintPartitions(target, style) {
@@ -161,83 +167,106 @@ function paintPartitions(target, style) {
   );
 }
 
-function bevelWidth() {
+function paintBackdrop() {
+  paintGlassScene({
+    drawingContext,
+    canvas: drawingContext.canvas
+  });
+}
+
+function clearGlass() {
+  glassTicket += 1;
+
+  if (realGlass) {
+    realGlass.destroy();
+    realGlass = null;
+  }
+}
+
+function maskBlurRadius() {
   const shapePx =
     params.mode === "ALL_3X3"
       ? params.shapeSize
-      : min(width, height) * params.shapeScale;
+      : Math.min(width, height) * params.shapeScale;
 
   const cells = params.mode === "ALL_3X3" ? 3 : gridSize;
-  const cell = shapePx / max(cells, 1);
-  const lip = constrain(cell * 0.28, 12, 18);
+  const cell = shapePx / Math.max(cells, 1);
+  const lip = Math.min(18, Math.max(10, cell * 0.22));
 
-  return lip * pixelDensity();
+  return lip * pixelDensity() * 0.65;
 }
 
-function ensureShadeLayers() {
+function glassOptions() {
+  const refraction = params.refraction;
+
+  return {
+    useMask: true,
+    frosting: params.softness,
+    chromaticAberration: 0.5,
+    glassOpacity: 0,
+    lightStrength: params.shine * (2.175 / 0.9),
+    lightX: 0.7,
+    lightY: 0.3,
+    edgeSmoothness: 2,
+    ior: 1 + refraction * 0.62,
+    borderRadius: 0,
+    specularShininess: 32,
+    thickness: 0.2 + refraction * 0.95,
+    tintColor: colorUnit(params.tint),
+    tintStrength: 0.22,
+    maskSmoothingInset: 0.1
+  };
+}
+
+function renderMaskCanvas() {
+  const source = drawingContext.canvas;
+
+  if (!maskCanvas) {
+    maskCanvas = document.createElement("canvas");
+  }
+
+  maskCanvas.width = source.width;
+  maskCanvas.height = source.height;
+
+  const ctx = maskCanvas.getContext("2d");
   const density = pixelDensity();
 
-  if (
-    maskLayer &&
-    edgeLayer &&
-    sceneLayer &&
-    sceneSoftLayer &&
-    shadeLayer &&
-    lookShader &&
-    maskLayer.width === width &&
-    maskLayer.height === height
-  ) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+  ctx.setTransform(density, 0, 0, density, 0, 0);
+  paintPartitions(ctx, "fill");
+
+  return maskCanvas;
+}
+
+async function presentGlass(ticket) {
+  if (ticket !== glassTicket) {
     return;
   }
 
-  if (maskLayer) {
-    maskLayer.remove();
+  const host = document.getElementById("glass-host");
+
+  if (!host || typeof RealGlass !== "function") {
+    return;
   }
 
-  if (edgeLayer) {
-    edgeLayer.remove();
+  if (!realGlass) {
+    realGlass = new RealGlass();
   }
 
-  if (sceneLayer) {
-    sceneLayer.remove();
+  await realGlass.usePlate(drawingContext.canvas);
+
+  if (ticket !== glassTicket) {
+    return;
   }
 
-  if (sceneSoftLayer) {
-    sceneSoftLayer.remove();
+  realGlass.setMaskCanvas(renderMaskCanvas(), maskBlurRadius());
+  await realGlass.apply(host, glassOptions());
+
+  if (ticket !== glassTicket && realGlass) {
+    realGlass.destroy();
+    realGlass = null;
   }
-
-  if (shadeLayer) {
-    shadeLayer.remove();
-  }
-
-  maskLayer = createGraphics(width, height);
-  edgeLayer = createGraphics(width, height);
-  sceneLayer = createGraphics(width, height);
-  sceneSoftLayer = createGraphics(width, height);
-  maskLayer.pixelDensity(density);
-  edgeLayer.pixelDensity(density);
-  sceneLayer.pixelDensity(density);
-  sceneSoftLayer.pixelDensity(density);
-
-  shadeLayer = createGraphics(width, height, WEBGL);
-  shadeLayer.pixelDensity(density);
-
-  lookShader = shadeLayer.createShader(
-    POLYOMINO_LOOK_VERTEX,
-    POLYOMINO_LOOK_FRAGMENT
-  );
-}
-
-function blurGraphics(source, target, radiusPx) {
-  const ctx = target.drawingContext;
-  const bufferWidth = source.canvas.width;
-  const bufferHeight = source.canvas.height;
-
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, bufferWidth, bufferHeight);
-  ctx.filter = `blur(${Math.max(radiusPx, 0.5)}px)`;
-  ctx.drawImage(source.canvas, 0, 0);
-  ctx.filter = "none";
 }
 
 function paintGlassScene(layer) {
@@ -283,59 +312,6 @@ function paintGlassScene(layer) {
     );
     ctx.fill();
   }
-}
-
-function renderShaderLook(look) {
-  ensureShadeLayers();
-
-  maskLayer.background(0);
-  paintPartitions(maskLayer.drawingContext, "fill");
-  paintGlassScene(sceneLayer);
-
-  const bevel = bevelWidth();
-  const edgeBlur = look.mode < 0.5
-    ? Math.max(6, bevel * 0.42)
-    : bevel * 0.85;
-  const frost = look.mode < 0.5
-    ? Math.max(1.5, bevel * params.softness * 0.2)
-    : bevel * (1.4 + params.softness * 1.8);
-
-  blurGraphics(maskLayer, edgeLayer, edgeBlur);
-  blurGraphics(sceneLayer, sceneSoftLayer, frost);
-
-  shadeLayer.shader(lookShader);
-  lookShader.setUniform("uMask", maskLayer);
-  lookShader.setUniform("uEdge", edgeLayer);
-  lookShader.setUniform("uScene", sceneLayer);
-  lookShader.setUniform("uSceneSoft", sceneSoftLayer);
-  lookShader.setUniform("uResolution", [
-    width * pixelDensity(),
-    height * pixelDensity()
-  ]);
-  lookShader.setUniform(
-    "uPaper",
-    colorUnit(params.backgroundColor)
-  );
-  lookShader.setUniform(
-    "uGlassTint",
-    colorUnit(params.tint)
-  );
-  lookShader.setUniform(
-    "uRefraction",
-    params.refraction
-  );
-  lookShader.setUniform("uSoftness", params.softness);
-  lookShader.setUniform("uShine", params.shine);
-  lookShader.setUniform("uMode", look.mode);
-  lookShader.setUniform("uSpread", bevel);
-
-  shadeLayer.clear();
-  shadeLayer.noStroke();
-  shadeLayer.rectMode(CENTER);
-  shadeLayer.rect(0, 0, width, height);
-
-  background(cssColor(params.backgroundColor));
-  image(shadeLayer, 0, 0, width, height);
 }
 
 function colorUnit(value) {
@@ -406,7 +382,29 @@ function savePartition() {
       ? "partitions-3x3"
       : `partition-${gridSize}x${gridSize}`;
 
-  saveCanvas(name, "png");
+  const overlay =
+    realGlass &&
+    realGlass.p5Instance &&
+    realGlass.p5Instance.canvas;
+
+  if (!overlay) {
+    saveCanvas(name, "png");
+    return;
+  }
+
+  const source = drawingContext.canvas;
+  const out = document.createElement("canvas");
+  out.width = source.width;
+  out.height = source.height;
+
+  const ctx = out.getContext("2d");
+  ctx.drawImage(source, 0, 0);
+  ctx.drawImage(overlay, 0, 0, out.width, out.height);
+
+  const link = document.createElement("a");
+  link.download = `${name}.png`;
+  link.href = out.toDataURL("image/png");
+  link.click();
 }
 
 function randomizePartition() {
@@ -594,7 +592,7 @@ function setupPane() {
     label: "tint"
   });
 
-  refractionInput = materialFolder.addInput(
+  materialFolder.addInput(
     params,
     "refraction",
     {
@@ -772,11 +770,6 @@ function updateLookVisibility() {
 
   if (materialFolder) {
     materialFolder.hidden = !shaderLook;
-  }
-
-  if (refractionInput) {
-    refractionInput.hidden =
-      !shaderLook || look.id === "enamel";
   }
 }
 
