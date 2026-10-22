@@ -90,6 +90,9 @@ let maskCanvas = null;
 let glassTicket = 0;
 let glassChain = Promise.resolve();
 let activeLookId = "liquidGlass";
+let panX = 0;
+let panY = 0;
+let shapeDrag = null;
 
 const readout = {
   summary: ""
@@ -102,6 +105,7 @@ function setup() {
   );
 
   canvas.parent("sketch");
+  canvas.style("cursor", "grab");
   pixelDensity(2);
 
   noLoop();
@@ -147,12 +151,14 @@ function paintPartitions(target, style) {
       const centerX =
         params.pageMargin +
         col * params.tileSize +
-        params.tileSize / 2;
+        params.tileSize / 2 +
+        panX;
 
       const centerY =
         params.pageMargin +
         row * params.tileSize +
-        params.tileSize / 2;
+        params.tileSize / 2 +
+        panY;
 
       drawPartition(
         partitions[i],
@@ -169,8 +175,8 @@ function paintPartitions(target, style) {
 
   drawPartition(
     partitions[0],
-    width / 2,
-    height / 2,
+    width / 2 + panX,
+    height / 2 + panY,
     min(width, height) * params.shapeScale,
     style,
     target
@@ -304,6 +310,55 @@ function paintGlassScene(layer) {
   }
 }
 
+
+function pointerOnCanvas() {
+  return (
+    mouseX >= 0 &&
+    mouseY >= 0 &&
+    mouseX <= width &&
+    mouseY <= height
+  );
+}
+
+function mousePressed() {
+  if (!pointerOnCanvas()) {
+    return;
+  }
+
+  shapeDrag = {
+    x: mouseX,
+    y: mouseY
+  };
+
+  const host = document.getElementById("sketch");
+
+  if (host) {
+    host.classList.add("dragging");
+  }
+}
+
+function mouseDragged() {
+  if (!shapeDrag) {
+    return;
+  }
+
+  panX += mouseX - shapeDrag.x;
+  panY += mouseY - shapeDrag.y;
+  shapeDrag.x = mouseX;
+  shapeDrag.y = mouseY;
+  draw();
+  return false;
+}
+
+function mouseReleased() {
+  shapeDrag = null;
+
+  const host = document.getElementById("sketch");
+
+  if (host) {
+    host.classList.remove("dragging");
+  }
+}
 
 function keyPressed() {
   const target = document.activeElement;
