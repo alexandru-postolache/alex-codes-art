@@ -11,10 +11,19 @@ const POLYOMINO_LOOKS = [
     id: "liquidGlass",
     label: "Liquid glass",
     kind: "shader",
-    tint: "#f4f7fb",
-    refraction: 0.85,
-    softness: 0,
-    shine: 0.9
+    chromaticAberration: 50,
+    frosting: 0,
+    glassOpacity: 0,
+    lightStrength: 0.39,
+    edgeSmoothness: 10,
+    ior: 1.52,
+    borderRadius: 50,
+    specularShininess: 2,
+    thickness: 2.1,
+    tintColor: "#438c98",
+    tintStrength: 0.5,
+    maskSmoothing: 0.15,
+    maskSmoothingInset: 0.1
   },
   {
     id: "outline",
