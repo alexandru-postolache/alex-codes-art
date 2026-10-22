@@ -697,15 +697,24 @@ void main() {
       return;
     }
 
-    if (image.isModified && image.isModified()) {
-      const uniform = this.shaderProgram.uniforms[name];
+    const uniform = this.shaderProgram.uniforms[name];
+    const modified = Boolean(image.isModified && image.isModified());
 
-      if (uniform) {
-        uniform._cachedData = undefined;
-      }
+    if (modified && uniform) {
+      uniform._cachedData = undefined;
     }
 
     this.shaderProgram.setUniform(name, image);
+
+    if (!modified || !this.p5Instance) {
+      return;
+    }
+
+    const texture = this.p5Instance._renderer.textures.get(image);
+
+    if (texture) {
+      texture.update();
+    }
   }
 
   _frostedPlate(parameters) {
@@ -793,23 +802,32 @@ void main() {
 
     if (parameters.maskImage || parameters.maskElement) {
       try {
-        if (parameters.maskElement) {
-          this.maskTexture = await this.loadMaskFromElement(
-            parameters.maskElement
-          );
-        } else if (parameters.maskImage) {
-          this.maskTexture = await this.loadMaskFromImage(parameters.maskImage);
-        }
+        const blurRadius = parameters.maskSmoothing
+          ? parameters.maskSmoothing * 20
+          : 10;
 
-        if (this.maskTexture) {
-          const blurRadius = parameters.maskSmoothing
-            ? parameters.maskSmoothing * 20
-            : 10;
-          this.blurredMaskTexture = await this.createBlurredMask(
-            this.maskTexture,
-            blurRadius
-          );
-          useMask = true;
+        if (
+          this.plateMode &&
+          parameters.maskImage instanceof HTMLCanvasElement
+        ) {
+          this.setMaskCanvas(parameters.maskImage, blurRadius);
+          useMask = Boolean(this.maskTexture && this.blurredMaskTexture);
+        } else {
+          if (parameters.maskElement) {
+            this.maskTexture = await this.loadMaskFromElement(
+              parameters.maskElement
+            );
+          } else if (parameters.maskImage) {
+            this.maskTexture = await this.loadMaskFromImage(parameters.maskImage);
+          }
+
+          if (this.maskTexture) {
+            this.blurredMaskTexture = await this.createBlurredMask(
+              this.maskTexture,
+              blurRadius
+            );
+            useMask = true;
+          }
         }
       } catch (error) {
         console.error("Failed to load mask:", error);
@@ -947,6 +965,8 @@ void main() {
 
       p.draw = () => {
         const view = this.view;
+
+        p.clear();
 
         if (
           !view ||
