@@ -1511,9 +1511,10 @@ function distanceBetween(a, b) {
     1. Generate a random spanning tree over the grid.
     2. Remove regionCount - 1 edges.
     3. Find the resulting connected components.
-    4. Keep the result when the region sizes match the request.
-       Equal sizes means every region covers the same number of cells.
-       Otherwise every region has a different size.
+    4. Keep the result when every region has a different size.
+
+  Equal sizes grow each region from a random seed until every
+  region covers the same number of cells.
 */
 
 function generateRandomPartition(
@@ -1565,6 +1566,10 @@ function generateRandomPartition(
     );
   }
 
+  if (equalSizes) {
+    return growEqualPartition(size, regionCount);
+  }
+
   const maximumAttempts = 30000;
 
   for (
@@ -1588,13 +1593,120 @@ function generateRandomPartition(
       remainingEdges
     );
 
-    const sizesMatch = equalSizes
-      ? hasEqualRegionSizes(grid)
-      : hasUnequalRegionSizes(grid);
-
     if (
       getRegionLabels(grid).length === regionCount &&
-      sizesMatch
+      hasUnequalRegionSizes(grid)
+    ) {
+      return normalizeLabels(grid);
+    }
+  }
+
+  throw new Error(
+    "Could not generate a valid random partition. " +
+    "Try another region count or grid size."
+  );
+}
+
+function cellNeighbours(cell, size) {
+  const x = cell % size;
+  const y = floor(cell / size);
+  const neighbours = [];
+
+  if (x > 0) {
+    neighbours.push(cell - 1);
+  }
+
+  if (x < size - 1) {
+    neighbours.push(cell + 1);
+  }
+
+  if (y > 0) {
+    neighbours.push(cell - size);
+  }
+
+  if (y < size - 1) {
+    neighbours.push(cell + size);
+  }
+
+  return neighbours;
+}
+
+function growEqualPartition(size, regionCount) {
+  const cellCount = size * size;
+  const target = cellCount / regionCount;
+
+  if (target === 1) {
+    return normalizeLabels(
+      Array.from({ length: cellCount }, (_, index) => index)
+    );
+  }
+
+  for (let attempt = 0; attempt < 4000; attempt++) {
+    const grid = new Array(cellCount).fill(-1);
+    const counts = new Array(regionCount).fill(0);
+    const frontiers = [];
+    let placed = 0;
+
+    for (let region = 0; region < regionCount; region++) {
+      let seed = floor(random(cellCount));
+      let guard = 0;
+
+      while (grid[seed] !== -1 && guard < cellCount) {
+        seed = (seed + 1) % cellCount;
+        guard += 1;
+      }
+
+      grid[seed] = region;
+      counts[region] = 1;
+      placed += 1;
+      frontiers.push(
+        cellNeighbours(seed, size).filter((cell) => grid[cell] === -1)
+      );
+    }
+
+    let failed = false;
+
+    while (placed < cellCount && !failed) {
+      const open = [];
+
+      for (let region = 0; region < regionCount; region++) {
+        if (counts[region] < target && frontiers[region].length > 0) {
+          open.push(region);
+        }
+      }
+
+      if (open.length === 0) {
+        failed = true;
+        break;
+      }
+
+      const region = open[floor(random(open.length))];
+      const frontier = frontiers[region];
+      const cell = frontier.splice(
+        floor(random(frontier.length)),
+        1
+      )[0];
+
+      if (grid[cell] !== -1) {
+        continue;
+      }
+
+      grid[cell] = region;
+      counts[region] += 1;
+      placed += 1;
+
+      const nextCells = cellNeighbours(cell, size);
+
+      for (let i = 0; i < nextCells.length; i++) {
+        if (grid[nextCells[i]] === -1) {
+          frontier.push(nextCells[i]);
+        }
+      }
+    }
+
+    if (
+      !failed &&
+      counts.every((count) => count === target)
     ) {
       return normalizeLabels(grid);
     }
