@@ -119,10 +119,12 @@ void main() {
   vec2 texel = 1.0 / uResolution;
 
   float mask = texture2D(uMask, clipUv(uv)).r;
-  float cover = smoothstep(0.35, 0.75, mask);
+  float cover = smoothstep(0.15, 0.5, mask);
 
   float field = sampleEdge(uv);
-  float distFromEdge = 1.0 - smoothstep(0.5, 0.98, field);
+  // The blur is about 0.5 on the outline and 1 inside.
+  // This maps only that inner half, so the lens sits on the shape.
+  float distFromEdge = 1.0 - smoothstep(0.5, 0.94, field);
   distFromEdge = clamp(distFromEdge, 0.0, 1.0);
 
   float left = sampleEdge(uv - vec2(texel.x * 2.0, 0.0));
@@ -148,10 +150,10 @@ void main() {
     refractAmount = 0.0;
   }
 
-  float refractPx = curve * refractAmount * max(uSpread, 8.0) * 1.65;
+  float refractPx = curve * refractAmount * 64.0;
   vec2 bent = pixel + dir * refractPx;
 
-  vec2 shift = dir * distFromEdge * refractAmount * 8.0;
+  vec2 shift = dir * distFromEdge * refractAmount * 4.0;
 
   vec3 sharpColor = vec3(
     sampleScene(uScene, bent - shift).r,
@@ -164,11 +166,12 @@ void main() {
     sampleScene(uSceneSoft, bent + shift).b
   );
 
-  float frost = mix(0.16, 0.46, uSoftness);
-  if (uMode > 0.5) {
-    frost = mix(0.8, 0.97, uSoftness);
+  float frost = 0.0;
+  if (uMode < 0.5) {
+    frost = uSoftness * 0.12 * (1.0 - smoothstep(0.0, 0.2, distFromEdge));
+  } else if (uMode < 1.5) {
+    frost = mix(0.86, 0.98, uSoftness);
   }
-  frost *= mix(0.35, 1.0, 1.0 - distFromEdge);
 
   vec3 glass = mix(sharpColor, softColor, frost);
   glass = mix(glass, glass * uGlassTint, 0.2);
@@ -185,14 +188,14 @@ void main() {
 
   vec2 lightFlat = normalize(vec2(-0.42, -0.82));
   float lit = clamp(dot(-dir, lightFlat), 0.0, 1.0);
-  float fresnel = pow(distFromEdge, 1.7);
-  float ring = smoothstep(0.55, 0.92, distFromEdge);
+  float fresnel = pow(distFromEdge, uMode < 0.5 ? 8.0 : 2.2);
+  float ring = smoothstep(0.9, 1.0, distFromEdge);
 
-  float shineScale = uMode > 1.5 ? 0.45 : 1.0;
-  glass += vec3(1.0) * fresnel * lit * uShine * 0.42 * shineScale;
-  glass += vec3(1.0) * ring * lit * uShine * 0.34 * shineScale;
-  glass += vec3(0.78, 0.88, 1.0) * fresnel * (1.0 - lit) * uShine * 0.1;
-  glass *= 1.0 - fresnel * (1.0 - lit) * 0.2 * shineScale;
+  float shineScale = uMode > 1.5 ? 0.4 : 1.0;
+  glass += vec3(1.0) * fresnel * lit * uShine * 0.62 * shineScale;
+  glass += vec3(1.0) * ring * uShine * 0.9 * shineScale;
+  glass += vec3(0.78, 0.88, 1.0) * ring * (1.0 - lit) * uShine * 0.2;
+  glass *= 1.0 - pow(distFromEdge, 4.0) * (1.0 - lit) * 0.4 * shineScale;
 
   vec2 shadowPixel = pixel - vec2(uSpread * 0.22, uSpread * 0.36);
   float shadowField = sampleEdge(shadowPixel / uResolution);

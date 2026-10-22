@@ -169,7 +169,7 @@ function bevelWidth() {
 
   const cells = params.mode === "ALL_3X3" ? 3 : gridSize;
   const cell = shapePx / max(cells, 1);
-  const lip = constrain(cell * 0.38, 14, 26);
+  const lip = constrain(cell * 0.28, 12, 18);
 
   return lip * pixelDensity();
 }
@@ -293,11 +293,14 @@ function renderShaderLook(look) {
   paintGlassScene(sceneLayer);
 
   const bevel = bevelWidth();
+  const edgeBlur = look.mode < 0.5
+    ? Math.max(6, bevel * 0.42)
+    : bevel * 0.85;
   const frost = look.mode < 0.5
-    ? Math.max(8, bevel * (0.22 + params.softness * 0.35))
-    : bevel * (0.9 + params.softness * 1.4);
+    ? Math.max(1.5, bevel * params.softness * 0.2)
+    : bevel * (1.4 + params.softness * 1.8);
 
-  blurGraphics(maskLayer, edgeLayer, bevel * 0.55);
+  blurGraphics(maskLayer, edgeLayer, edgeBlur);
   blurGraphics(sceneLayer, sceneSoftLayer, frost);
 
   shadeLayer.shader(lookShader);
