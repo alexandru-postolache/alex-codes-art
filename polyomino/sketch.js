@@ -272,6 +272,7 @@ function paintGlassScene(layer) {
   const minSide = Math.min(bufferWidth, bufferHeight);
   const paper = cssColor(params.backgroundColor);
 
+  ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
 
   const gradient = ctx.createLinearGradient(
@@ -308,6 +309,8 @@ function paintGlassScene(layer) {
     );
     ctx.fill();
   }
+
+  ctx.restore();
 }
 
 
