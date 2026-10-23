@@ -6,12 +6,12 @@
 
   "RANDOM_ONE"
       Generate random partitions at the chosen grid size.
-      x and y choose how many are drawn across and down.
+      Columns and rows choose how many are drawn across and down.
 
   The Tweakpane panel edits these settings live.
   "Any count" chooses a valid region count at random.
-  "Equal sizes" lets every region cover the same number of cells.
-  Otherwise every region has a different size.
+  "Allow equals" keeps a partition even when two regions
+  have the same size. Otherwise every region has a different size.
 */
 
 const RANDOM_CANVAS = 700;
@@ -26,18 +26,18 @@ const params = {
 
   /*
     anyCount chooses a valid region count at random.
-    Otherwise regionCount must allow distinct positive sizes.
+    Otherwise regionCount is used.
   */
   anyCount: true,
   regionCount: 4,
 
-  // Checked: every region has the same size.
-  // Unchecked: every region has a different size.
-  equalSizes: false,
+  // Checked: regions may share a size.
+  // Unchecked: every region must have a different size.
+  allowEqualSizes: false,
 
   // How many random partitions to draw, across and down.
-  countX: 1,
-  countY: 1,
+  columnCount: 1,
+  rowCount: 1,
 
   // Same seed reproduces the same random partition.
   seed: Math.floor(Math.random() * 1000000),
@@ -150,7 +150,7 @@ function paintPartitions(target, style) {
 function usesSheet() {
   return (
     params.mode === "ALL_3X3" ||
-    params.countX * params.countY > 1
+    params.columnCount * params.rowCount > 1
   );
 }
 
@@ -159,7 +159,7 @@ function sheetColumns() {
     return params.columns;
   }
 
-  return params.countX;
+  return params.columnCount;
 }
 
 function keyPressed() {
@@ -209,34 +209,9 @@ function activeGridSize() {
 function maximumRegionCount(size) {
   const cellCount = size * size;
 
-  if (params.equalSizes) {
-    return cellCount;
-  }
-
   return floor(
     (sqrt(8 * cellCount + 1) - 1) / 2
   );
-}
-
-function nearestEqualRegionCount(size, count) {
-  const cellCount = size * size;
-  let chosen = cellCount;
-  let chosenDistance = cellCount;
-
-  for (let regions = 2; regions <= cellCount; regions++) {
-    if (cellCount % regions !== 0) {
-      continue;
-    }
-
-    const distance = Math.abs(regions - count);
-
-    if (distance < chosenDistance) {
-      chosen = regions;
-      chosenDistance = distance;
-    }
-  }
-
-  return chosen;
 }
 
 function savePartition() {
@@ -244,9 +219,9 @@ function savePartition() {
 
   if (params.mode === "ALL_3X3") {
     name = "partitions-3x3";
-  } else if (params.countX * params.countY > 1) {
+  } else if (params.columnCount * params.rowCount > 1) {
     name =
-      `partitions-${params.countX}x${params.countY}`;
+      `partitions-${params.columnCount}x${params.rowCount}`;
   }
 
   saveCanvas(name, "png");
@@ -286,10 +261,10 @@ const STRUCTURAL_KEYS = new Set([
   "mode",
   "gridSize",
   "anyCount",
-  "equalSizes",
+  "allowEqualSizes",
   "regionCount",
-  "countX",
-  "countY",
+  "columnCount",
+  "rowCount",
   "seed"
 ]);
 
@@ -321,35 +296,35 @@ function setupPane() {
     step: 1
   });
 
-  generationFolder.addInput(params, "anyCount", {
+  generationFolder.addInput(params, "columnCount", {
+    label: "columns",
+    min: 1,
+    max: 8,
+    step: 1
+  });
+
+  generationFolder.addInput(params, "rowCount", {
+    label: "rows",
+    min: 1,
+    max: 8,
+    step: 1
+  });
+
+  const regionFolder = generationFolder.addFolder({
+    title: "Regions"
+  });
+
+  regionFolder.addInput(params, "anyCount", {
     label: "any count"
   });
 
-  generationFolder.addInput(params, "equalSizes", {
-    label: "equal sizes"
-  });
-
-  generationFolder.addInput(params, "countX", {
-    label: "x",
-    min: 1,
-    max: 8,
-    step: 1
-  });
-
-  generationFolder.addInput(params, "countY", {
-    label: "y",
-    min: 1,
-    max: 8,
-    step: 1
-  });
-
-  regionInput = generationFolder.addInput(
+  regionInput = regionFolder.addInput(
     params,
     "regionCount",
     {
       label: "regions",
       min: 2,
-      max: MAX_GRID_SIZE * MAX_GRID_SIZE,
+      max: maximumRegionCount(MAX_GRID_SIZE),
       step: 1
     }
   );
@@ -357,6 +332,10 @@ function setupPane() {
   regionInput.maxValue = maximumRegionCount(
     params.gridSize
   );
+
+  generationFolder.addInput(params, "allowEqualSizes", {
+    label: "allow equals"
+  });
 
   seedInput = generationFolder.addInput(
     params,
@@ -483,10 +462,7 @@ function setupPane() {
       return;
     }
 
-    if (
-      presetKey === "gridSize" ||
-      presetKey === "equalSizes"
-    ) {
+    if (presetKey === "gridSize") {
       clampRegionCount();
     }
 
@@ -506,14 +482,7 @@ function setupPane() {
 }
 
 function clampRegionCount() {
-  let limit = maximumRegionCount(params.gridSize);
-
-  if (params.equalSizes && !params.anyCount) {
-    params.regionCount = nearestEqualRegionCount(
-      params.gridSize,
-      params.regionCount
-    );
-  }
+  const limit = maximumRegionCount(params.gridSize);
 
   if (regionInput) {
     regionInput.maxValue = limit;
@@ -540,7 +509,7 @@ function updateRegionCountAvailability() {
 
 function updatePaneVisibility() {
   const randomMode = params.mode === "RANDOM_ONE";
-  const sheet = randomMode && params.countX * params.countY > 1;
+  const sheet = randomMode && params.columnCount * params.rowCount > 1;
 
   if (generationFolder) {
     generationFolder.hidden = !randomMode;
@@ -562,7 +531,7 @@ function updatePaneVisibility() {
 
   if (summaryMonitor) {
     summaryMonitor.label =
-      randomMode && params.countX * params.countY === 1
+      randomMode && params.columnCount * params.rowCount === 1
         ? "sizes"
         : "count";
   }
@@ -589,7 +558,7 @@ function rebuild(regenerate) {
       `${partitions.length} unique partitions`;
   } else if (
     regenerate ||
-    partitions.length !== params.countX * params.countY ||
+    partitions.length !== params.columnCount * params.rowCount ||
     partitions[0].length !== nextGridSize * nextGridSize
   ) {
     const previousGridSize = gridSize;
@@ -602,7 +571,7 @@ function rebuild(regenerate) {
         ? null
         : params.regionCount;
 
-      const total = params.countX * params.countY;
+      const total = params.columnCount * params.rowCount;
       const next = [];
 
       for (let index = 0; index < total; index++) {
@@ -610,7 +579,7 @@ function rebuild(regenerate) {
           generateRandomPartition(
             gridSize,
             requested,
-            params.equalSizes,
+            params.allowEqualSizes,
             params.seed + index * 100003
           )
         );
@@ -781,22 +750,6 @@ function hasUnequalRegionSizes(grid) {
   const uniqueSizes = new Set(sizes);
 
   return uniqueSizes.size === sizes.length;
-}
-
-function hasEqualRegionSizes(grid) {
-  const sizes = getRegionSizes(grid);
-
-  if (sizes.length < 2) {
-    return false;
-  }
-
-  for (let i = 1; i < sizes.length; i++) {
-    if (sizes[i] !== sizes[0]) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 function allRegionsConnected(grid) {
@@ -1511,24 +1464,22 @@ function distanceBetween(a, b) {
     1. Generate a random spanning tree over the grid.
     2. Remove regionCount - 1 edges.
     3. Find the resulting connected components.
-    4. Keep the result when every region has a different size.
-
-  Equal sizes grow each region from a random seed until every
-  region covers the same number of cells.
+    4. When allowEqualSizes is off, keep the result only if
+       every region has a different size.
 */
 
 function generateRandomPartition(
   size,
   requestedRegionCount,
-  equalSizes,
+  allowEqualSizes,
   seed
 ) {
   randomSeed(seed);
 
   const cellCount = size * size;
-  const maximumRegions = equalSizes
-    ? cellCount
-    : floor((sqrt(8 * cellCount + 1) - 1) / 2);
+  const maximumRegions = floor(
+    (sqrt(8 * cellCount + 1) - 1) / 2
+  );
 
   if (maximumRegions < 2) {
     throw new Error(
@@ -1539,35 +1490,18 @@ function generateRandomPartition(
   let regionCount = requestedRegionCount;
 
   if (regionCount === null) {
-    if (equalSizes) {
-      const choices = [];
-
-      for (let regions = 2; regions <= cellCount; regions++) {
-        if (cellCount % regions === 0) {
-          choices.push(regions);
-        }
-      }
-
-      regionCount = choices[floor(random(choices.length))];
-    } else {
-      regionCount = floor(random(2, maximumRegions + 1));
-    }
+    regionCount = floor(random(2, maximumRegions + 1));
   }
 
   if (
     regionCount < 2 ||
-    regionCount > maximumRegions ||
-    (equalSizes && cellCount % regionCount !== 0)
+    regionCount > maximumRegions
   ) {
     throw new Error(
       `Invalid region count ${regionCount}. ` +
       `For a ${size}×${size} grid, choose between ` +
       `2 and ${maximumRegions}.`
     );
-  }
-
-  if (equalSizes) {
-    return growEqualPartition(size, regionCount);
   }
 
   const maximumAttempts = 30000;
@@ -1593,120 +1527,12 @@ function generateRandomPartition(
       remainingEdges
     );
 
+    const sizesFit =
+      allowEqualSizes || hasUnequalRegionSizes(grid);
+
     if (
       getRegionLabels(grid).length === regionCount &&
-      hasUnequalRegionSizes(grid)
-    ) {
-      return normalizeLabels(grid);
-    }
-  }
-
-  throw new Error(
-    "Could not generate a valid random partition. " +
-    "Try another region count or grid size."
-  );
-}
-
-function cellNeighbours(cell, size) {
-  const x = cell % size;
-  const y = floor(cell / size);
-  const neighbours = [];
-
-  if (x > 0) {
-    neighbours.push(cell - 1);
-  }
-
-  if (x < size - 1) {
-    neighbours.push(cell + 1);
-  }
-
-  if (y > 0) {
-    neighbours.push(cell - size);
-  }
-
-  if (y < size - 1) {
-    neighbours.push(cell + size);
-  }
-
-  return neighbours;
-}
-
-function growEqualPartition(size, regionCount) {
-  const cellCount = size * size;
-  const target = cellCount / regionCount;
-
-  if (target === 1) {
-    return normalizeLabels(
-      Array.from({ length: cellCount }, (_, index) => index)
-    );
-  }
-
-  for (let attempt = 0; attempt < 4000; attempt++) {
-    const grid = new Array(cellCount).fill(-1);
-    const counts = new Array(regionCount).fill(0);
-    const frontiers = [];
-    let placed = 0;
-
-    for (let region = 0; region < regionCount; region++) {
-      let seed = floor(random(cellCount));
-      let guard = 0;
-
-      while (grid[seed] !== -1 && guard < cellCount) {
-        seed = (seed + 1) % cellCount;
-        guard += 1;
-      }
-
-      grid[seed] = region;
-      counts[region] = 1;
-      placed += 1;
-      frontiers.push(
-        cellNeighbours(seed, size).filter((cell) => grid[cell] === -1)
-      );
-    }
-
-    let failed = false;
-
-    while (placed < cellCount && !failed) {
-      const open = [];
-
-      for (let region = 0; region < regionCount; region++) {
-        if (counts[region] < target && frontiers[region].length > 0) {
-          open.push(region);
-        }
-      }
-
-      if (open.length === 0) {
-        failed = true;
-        break;
-      }
-
-      const region = open[floor(random(open.length))];
-      const frontier = frontiers[region];
-      const cell = frontier.splice(
-        floor(random(frontier.length)),
-        1
-      )[0];
-
-      if (grid[cell] !== -1) {
-        continue;
-      }
-
-      grid[cell] = region;
-      counts[region] += 1;
-      placed += 1;
-
-      const nextCells = cellNeighbours(cell, size);
-
-      for (let i = 0; i < nextCells.length; i++) {
-        if (grid[nextCells[i]] === -1) {
-          frontier.push(nextCells[i]);
-        }
-      }
-    }
-
-    if (
-      !failed &&
-      counts.every((count) => count === target)
+      sizesFit
     ) {
       return normalizeLabels(grid);
     }
