@@ -20,20 +20,6 @@ canvas {
   line-height: 0;
 }
 
-#sketch canvas {
-  cursor: grab;
-}
-
-#sketch.dragging canvas {
-  cursor: grabbing;
-}
-
-#glass-host {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
 #controls {
   position: sticky;
   top: 16px;
