@@ -12,6 +12,9 @@
   "Any count" chooses a valid region count at random.
   "Allow equals" keeps a partition even when two regions
   have the same size. Otherwise every region has a different size.
+
+  The canvas fills the browser window. Partitions are centered
+  in the space beside the controls. A sheet is scaled to fit there.
 */
 
 const RANDOM_CANVAS = 700;
@@ -81,8 +84,8 @@ const readout = {
 
 function setup() {
   const canvas = createCanvas(
-    RANDOM_CANVAS,
-    RANDOM_CANVAS
+    windowWidth,
+    windowHeight
   );
 
   canvas.parent("sketch");
@@ -107,44 +110,104 @@ function draw() {
 }
 
 function paintPartitions(target, style) {
+  const frame = contentFrame();
+
   if (usesSheet()) {
-    const columns = sheetColumns();
+    const placement = sheetPlacement(frame);
+    const columns = placement.columns;
 
     for (let i = 0; i < partitions.length; i++) {
       const col = i % columns;
       const row = floor(i / columns);
 
       const centerX =
-        params.pageMargin +
-        col * params.tileSize +
-        params.tileSize / 2;
+        placement.originX +
+        col * placement.tile +
+        placement.tile / 2;
 
       const centerY =
-        params.pageMargin +
-        row * params.tileSize +
-        params.tileSize / 2;
+        placement.originY +
+        row * placement.tile +
+        placement.tile / 2;
 
       drawPartition(
         partitions[i],
         centerX,
         centerY,
-        params.shapeSize,
+        placement.shape,
         style,
-        target
+        target,
+        placement.pixelScale
       );
     }
 
     return;
   }
 
+  const shape =
+    min(frame.width, frame.height) * params.shapeScale;
+
+  const reference = RANDOM_CANVAS * params.shapeScale;
+  const pixelScale = reference === 0 ? 1 : shape / reference;
+
   drawPartition(
     partitions[0],
-    width / 2,
-    height / 2,
-    min(width, height) * params.shapeScale,
+    frame.x + frame.width / 2,
+    frame.y + frame.height / 2,
+    shape,
     style,
-    target
+    target,
+    pixelScale
   );
+}
+
+// The open area beside the controls. The canvas itself is the full window.
+function contentFrame() {
+  const panel = document.getElementById("controls");
+  const reserved = panel ? panel.offsetWidth + 32 : 0;
+
+  return {
+    x: 0,
+    y: 0,
+    width: max(1, width - reserved),
+    height: max(1, height)
+  };
+}
+
+// Fit the tile block to the open area and center it.
+function sheetPlacement(frame) {
+  const columns = max(1, sheetColumns());
+  const rows = max(
+    1,
+    ceil(partitions.length / columns)
+  );
+
+  const margin = params.pageMargin;
+  const availW = max(1, frame.width - margin * 2);
+  const availH = max(1, frame.height - margin * 2);
+  const naturalW = columns * params.tileSize;
+  const naturalH = rows * params.tileSize;
+  const fit = min(
+    availW / naturalW,
+    availH / naturalH
+  );
+
+  const tile = params.tileSize * fit;
+  const shape = params.shapeSize * fit;
+  const drawnW = columns * tile;
+  const drawnH = rows * tile;
+
+  return {
+    columns,
+    rows,
+    originX: frame.x + (frame.width - drawnW) / 2,
+    originY: frame.y + (frame.height - drawnH) / 2,
+    tile,
+    shape,
+    pixelScale: params.shapeSize === 0
+      ? 1
+      : shape / params.shapeSize
+  };
 }
 
 function usesSheet() {
@@ -452,13 +515,13 @@ function setupPane() {
       return;
     }
 
-    if (DRAWING_KEYS.has(presetKey)) {
+    // Drawing and layout values repaint while the pointer is down.
+    // Generation values do too, so a sheet does not wait for release.
+    if (
+      DRAWING_KEYS.has(presetKey) ||
+      LAYOUT_KEYS.has(presetKey)
+    ) {
       draw();
-      return;
-    }
-
-    // Sliders apply structural changes on release.
-    if (event.last === false) {
       return;
     }
 
@@ -472,11 +535,6 @@ function setupPane() {
 
     if (STRUCTURAL_KEYS.has(presetKey)) {
       rebuild(true);
-      return;
-    }
-
-    if (LAYOUT_KEYS.has(presetKey)) {
-      fitCanvas();
     }
   });
 }
@@ -624,23 +682,19 @@ function partitionSummary(grids) {
 }
 
 function fitCanvas() {
-  let nextWidth = RANDOM_CANVAS;
-  let nextHeight = RANDOM_CANVAS;
+  const nextWidth = windowWidth;
+  const nextHeight = windowHeight;
 
-  if (usesSheet()) {
-    const columns = sheetColumns();
-    const rows = ceil(partitions.length / columns);
-
-    nextWidth =
-      params.pageMargin * 2 +
-      columns * params.tileSize;
-
-    nextHeight =
-      params.pageMargin * 2 +
-      rows * params.tileSize;
+  if (width !== nextWidth || height !== nextHeight) {
+    resizeCanvas(nextWidth, nextHeight);
+    return;
   }
 
-  resizeCanvas(nextWidth, nextHeight);
+  draw();
+}
+
+function windowResized() {
+  fitCanvas();
 }
 
 function cssColor(value) {
@@ -939,24 +993,19 @@ function drawPartition(
   centerY,
   size,
   style,
-  ctx
+  ctx,
+  pixelScale
 ) {
   const regions = getRegionLabels(grid);
 
   const originX = centerX - size / 2;
   const originY = centerY - size / 2;
   const cellSize = size / gridSize;
+  const scale = pixelScale || 1;
 
   const target = ctx || drawingContext;
   const paint = style || "stroke";
-
-  target.save();
-
-  target.strokeStyle = cssColor(params.outlineColor);
-  target.lineWidth = params.strokeWidth;
-  target.lineCap = "round";
-  target.lineJoin = "round";
-  target.fillStyle = "#ffffff";
+  const pixelContours = [];
 
   for (const region of regions) {
     const edges = getBoundaryEdges(grid, region);
@@ -979,18 +1028,33 @@ function drawPartition(
         params.regionInset
       );
 
-      const pixelPoints = points.map(point => ({
+      pixelContours.push(points.map(point => ({
         x: originX + point.x * cellSize,
         y: originY + point.y * cellSize
-      }));
-
-      drawRoundedContour(
-        target,
-        pixelPoints,
-        params.cornerRadius,
-        paint
-      );
+      })));
     }
+  }
+
+  const radii = roundedRadii(
+    pixelContours,
+    params.cornerRadius * scale
+  );
+
+  target.save();
+
+  target.strokeStyle = cssColor(params.outlineColor);
+  target.lineWidth = params.strokeWidth * scale;
+  target.lineCap = "round";
+  target.lineJoin = "round";
+  target.fillStyle = "#ffffff";
+
+  for (let i = 0; i < pixelContours.length; i++) {
+    drawRoundedContour(
+      target,
+      pixelContours[i],
+      radii[i],
+      paint
+    );
   }
 
   target.restore();
@@ -1354,10 +1418,350 @@ function crossProduct(a, b) {
    ROUNDED POLYGON DRAWING
    ========================================================= */
 
+/*
+  Each corner keeps the requested radius unless that curve
+  would cross another curve or edge. Large radii on a wide
+  notch otherwise bow across the gap and pinch the outline.
+*/
+function roundedRadii(contours, radius) {
+  const radii = contours.map((points) =>
+    edgeLimitedRadii(points, radius)
+  );
+
+  for (let pass = 0; pass < 48; pass++) {
+    const hit = firstOverlap(contours, radii);
+
+    if (!hit) {
+      break;
+    }
+
+    separateRadii(contours, radii, hit);
+  }
+
+  return radii;
+}
+
+function edgeLimitedRadii(points, radius) {
+  const count = points.length;
+  const radii = new Array(count);
+
+  for (let i = 0; i < count; i++) {
+    const previous =
+      points[(i - 1 + count) % count];
+
+    const next =
+      points[(i + 1) % count];
+
+    const previousLength =
+      distanceBetween(previous, points[i]);
+
+    const nextLength =
+      distanceBetween(points[i], next);
+
+    radii[i] = min(
+      radius,
+      previousLength * 0.45,
+      nextLength * 0.45
+    );
+  }
+
+  return radii;
+}
+
+function separateRadii(contours, radii, hit) {
+  const targets = [hit.a];
+
+  if (hit.b) {
+    targets.push(hit.b);
+  }
+
+  const saved = targets.map((item) =>
+    radii[item.contour][item.index]
+  );
+
+  let low = 0;
+  let high = 1;
+
+  for (let step = 0; step < 10; step++) {
+    const mid = (low + high) / 2;
+
+    targets.forEach((item, index) => {
+      radii[item.contour][item.index] =
+        saved[index] * mid;
+    });
+
+    if (hitStillOverlaps(contours, radii, hit)) {
+      high = mid;
+    } else {
+      low = mid;
+    }
+  }
+
+  targets.forEach((item, index) => {
+    radii[item.contour][item.index] =
+      saved[index] * low;
+  });
+}
+
+function firstOverlap(contours, radii) {
+  const groups = contours.map((points, contourIndex) =>
+    points.map((point, index) => ({
+      contour: contourIndex,
+      index,
+      corner: point,
+      radius: radii[contourIndex][index],
+      samples: curveSamples(
+        points,
+        index,
+        radii[contourIndex][index]
+      )
+    }))
+  );
+
+  for (let aContour = 0; aContour < groups.length; aContour++) {
+    for (let aIndex = 0; aIndex < groups[aContour].length; aIndex++) {
+      const a = groups[aContour][aIndex];
+
+      if (a.radius <= 0) {
+        continue;
+      }
+
+      for (
+        let bContour = aContour;
+        bContour < groups.length;
+        bContour++
+      ) {
+        const sameContour = bContour === aContour;
+        const startIndex = sameContour ? aIndex + 1 : 0;
+
+        for (
+          let bIndex = startIndex;
+          bIndex < groups[bContour].length;
+          bIndex++
+        ) {
+          const b = groups[bContour][bIndex];
+
+          if (b.radius <= 0) {
+            continue;
+          }
+
+          if (
+            distanceBetween(a.corner, b.corner) >=
+            a.radius + b.radius
+          ) {
+            continue;
+          }
+
+          if (polylinesCross(a.samples, b.samples)) {
+            return {
+              a: {
+                contour: aContour,
+                index: aIndex
+              },
+              b: {
+                contour: bContour,
+                index: bIndex
+              }
+            };
+          }
+        }
+      }
+
+      for (
+        let edgeContour = 0;
+        edgeContour < contours.length;
+        edgeContour++
+      ) {
+        const points = contours[edgeContour];
+
+        for (let edgeIndex = 0; edgeIndex < points.length; edgeIndex++) {
+          if (edgeContour === aContour) {
+            const previousEdge =
+              (aIndex - 1 + points.length) % points.length;
+
+            if (
+              edgeIndex === aIndex ||
+              edgeIndex === previousEdge
+            ) {
+              continue;
+            }
+          }
+
+          const start = points[edgeIndex];
+          const end =
+            points[(edgeIndex + 1) % points.length];
+
+          if (
+            distancePointToSegment(a.corner, start, end) >=
+            a.radius
+          ) {
+            continue;
+          }
+
+          if (polylineHitsSegment(a.samples, start, end)) {
+            return {
+              a: {
+                contour: aContour,
+                index: aIndex
+              },
+              edge: {
+                a: start,
+                b: end
+              }
+            };
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function hitStillOverlaps(contours, radii, hit) {
+  const points = contours[hit.a.contour];
+  const radius = radii[hit.a.contour][hit.a.index];
+  const samples = curveSamples(
+    points,
+    hit.a.index,
+    radius
+  );
+
+  if (hit.b) {
+    const otherPoints = contours[hit.b.contour];
+    const otherRadius =
+      radii[hit.b.contour][hit.b.index];
+
+    return polylinesCross(
+      samples,
+      curveSamples(
+        otherPoints,
+        hit.b.index,
+        otherRadius
+      )
+    );
+  }
+
+  return polylineHitsSegment(
+    samples,
+    hit.edge.a,
+    hit.edge.b
+  );
+}
+
+function curveSamples(points, index, radius) {
+  const count = points.length;
+  const previous =
+    points[(index - 1 + count) % count];
+
+  const current = points[index];
+
+  const next =
+    points[(index + 1) % count];
+
+  const before = moveToward(
+    current,
+    previous,
+    radius
+  );
+
+  const after = moveToward(
+    current,
+    next,
+    radius
+  );
+
+  const samples = [];
+  const steps = 16;
+
+  for (let step = 0; step <= steps; step++) {
+    const t = step / steps;
+    const u = 1 - t;
+
+    samples.push({
+      x:
+        u * u * before.x +
+        2 * u * t * current.x +
+        t * t * after.x,
+      y:
+        u * u * before.y +
+        2 * u * t * current.y +
+        t * t * after.y
+    });
+  }
+
+  return samples;
+}
+
+function polylinesCross(a, b) {
+  for (let i = 0; i < a.length - 1; i++) {
+    for (let j = 0; j < b.length - 1; j++) {
+      if (
+        segmentsProperlyCross(
+          a[i],
+          a[i + 1],
+          b[j],
+          b[j + 1]
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function polylineHitsSegment(samples, a, b) {
+  for (let i = 0; i < samples.length - 1; i++) {
+    if (
+      segmentsProperlyCross(
+        samples[i],
+        samples[i + 1],
+        a,
+        b
+      )
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function segmentsProperlyCross(a, b, c, d) {
+  const abX = b.x - a.x;
+  const abY = b.y - a.y;
+  const cdX = d.x - c.x;
+  const cdY = d.y - c.y;
+  const denom = abX * cdY - abY * cdX;
+
+  if (abs(denom) < 0.0001) {
+    return false;
+  }
+
+  const acX = c.x - a.x;
+  const acY = c.y - a.y;
+  const t = (acX * cdY - acY * cdX) / denom;
+  const u = (acX * abY - acY * abX) / denom;
+  const margin = 0.004;
+
+  return (
+    t > margin &&
+    t < 1 - margin &&
+    u > margin &&
+    u < 1 - margin
+  );
+}
+
 function drawRoundedContour(ctx, points, radius, style) {
   if (points.length < 3) {
     return;
   }
+
+  const radii = Array.isArray(radius)
+    ? radius
+    : edgeLimitedRadii(points, radius);
 
   const corners = [];
 
@@ -1370,17 +1774,7 @@ function drawRoundedContour(ctx, points, radius, style) {
     const next =
       points[(i + 1) % points.length];
 
-    const previousLength =
-      distanceBetween(previous, current);
-
-    const nextLength =
-      distanceBetween(current, next);
-
-    const cornerRadius = min(
-      radius,
-      previousLength * 0.45,
-      nextLength * 0.45
-    );
+    const cornerRadius = radii[i] || 0;
 
     corners.push({
       corner: current,
@@ -1451,6 +1845,30 @@ function moveToward(from, to, distance) {
 
 function distanceBetween(a, b) {
   return dist(a.x, a.y, b.x, b.y);
+}
+
+function distancePointToSegment(point, a, b) {
+  const abX = b.x - a.x;
+  const abY = b.y - a.y;
+  const lengthSquared = abX * abX + abY * abY;
+
+  if (lengthSquared === 0) {
+    return distanceBetween(point, a);
+  }
+
+  const t = constrain(
+    (
+      (point.x - a.x) * abX +
+      (point.y - a.y) * abY
+    ) / lengthSquared,
+    0,
+    1
+  );
+
+  return distanceBetween(point, {
+    x: a.x + abX * t,
+    y: a.y + abY * t
+  });
 }
 
 /* =========================================================
