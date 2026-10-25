@@ -1,13 +1,7 @@
 html, body {
   margin: 0;
-  padding: 0;
-}
-
-body {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  padding: 16px;
+  height: 100%;
+  overflow: hidden;
   background: #eeeae1;
 }
 
@@ -16,16 +10,18 @@ canvas {
 }
 
 #sketch {
-  position: relative;
+  position: fixed;
+  inset: 0;
   line-height: 0;
 }
 
 #controls {
-  position: sticky;
-  top: 16px;
+  position: fixed;
+  top: 12px;
+  right: 12px;
   width: 280px;
-  flex: 0 0 auto;
-  max-height: calc(100vh - 32px);
+  z-index: 2;
+  max-height: calc(100vh - 24px);
   overflow: auto;
 }
 
