@@ -1,3 +1,40 @@
+function hsbParts(value) {
+    push();
+    colorMode(RGB, 255);
+    const sample = color(value);
+    const r = red(sample) / 255;
+    const g = green(sample) / 255;
+    const b = blue(sample) / 255;
+    pop();
+
+    const maxChannel = Math.max(r, g, b);
+    const minChannel = Math.min(r, g, b);
+    const delta = maxChannel - minChannel;
+    let hueValue = 0;
+
+    if (delta !== 0) {
+        if (maxChannel === r) {
+            hueValue = ((g - b) / delta) % 6;
+        } else if (maxChannel === g) {
+            hueValue = (b - r) / delta + 2;
+        } else {
+            hueValue = (r - g) / delta + 4;
+        }
+
+        hueValue *= 60;
+
+        if (hueValue < 0) {
+            hueValue += 360;
+        }
+    }
+
+    return {
+        h: hueValue,
+        s: maxChannel === 0 ? 0 : (delta / maxChannel) * 100,
+        b: maxChannel * 100
+    };
+}
+
 class ColorGenerator {
     /**
      * Constructor for ColorGenerator.
@@ -16,11 +53,14 @@ class ColorGenerator {
             colorString = color(h, s, b);
         }
 
-        // Store the color and its HSB components
+        // Store the color and its HSB components.
+        // p5 2's saturation() does not match colorMode(HSB), so the
+        // components are taken from the RGB channels instead.
         this.color = color(colorString);
-        this.h = hue(this.color);
-        this.s = saturation(this.color);
-        this.b = brightness(this.color);
+        const parts = hsbParts(this.color);
+        this.h = parts.h;
+        this.s = parts.s;
+        this.b = parts.b;
     }
 
     /**
