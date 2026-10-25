@@ -19,6 +19,9 @@
 
   The canvas fills the browser window. Partitions are centered
   in the space beside the controls. A sheet is scaled to fit there.
+
+  Each region is filled from a palette built by ColorGenerator.
+  The Color folder chooses the base color and the scheme.
 */
 
 const RANDOM_CANVAS = 700;
@@ -57,6 +60,17 @@ const params = {
 
   outlineColor: "#292932",
   backgroundColor: "#eeeae1",
+
+  // Region fills. ColorGenerator builds the palette from the base.
+  baseColor: "#3f6f86",
+  colorScheme: "analogous",
+  paletteSize: 6,
+  shadeLimit: 10,
+  tintLimit: 92,
+  harmonyDegree: 30,
+  increaseSaturation: false,
+  increaseBrightness: true,
+
   strokeWidth: 2.2,
   // Measured relative to one grid cell.
   regionInset: 0.095,
@@ -87,6 +101,10 @@ let columnsInput;
 let columnCountInput;
 let rowCountInput;
 let playbackFolder;
+let colorInputs = {};
+
+let regionPaletteColors = [];
+let regionPaletteKey = "";
 
 let animation = null;
 let lastAnimationCaption = "";
@@ -96,15 +114,6 @@ const readout = {
 };
 
 const CUT_COLOR = "#c4552a";
-
-const REGION_WASHES = [
-  [88, 78, 66],
-  [116, 86, 62],
-  [62, 92, 102],
-  [92, 72, 84],
-  [78, 98, 74],
-  [108, 96, 70]
-];
 
 function setup() {
   const canvas = createCanvas(
@@ -341,6 +350,14 @@ function randomizePartition() {
 const DRAWING_KEYS = new Set([
   "outlineColor",
   "backgroundColor",
+  "baseColor",
+  "colorScheme",
+  "paletteSize",
+  "shadeLimit",
+  "tintLimit",
+  "harmonyDegree",
+  "increaseSaturation",
+  "increaseBrightness",
   "strokeWidth",
   "regionInset",
   "cornerRadius",
@@ -551,6 +568,71 @@ function setupPane() {
     }
   );
 
+  const colorFolder = pane.addFolder({
+    title: "Color"
+  });
+
+  colorFolder.addInput(params, "baseColor", {
+    label: "base"
+  });
+
+  colorFolder.addInput(params, "colorScheme", {
+    label: "scheme",
+    options: {
+      "Solid": "solid",
+      "Shades": "shades",
+      "Tints": "tints",
+      "Monochromatic": "monochromatic",
+      "Complementary": "complementary",
+      "Split complementary": "split",
+      "Analogous": "analogous",
+      "Triadic": "triadic",
+      "Tetradic": "tetradic"
+    }
+  });
+
+  colorInputs.paletteSize = colorFolder.addInput(params, "paletteSize", {
+    label: "colors",
+    min: 2,
+    max: 16,
+    step: 1
+  });
+
+  colorInputs.shadeLimit = colorFolder.addInput(params, "shadeLimit", {
+    label: "shade limit",
+    min: 0,
+    max: 100,
+    step: 1
+  });
+
+  colorInputs.tintLimit = colorFolder.addInput(params, "tintLimit", {
+    label: "tint limit",
+    min: 0,
+    max: 100,
+    step: 1
+  });
+
+  colorInputs.harmonyDegree = colorFolder.addInput(params, "harmonyDegree", {
+    label: "degree",
+    min: 1,
+    max: 90,
+    step: 1
+  });
+
+  colorInputs.increaseSaturation = colorFolder.addInput(
+    params,
+    "increaseSaturation",
+    { label: "more saturation" }
+  );
+
+  colorInputs.increaseBrightness = colorFolder.addInput(
+    params,
+    "increaseBrightness",
+    { label: "more brightness" }
+  );
+
+  updateColorVisibility();
+
   summaryMonitor = pane.addMonitor(
     readout,
     "summary",
@@ -578,7 +660,11 @@ function setupPane() {
       return;
     }
 
-    // Drawing and layout values repaint while the pointer is down.
+    if (presetKey === "colorScheme") {
+      updateColorVisibility();
+    }
+
+    // Drawing and layout values repaint while the pointer is still down.
     // Generation values do too, so a sheet does not wait for release.
     if (
       DRAWING_KEYS.has(presetKey) ||
@@ -626,6 +712,26 @@ function updateRegionCountAvailability() {
   if (regionInput) {
     regionInput.disabled = params.anyCount;
   }
+}
+
+function updateColorVisibility() {
+  const scheme = params.colorScheme;
+  const usesCount =
+    scheme === "shades" ||
+    scheme === "tints" ||
+    scheme === "monochromatic";
+
+  if (!colorInputs.paletteSize) {
+    return;
+  }
+
+  colorInputs.paletteSize.hidden = !usesCount;
+  colorInputs.shadeLimit.hidden = scheme !== "shades";
+  colorInputs.tintLimit.hidden = scheme !== "tints";
+  colorInputs.harmonyDegree.hidden =
+    scheme !== "analogous" && scheme !== "split";
+  colorInputs.increaseSaturation.hidden = scheme !== "monochromatic";
+  colorInputs.increaseBrightness.hidden = scheme !== "monochromatic";
 }
 
 function updatePaneVisibility() {
@@ -819,7 +925,143 @@ function cssColor(value) {
     return value;
   }
 
-  return `rgb(${value.r}, ${value.g}, ${value.b})`;
+  if (value && value.r !== undefined) {
+    const redChannel = Math.round(value.r);
+    const greenChannel = Math.round(value.g);
+    const blueChannel = Math.round(value.b);
+
+    return `rgb(${redChannel}, ${greenChannel}, ${blueChannel})`;
+  }
+
+  return "#888888";
+}
+
+function colorValue(value) {
+  return cssColor(value);
+}
+
+/*
+  Build the region palette with the shared ColorGenerator.
+  The generator switches p5 into HSB, so this restores RGB
+  before any later drawing.
+*/
+function regionPalette() {
+  const signature = [
+    colorValue(params.baseColor),
+    params.colorScheme,
+    params.paletteSize,
+    params.shadeLimit,
+    params.tintLimit,
+    params.harmonyDegree,
+    params.increaseSaturation,
+    params.increaseBrightness
+  ].join("|");
+
+  if (signature === regionPaletteKey) {
+    return regionPaletteColors;
+  }
+
+  const count = max(1, round(params.paletteSize));
+  const base = colorValue(params.baseColor);
+  let generated;
+
+  push();
+  const generator = new ColorGenerator(base);
+
+  switch (params.colorScheme) {
+    case "shades":
+      generated = generator.getShades(count, params.shadeLimit);
+      break;
+    case "tints":
+      generated = generator.getTints(count, params.tintLimit);
+      break;
+    case "monochromatic":
+      generated = generator.getMonochromatic(
+        count,
+        params.increaseSaturation,
+        params.increaseBrightness
+      );
+      break;
+    case "complementary":
+      generated = generator.getComplementary();
+      break;
+    case "analogous":
+      generated = generator.getAnalogous(params.harmonyDegree);
+      break;
+    case "split":
+      generated = generator.getSplitComplementary(params.harmonyDegree);
+      break;
+    case "triadic":
+      generated = generator.getTriadic();
+      break;
+    case "tetradic":
+      generated = generator.getTetradic();
+      break;
+    default:
+      generated = [color(base)];
+      break;
+  }
+
+  regionPaletteColors = generated.map(cssFromColor);
+  pop();
+  colorMode(RGB, 255);
+  regionPaletteKey = signature;
+  return regionPaletteColors;
+}
+
+function cssFromColor(value) {
+  push();
+  colorMode(RGB, 255);
+  const sample = color(value);
+  const redChannel = round(red(sample));
+  const greenChannel = round(green(sample));
+  const blueChannel = round(blue(sample));
+  pop();
+
+  return `rgb(${redChannel}, ${greenChannel}, ${blueChannel})`;
+}
+
+function regionFill(label) {
+  const colors = regionPalette();
+
+  if (colors.length === 0) {
+    return "#ffffff";
+  }
+
+  const index = abs(label) % colors.length;
+  return colors[index];
+}
+
+function withAlpha(css, alpha) {
+  const channels = cssToChannels(css);
+  return `rgba(${channels.r}, ${channels.g}, ${channels.b}, ${alpha})`;
+}
+
+function cssToChannels(css) {
+  const value = cssColor(css);
+  const hex = /^#([0-9a-f]{6})$/i.exec(value);
+
+  if (hex) {
+    const packed = parseInt(hex[1], 16);
+
+    return {
+      r: (packed >> 16) & 255,
+      g: (packed >> 8) & 255,
+      b: packed & 255
+    };
+  }
+
+  const match = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i.exec(value);
+
+  if (match) {
+    return {
+      r: round(Number(match[1])),
+      g: round(Number(match[2])),
+      b: round(Number(match[3]))
+    };
+  }
+
+  return { r: 255, g: 255, b: 255 };
 }
 
 /* =========================================================
@@ -1134,17 +1376,18 @@ function paintAnimationCells(ctx, place, step) {
     ? grownCells(step)
     : null;
 
-  const wash = step.type === "round"
-    ? 0.16 * (1 - step.t)
-    : 0.16;
-
   const regions = showsRegions(step);
+  let wash = 0.82;
+
+  if (step.type === "round") {
+    wash = 0.82 * (1 - step.t * 0.2);
+  }
 
   for (let index = 0; index < gridSize * gridSize; index++) {
     let fill = "rgba(41, 41, 50, 0.04)";
 
     if (regions) {
-      fill = regionWash(animation.grid[index], wash);
+      fill = withAlpha(regionFill(animation.grid[index]), wash);
     } else if (visited && visited[index]) {
       fill = "rgba(41, 41, 50, 0.09)";
     }
@@ -1401,12 +1644,6 @@ function gridPoint(point, place) {
 
 function gridToPixels(points, place) {
   return points.map(point => gridPoint(point, place));
-}
-
-function regionWash(label, alpha) {
-  const tone = REGION_WASHES[label % REGION_WASHES.length];
-
-  return `rgba(${tone[0]}, ${tone[1]}, ${tone[2]}, ${alpha})`;
 }
 
 function paintAnimationCaption(caption) {
@@ -1732,12 +1969,12 @@ function drawPartition(
   const scale = pixelScale || 1;
 
   const target = ctx || drawingContext;
-  const paint = style || "stroke";
-  const pixelContours = [];
+  const regionContours = [];
 
   for (const region of regions) {
     const edges = getBoundaryEdges(grid, region);
     const contours = traceAllContours(edges);
+    const pixelContours = [];
 
     for (const contour of contours) {
       let points = simplifyContour(contour);
@@ -1761,10 +1998,25 @@ function drawPartition(
         y: originY + point.y * cellSize
       })));
     }
+
+    if (pixelContours.length > 0) {
+      regionContours.push({
+        region,
+        pixelContours
+      });
+    }
+  }
+
+  const flatContours = [];
+
+  for (const item of regionContours) {
+    for (const contour of item.pixelContours) {
+      flatContours.push(contour);
+    }
   }
 
   const radii = roundedRadii(
-    pixelContours,
+    flatContours,
     params.cornerRadius * scale
   );
 
@@ -1774,15 +2026,44 @@ function drawPartition(
   target.lineWidth = params.strokeWidth * scale;
   target.lineCap = "round";
   target.lineJoin = "round";
-  target.fillStyle = "#ffffff";
 
-  for (let i = 0; i < pixelContours.length; i++) {
-    drawRoundedContour(
-      target,
-      pixelContours[i],
-      radii[i],
-      paint
-    );
+  let cursor = 0;
+
+  for (const item of regionContours) {
+    target.beginPath();
+
+    for (let i = 0; i < item.pixelContours.length; i++) {
+      drawRoundedContour(
+        target,
+        item.pixelContours[i],
+        radii[cursor + i],
+        "path"
+      );
+    }
+
+    target.fillStyle = regionFill(item.region);
+    target.fill("evenodd");
+    cursor += item.pixelContours.length;
+  }
+
+  if (style === "fill") {
+    target.restore();
+    return;
+  }
+
+  cursor = 0;
+
+  for (const item of regionContours) {
+    for (let i = 0; i < item.pixelContours.length; i++) {
+      drawRoundedContour(
+        target,
+        item.pixelContours[i],
+        radii[cursor + i],
+        "stroke"
+      );
+    }
+
+    cursor += item.pixelContours.length;
   }
 
   target.restore();
@@ -2521,7 +2802,9 @@ function drawRoundedContour(ctx, points, radius, style) {
     });
   }
 
-  ctx.beginPath();
+  if (style !== "path") {
+    ctx.beginPath();
+  }
 
   ctx.moveTo(
     corners[0].after.x,
@@ -2546,6 +2829,10 @@ function drawRoundedContour(ctx, points, radius, style) {
   }
 
   ctx.closePath();
+
+  if (style === "path") {
+    return;
+  }
 
   if (style === "fill") {
     ctx.fill();
