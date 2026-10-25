@@ -8,6 +8,10 @@
       Generate random partitions at the chosen grid size.
       Columns and rows choose how many are drawn across and down.
 
+  "ANIMATE"
+      Play one partition as it is built: the spanning tree,
+      the cuts that separate regions, then the outline.
+
   The Tweakpane panel edits these settings live.
   "Any count" chooses a valid region count at random.
   "Allow equals" keeps a partition even when two regions
@@ -60,7 +64,10 @@ const params = {
   // Measured in pixels. Random mode scales the shape
   // by this fraction of the canvas.
   cornerRadius: 20,
-  shapeScale: 0.72
+  shapeScale: 0.72,
+
+  // Steps per second while the animated mode is playing.
+  playbackSpeed: 16
 };
 
 // Active grid size. ALL_3X3 always uses 3.
@@ -77,10 +84,27 @@ let layoutFolder;
 let scaleInput;
 let summaryMonitor;
 let columnsInput;
+let columnCountInput;
+let rowCountInput;
+let playbackFolder;
+
+let animation = null;
+let lastAnimationCaption = "";
 
 const readout = {
   summary: ""
 };
+
+const CUT_COLOR = "#c4552a";
+
+const REGION_WASHES = [
+  [88, 78, 66],
+  [116, 86, 62],
+  [62, 92, 102],
+  [92, 72, 84],
+  [78, 98, 74],
+  [108, 96, 70]
+];
 
 function setup() {
   const canvas = createCanvas(
@@ -101,6 +125,11 @@ function draw() {
     cssColor(params.backgroundColor);
 
   background(cssColor(params.backgroundColor));
+
+  if (params.mode === "ANIMATE") {
+    paintAnimation();
+    return;
+  }
 
   if (partitions.length === 0) {
     return;
@@ -240,7 +269,10 @@ function keyPressed() {
 
   // Generate another random partition.
   if (
-    params.mode === "RANDOM_ONE" &&
+    (
+      params.mode === "RANDOM_ONE" ||
+      params.mode === "ANIMATE"
+    ) &&
     (key === "r" || key === "R")
   ) {
     randomizePartition();
@@ -280,7 +312,9 @@ function maximumRegionCount(size) {
 function savePartition() {
   let name = `partition-${gridSize}x${gridSize}`;
 
-  if (params.mode === "ALL_3X3") {
+  if (params.mode === "ANIMATE") {
+    name = `partition-steps-${gridSize}x${gridSize}`;
+  } else if (params.mode === "ALL_3X3") {
     name = "partitions-3x3";
   } else if (params.columnCount * params.rowCount > 1) {
     name =
@@ -344,6 +378,7 @@ function setupPane() {
     label: "mode",
     options: {
       "Random": "RANDOM_ONE",
+      "Animate": "ANIMATE",
       "All 3×3": "ALL_3X3"
     }
   });
@@ -359,14 +394,14 @@ function setupPane() {
     step: 1
   });
 
-  generationFolder.addInput(params, "columnCount", {
+  columnCountInput = generationFolder.addInput(params, "columnCount", {
     label: "columns",
     min: 1,
     max: 8,
     step: 1
   });
 
-  generationFolder.addInput(params, "rowCount", {
+  rowCountInput = generationFolder.addInput(params, "rowCount", {
     label: "rows",
     min: 1,
     max: 8,
@@ -415,6 +450,29 @@ function setupPane() {
     title: "New partition"
   }).on("click", () => {
     randomizePartition();
+  });
+
+  playbackFolder = pane.addFolder({
+    title: "Playback"
+  });
+
+  playbackFolder.addInput(params, "playbackSpeed", {
+    label: "speed",
+    min: 4,
+    max: 40,
+    step: 1
+  });
+
+  playbackFolder.addButton({
+    title: "Replay"
+  }).on("click", () => {
+    if (!animation) {
+      rebuild(true);
+      return;
+    }
+
+    animation.startedAt = millis();
+    lastAnimationCaption = "";
   });
 
   layoutFolder = pane.addFolder({
@@ -515,6 +573,11 @@ function setupPane() {
       return;
     }
 
+    if (presetKey === "playbackSpeed") {
+      syncAnimationSpeed();
+      return;
+    }
+
     // Drawing and layout values repaint while the pointer is down.
     // Generation values do too, so a sheet does not wait for release.
     if (
@@ -567,38 +630,84 @@ function updateRegionCountAvailability() {
 
 function updatePaneVisibility() {
   const randomMode = params.mode === "RANDOM_ONE";
+  const animateMode = params.mode === "ANIMATE";
+  const catalogMode = params.mode === "ALL_3X3";
   const sheet = randomMode && params.columnCount * params.rowCount > 1;
 
   if (generationFolder) {
-    generationFolder.hidden = !randomMode;
+    generationFolder.hidden = catalogMode;
+  }
+
+  if (columnCountInput) {
+    columnCountInput.hidden = !randomMode;
+  }
+
+  if (rowCountInput) {
+    rowCountInput.hidden = !randomMode;
+  }
+
+  if (playbackFolder) {
+    playbackFolder.hidden = !animateMode;
   }
 
   if (layoutFolder) {
-    layoutFolder.hidden = randomMode && !sheet;
+    layoutFolder.hidden = animateMode || (randomMode && !sheet);
   }
 
   if (columnsInput) {
-    columnsInput.hidden = randomMode;
+    columnsInput.hidden = !catalogMode;
   }
 
   if (scaleInput) {
-    scaleInput.hidden = !randomMode || sheet;
+    scaleInput.hidden = sheet || catalogMode;
   }
 
   updateRegionCountAvailability();
 
   if (summaryMonitor) {
-    summaryMonitor.label =
-      randomMode && params.columnCount * params.rowCount === 1
-        ? "sizes"
-        : "count";
+    if (animateMode) {
+      summaryMonitor.label = "step";
+    } else if (randomMode && params.columnCount * params.rowCount === 1) {
+      summaryMonitor.label = "sizes";
+    } else {
+      summaryMonitor.label = "count";
+    }
   }
 }
 
 function rebuild(regenerate) {
   const nextGridSize = activeGridSize();
 
-  if (params.mode === "ALL_3X3") {
+  if (params.mode === "ANIMATE") {
+    gridSize = nextGridSize;
+
+    try {
+      const trace = {};
+      const requested = params.anyCount
+        ? null
+        : params.regionCount;
+
+      const grid = generateRandomPartition(
+        gridSize,
+        requested,
+        params.allowEqualSizes,
+        params.seed,
+        trace
+      );
+
+      partitions = [grid];
+      animation = createAnimation(trace);
+      lastAnimationCaption = "";
+      readout.summary = animationCaption(animation.script[0]);
+      printPartitionInfo(grid);
+    } catch (error) {
+      animation = null;
+      partitions = [];
+      readout.summary = "No partition found";
+      console.error(error);
+    }
+  } else if (params.mode === "ALL_3X3") {
+    animation = null;
     gridSize = 3;
 
     if (!catalogPartitions) {
@@ -619,6 +728,7 @@ function rebuild(regenerate) {
     partitions.length !== params.columnCount * params.rowCount ||
     partitions[0].length !== nextGridSize * nextGridSize
   ) {
+    animation = null;
     const previousGridSize = gridSize;
     const previousPartitions = partitions;
 
@@ -656,6 +766,7 @@ function rebuild(regenerate) {
       console.error(error);
     }
   } else {
+    animation = null;
     gridSize = nextGridSize;
 
     readout.summary = partitionSummary(partitions);
@@ -665,6 +776,12 @@ function rebuild(regenerate) {
 
   if (summaryMonitor) {
     summaryMonitor.refresh();
+  }
+
+  if (params.mode === "ANIMATE" && animation) {
+    loop();
+  } else {
+    noLoop();
   }
 
   fitCanvas();
@@ -703,6 +820,617 @@ function cssColor(value) {
   }
 
   return `rgb(${value.r}, ${value.g}, ${value.b})`;
+}
+
+/* =========================================================
+   ANIMATED CONSTRUCTION
+   ========================================================= */
+
+/*
+  Play the successful attempt: the depth-first spanning
+  tree, the links cut out of it, then the outline as it
+  is traced, inset, and rounded.
+*/
+
+function createAnimation(trace) {
+  const paths = collectOutlinePaths(trace.grid);
+  const script = [];
+  let boundaryTotal = 0;
+
+  for (const path of paths) {
+    boundaryTotal += path.raw.length;
+  }
+
+  holdStep(script, { type: "grid" }, 5);
+  holdStep(script, { type: "start" }, 6);
+
+  for (let count = 1; count <= trace.tree.length; count++) {
+    script.push({
+      type: "tree",
+      count,
+      total: trace.tree.length
+    });
+  }
+
+  holdStep(script, { type: "tree-done" }, 10);
+
+  for (let i = 0; i < trace.cuts.length; i++) {
+    holdStep(script, {
+      type: "cut",
+      removed: i,
+      marking: true
+    }, 4);
+
+    holdStep(script, {
+      type: "cut",
+      removed: i + 1,
+      marking: false
+    }, 3);
+  }
+
+  holdStep(script, { type: "regions" }, 12);
+
+  for (let count = 1; count <= boundaryTotal; count++) {
+    script.push({
+      type: "boundary",
+      count,
+      total: boundaryTotal
+    });
+  }
+
+  holdStep(script, { type: "simple" }, 10);
+
+  for (let frame = 1; frame <= 12; frame++) {
+    script.push({
+      type: "inset",
+      t: frame / 12
+    });
+  }
+
+  for (let frame = 1; frame <= 14; frame++) {
+    script.push({
+      type: "round",
+      t: frame / 14
+    });
+  }
+
+  script.push({ type: "done" });
+
+  return {
+    tree: trace.tree,
+    cuts: trace.cuts,
+    grid: trace.grid,
+    start: trace.start,
+    attempts: trace.attempts,
+    regionCount: trace.regionCount,
+    sizes: getRegionSizes(trace.grid)
+      .slice()
+      .sort((a, b) => a - b)
+      .join(", "),
+    paths,
+    script,
+    stepMs: 1000 / max(1, params.playbackSpeed),
+    holdMs: 1500,
+    startedAt: millis()
+  };
+}
+
+function holdStep(script, step, frames) {
+  for (let i = 0; i < frames; i++) {
+    script.push(step);
+  }
+}
+
+function collectOutlinePaths(grid) {
+  const paths = [];
+
+  for (const region of getRegionLabels(grid)) {
+    const contours = traceAllContours(
+      getBoundaryEdges(grid, region)
+    );
+
+    for (const contour of contours) {
+      const simplified = simplifyContour(contour);
+
+      if (simplified.length < 4) {
+        continue;
+      }
+
+      paths.push({
+        raw: contour,
+        simplified
+      });
+    }
+  }
+
+  return paths;
+}
+
+function syncAnimationSpeed() {
+  if (!animation) {
+    return;
+  }
+
+  const index = animationClock();
+
+  animation.stepMs = 1000 / max(1, params.playbackSpeed);
+  animation.startedAt = millis() - index * animation.stepMs;
+}
+
+function animationClock() {
+  const playMs = animation.script.length * animation.stepMs;
+  const cycle = playMs + animation.holdMs;
+  let elapsed = millis() - animation.startedAt;
+
+  if (elapsed < 0) {
+    elapsed = 0;
+  }
+
+  const wrapped = elapsed % cycle;
+
+  if (wrapped >= playMs) {
+    return animation.script.length - 1;
+  }
+
+  return min(
+    animation.script.length - 1,
+    floor(wrapped / animation.stepMs)
+  );
+}
+
+function animationCaption(step) {
+  if (!animation || !step) {
+    return readout.summary || "";
+  }
+
+  if (step.type === "grid") {
+    return "Empty grid";
+  }
+
+  if (step.type === "start") {
+    return "Pick a starting cell";
+  }
+
+  if (step.type === "tree") {
+    return `Spanning tree · ${step.count} of ${step.total}`;
+  }
+
+  if (step.type === "tree-done") {
+    if (animation.attempts > 1) {
+      return `Tree reaches every cell · attempt ${animation.attempts}`;
+    }
+
+    return "Tree reaches every cell";
+  }
+
+  if (step.type === "cut") {
+    const total = animation.cuts.length;
+
+    if (step.marking) {
+      return `Cut ${step.removed + 1} of ${total}`;
+    }
+
+    return `Removed ${step.removed} of ${total} links`;
+  }
+
+  if (step.type === "regions") {
+    return `${animation.regionCount} regions · ${animation.sizes}`;
+  }
+
+  if (step.type === "boundary") {
+    return `Trace the boundary · ${step.count} of ${step.total}`;
+  }
+
+  if (step.type === "simple") {
+    return "Drop points on straight edges";
+  }
+
+  if (step.type === "inset") {
+    return "Inset the outline";
+  }
+
+  if (step.type === "round") {
+    return "Round the corners";
+  }
+
+  return `Outline · ${animation.sizes}`;
+}
+
+function paintAnimation() {
+  if (!animation) {
+    paintAnimationCaption(readout.summary || "No partition found");
+    return;
+  }
+
+  const step = animation.script[animationClock()];
+  const caption = animationCaption(step);
+
+  if (caption !== lastAnimationCaption) {
+    lastAnimationCaption = caption;
+    readout.summary = caption;
+
+    if (summaryMonitor) {
+      summaryMonitor.refresh();
+    }
+  }
+
+  if (step.type === "done") {
+    const place = animationPlace();
+
+    drawPartition(
+      animation.grid,
+      place.originX + place.size / 2,
+      place.originY + place.size / 2,
+      place.size,
+      "stroke",
+      drawingContext,
+      place.pixelScale
+    );
+
+    paintAnimationCaption(caption);
+    return;
+  }
+
+  const place = animationPlace();
+  const ctx = drawingContext;
+
+  ctx.save();
+  paintAnimationCells(ctx, place, step);
+
+  if (showsTree(step)) {
+    paintAnimationTree(ctx, place, step);
+  }
+
+  if (showsOutline(step)) {
+    paintAnimationOutline(ctx, place, step);
+  }
+
+  ctx.restore();
+  paintAnimationCaption(caption);
+}
+
+function animationPlace() {
+  const frame = contentFrame();
+  const shape = min(frame.width, frame.height) * params.shapeScale;
+  const reference = RANDOM_CANVAS * params.shapeScale;
+
+  return {
+    frame,
+    originX: frame.x + (frame.width - shape) / 2,
+    originY: frame.y + (frame.height - shape) / 2,
+    size: shape,
+    cell: shape / gridSize,
+    pixelScale: reference === 0 ? 1 : shape / reference
+  };
+}
+
+function showsTree(step) {
+  return (
+    step.type === "start" ||
+    step.type === "tree" ||
+    step.type === "tree-done" ||
+    step.type === "cut"
+  );
+}
+
+function showsOutline(step) {
+  return (
+    step.type === "boundary" ||
+    step.type === "simple" ||
+    step.type === "inset" ||
+    step.type === "round"
+  );
+}
+
+function showsRegions(step) {
+  return (
+    step.type === "regions" ||
+    showsOutline(step)
+  );
+}
+
+function paintAnimationCells(ctx, place, step) {
+  const visited = showsTree(step)
+    ? grownCells(step)
+    : null;
+
+  const wash = step.type === "round"
+    ? 0.16 * (1 - step.t)
+    : 0.16;
+
+  const regions = showsRegions(step);
+
+  for (let index = 0; index < gridSize * gridSize; index++) {
+    let fill = "rgba(41, 41, 50, 0.04)";
+
+    if (regions) {
+      fill = regionWash(animation.grid[index], wash);
+    } else if (visited && visited[index]) {
+      fill = "rgba(41, 41, 50, 0.09)";
+    }
+
+    paintCell(ctx, place, index, fill);
+  }
+
+  let highlight = -1;
+
+  if (step.type === "start") {
+    highlight = animation.start;
+  } else if (step.type === "tree") {
+    highlight = animation.tree[step.count - 1].b;
+  }
+
+  if (highlight >= 0) {
+    const center = cellCenter(highlight, place);
+
+    ctx.beginPath();
+    ctx.fillStyle = cssColor(params.outlineColor);
+    ctx.arc(center.x, center.y, place.cell * 0.11, 0, TWO_PI);
+    ctx.fill();
+  }
+}
+
+function grownCells(step) {
+  const visited = new Array(gridSize * gridSize).fill(false);
+  let treeCount = 0;
+
+  if (step.type === "tree") {
+    treeCount = step.count;
+  } else if (step.type === "tree-done" || step.type === "cut") {
+    treeCount = animation.tree.length;
+  }
+
+  visited[animation.start] = true;
+
+  for (let i = 0; i < treeCount; i++) {
+    visited[animation.tree[i].b] = true;
+  }
+
+  return visited;
+}
+
+function paintCell(ctx, place, index, fill) {
+  const x = index % gridSize;
+  const y = floor(index / gridSize);
+  const gap = place.cell * 0.1;
+  const left = place.originX + x * place.cell + gap / 2;
+  const top = place.originY + y * place.cell + gap / 2;
+  const side = place.cell - gap;
+
+  ctx.beginPath();
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = "rgba(41, 41, 50, 0.16)";
+  ctx.lineWidth = 1;
+  ctx.roundRect(left, top, side, side, place.cell * 0.08);
+  ctx.fill();
+  ctx.stroke();
+}
+
+function paintAnimationTree(ctx, place, step) {
+  const removed = step.type === "cut" ? step.removed : 0;
+  const gone = new Set();
+
+  for (let i = 0; i < removed && i < animation.cuts.length; i++) {
+    gone.add(edgeKey(animation.cuts[i]));
+  }
+
+  let limit = 0;
+
+  if (step.type === "tree") {
+    limit = step.count;
+  } else if (step.type === "tree-done" || step.type === "cut") {
+    limit = animation.tree.length;
+  }
+
+  ctx.lineCap = "round";
+  ctx.strokeStyle = cssColor(params.outlineColor);
+  ctx.lineWidth = max(1.6, place.cell * 0.055);
+
+  for (let i = 0; i < limit; i++) {
+    const edge = animation.tree[i];
+
+    if (gone.has(edgeKey(edge))) {
+      continue;
+    }
+
+    if (
+      step.type === "cut" &&
+      step.marking &&
+      edgeKey(edge) === edgeKey(animation.cuts[step.removed])
+    ) {
+      continue;
+    }
+
+    strokeTreeEdge(ctx, edge, place);
+  }
+
+  if (step.type === "tree" && step.count > 0) {
+    ctx.lineWidth = max(2.4, place.cell * 0.09);
+    strokeTreeEdge(ctx, animation.tree[step.count - 1], place);
+  }
+
+  if (step.type === "cut" && step.marking) {
+    ctx.strokeStyle = CUT_COLOR;
+    ctx.lineWidth = max(2.8, place.cell * 0.1);
+    strokeTreeEdge(ctx, animation.cuts[step.removed], place);
+  }
+}
+
+function strokeTreeEdge(ctx, edge, place) {
+  const from = cellCenter(edge.a, place);
+  const to = cellCenter(edge.b, place);
+
+  ctx.beginPath();
+  ctx.moveTo(from.x, from.y);
+  ctx.lineTo(to.x, to.y);
+  ctx.stroke();
+}
+
+function edgeKey(edge) {
+  return edge.a < edge.b
+    ? `${edge.a}:${edge.b}`
+    : `${edge.b}:${edge.a}`;
+}
+
+function cellCenter(index, place) {
+  const x = index % gridSize;
+  const y = floor(index / gridSize);
+
+  return {
+    x: place.originX + (x + 0.5) * place.cell,
+    y: place.originY + (y + 0.5) * place.cell
+  };
+}
+
+function paintAnimationOutline(ctx, place, step) {
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = cssColor(params.outlineColor);
+  ctx.lineWidth = params.strokeWidth * place.pixelScale;
+
+  if (step.type === "boundary") {
+    let remaining = step.count;
+
+    for (const path of animation.paths) {
+      const segments = path.raw.length;
+      const take = min(remaining, segments);
+
+      if (take > 0) {
+        strokePartialPolyline(ctx, path.raw, take, place);
+      }
+
+      remaining -= segments;
+
+      if (remaining <= 0) {
+        break;
+      }
+    }
+
+    return;
+  }
+
+  if (step.type === "simple") {
+    for (const path of animation.paths) {
+      strokeClosedPolyline(ctx, path.simplified, place);
+    }
+
+    return;
+  }
+
+  if (step.type === "inset") {
+    for (const path of animation.paths) {
+      strokeClosedPolyline(
+        ctx,
+        offsetPolygon(
+          path.simplified,
+          params.regionInset * step.t
+        ),
+        place
+      );
+    }
+
+    return;
+  }
+
+  const cacheKey = [
+    step.t,
+    params.regionInset,
+    params.cornerRadius,
+    place.size,
+    place.originX,
+    place.originY
+  ].join(":");
+
+  if (animation.roundKey !== cacheKey) {
+    const pixelContours = animation.paths.map(path =>
+      gridToPixels(
+        offsetPolygon(path.simplified, params.regionInset),
+        place
+      )
+    );
+
+    animation.roundKey = cacheKey;
+    animation.roundContours = pixelContours;
+    animation.roundRadii = roundedRadii(
+      pixelContours,
+      params.cornerRadius * place.pixelScale * step.t
+    );
+  }
+
+  for (let i = 0; i < animation.roundContours.length; i++) {
+    drawRoundedContour(
+      ctx,
+      animation.roundContours[i],
+      animation.roundRadii[i],
+      "stroke"
+    );
+  }
+}
+
+function strokePartialPolyline(ctx, points, count, place) {
+  if (count <= 0 || points.length === 0) {
+    return;
+  }
+
+  ctx.beginPath();
+
+  const first = gridPoint(points[0], place);
+  ctx.moveTo(first.x, first.y);
+
+  const last = min(count, points.length);
+
+  for (let i = 1; i <= last; i++) {
+    const point = points[i % points.length];
+    const pixel = gridPoint(point, place);
+    ctx.lineTo(pixel.x, pixel.y);
+  }
+
+  ctx.stroke();
+}
+
+function strokeClosedPolyline(ctx, points, place) {
+  strokePartialPolyline(ctx, points, points.length, place);
+}
+
+function gridPoint(point, place) {
+  return {
+    x: place.originX + point.x * place.cell,
+    y: place.originY + point.y * place.cell
+  };
+}
+
+function gridToPixels(points, place) {
+  return points.map(point => gridPoint(point, place));
+}
+
+function regionWash(label, alpha) {
+  const tone = REGION_WASHES[label % REGION_WASHES.length];
+
+  return `rgba(${tone[0]}, ${tone[1]}, ${tone[2]}, ${alpha})`;
+}
+
+function paintAnimationCaption(caption) {
+  const frame = contentFrame();
+  const place = animation
+    ? animationPlace()
+    : null;
+
+  const below = place
+    ? place.originY + place.size + 28
+    : frame.height - 24;
+
+  const y = below < frame.height - 8
+    ? below
+    : frame.height - 16;
+
+  push();
+  noStroke();
+  fill(cssColor(params.outlineColor));
+  textFont("Helvetica, sans-serif");
+  textSize(16);
+  textAlign(CENTER, BOTTOM);
+  text(caption, frame.x + frame.width / 2, y);
+  pop();
 }
 
 /* =========================================================
@@ -1890,7 +2618,8 @@ function generateRandomPartition(
   size,
   requestedRegionCount,
   allowEqualSizes,
-  seed
+  seed,
+  trace
 ) {
   randomSeed(seed);
 
@@ -1936,6 +2665,7 @@ function generateRandomPartition(
 
     // Removing k - 1 edges produces k components.
     const numberOfCuts = regionCount - 1;
+    const cutEdges = shuffledEdges.slice(0, numberOfCuts);
 
     const remainingEdges =
       shuffledEdges.slice(numberOfCuts);
@@ -1952,7 +2682,18 @@ function generateRandomPartition(
       getRegionLabels(grid).length === regionCount &&
       sizesFit
     ) {
-      return normalizeLabels(grid);
+      const labeled = normalizeLabels(grid);
+
+      if (trace) {
+        trace.tree = tree;
+        trace.cuts = cutEdges;
+        trace.grid = labeled;
+        trace.start = tree.start;
+        trace.attempts = attempt + 1;
+        trace.regionCount = regionCount;
+      }
+
+      return labeled;
     }
   }
 
@@ -1975,6 +2716,7 @@ function createRandomSpanningTree(size) {
 
   const stack = [startingCell];
   visited[startingCell] = true;
+  treeEdges.start = startingCell;
 
   while (stack.length > 0) {
     const current =
