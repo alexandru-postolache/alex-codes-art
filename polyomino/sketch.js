@@ -1031,14 +1031,14 @@ async function startBeat(patternText, token) {
     beatAudible = audible;
 
     if (!audible) {
-      setBeatStatus("click the page to hear it");
+      setBeatStatus("click to hear");
       return;
     }
 
     setBeatStatus(
       hits === null
         ? "playing"
-        : `playing · ${hits} hits in the first bar`
+        : `${hits} hits`
     );
   } catch (error) {
     console.error(error);
