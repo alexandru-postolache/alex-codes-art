@@ -4,10 +4,10 @@
   Rows are bars of melody. A note starts where the region
   changes, and the following cells are how long it lasts.
   The region's place in a minor scale, from the base color,
-  chooses the pitch.
+  chooses the pitch. The melody is a piano.
 
-  Each region size is an Euclidean drum density. The bar
-  never has more than 16 steps, so a larger grid is played
+  Each region size is an Euclidean drum density on one kit.
+  The bar never has more than 16 steps, so a larger grid is played
   in sixteenth notes.
   The spanning tree is a quiet pitch line: right and left
   step by a tone, up by a fifth, down by an octave.
@@ -28,24 +28,8 @@ export const DRUMS = [
   "rd"
 ];
 
-// Machines that contain every drum name above.
-export const BANKS = [
-  "RolandTR909",
-  "AkaiMPC60",
-  "AkaiXR10",
-  "BossDR550",
-  "EmuSP12",
-  "LinnDrum",
-  "LinnLM2",
-  "OberheimDMX",
-  "RolandCompurhythm1000",
-  "RolandMT32",
-  "RolandR8",
-  "RolandTR505",
-  "RolandTR626",
-  "SakataDPM48",
-  "YamahaRY30"
-];
+// One kit for every size voice.
+export const DRUM_BANK = "RolandTR909";
 
 const NOTE_NAMES = [
   "c",
@@ -160,8 +144,7 @@ export function sizeVoices(labels, score) {
       return {
         drum: drumFor(label),
         pulses: slot.pulses,
-        steps: slot.steps,
-        bank: bankFor(label, score)
+        steps: slot.steps
       };
     });
 }
@@ -242,7 +225,7 @@ function shapeVoice(labels, size, score) {
   return [
     "note(`<",
     notes,
-    ">`).s(\"sine\").gain(0.7)"
+    ">`).s(\"piano\").clip(1).gain(0.8)"
   ].join("\n");
 }
 
@@ -251,14 +234,14 @@ function sizeVoice(labels, score) {
 
   if (voices.length === 1) {
     const voice = voices[0];
-    return `s("${voice.drum}").euclid(${voice.pulses}, ${voice.steps}).bank("${voice.bank}").gain(0.4)`;
+    return `s("${voice.drum}").euclid(${voice.pulses}, ${voice.steps}).bank("${DRUM_BANK}").gain(0.4)`;
   }
 
   const lines = voices.map((voice) =>
-    `  s("${voice.drum}").euclid(${voice.pulses}, ${voice.steps}).bank("${voice.bank}")`
+    `  s("${voice.drum}").euclid(${voice.pulses}, ${voice.steps})`
   );
 
-  return `stack(\n${lines.join(",\n")}\n).gain(0.4)`;
+  return `stack(\n${lines.join(",\n")}\n).bank("${DRUM_BANK}").gain(0.4)`;
 }
 
 function treeVoice(partition, size, rootMidi) {
@@ -299,21 +282,6 @@ export function runsInRow(row) {
 function drumFor(label) {
   const index = Math.abs(label) % DRUMS.length;
   return DRUMS[index];
-}
-
-function bankFor(label, score) {
-  const used = Math.max(
-    1,
-    Math.round(Number(score.patternCount) || 1)
-  );
-
-  const shift =
-    Math.abs(Math.floor(Number(score.seed) || 0)) % used;
-
-  const pattern =
-    (Math.abs(label) + shift) % used;
-
-  return BANKS[pattern % BANKS.length];
 }
 
 function gridSizeOf(labels, fallback) {

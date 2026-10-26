@@ -27,9 +27,14 @@
       const ready = initStrudel({
         miniAllStrings: false,
         prebake: () =>
-          samples(
-            "https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json"
-          )
+          Promise.all([
+            samples(
+              "https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json"
+            ),
+            samples(
+              "https://raw.githubusercontent.com/felixroos/dough-samples/main/piano.json"
+            )
+          ])
       });
 
       // Called synchronously from a click in the parent page.
