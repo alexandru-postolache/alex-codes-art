@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  BANKS,
+  DRUM_BANK,
   DRUMS,
   buildBeat,
   euclidPair,
@@ -85,20 +85,25 @@ test("a grid larger than 16 cells is rescaled onto sixteen steps", () => {
   );
 });
 
-test("the tile set picks the drum machine for the size voices", () => {
-  const voices = sizeVoices(labels, score);
-  assert.equal(voices[0].bank, BANKS[0]);
-  assert.equal(voices[1].bank, BANKS[1]);
-
-  const shifted = sizeVoices(labels, {
+test("every size voice uses the same drum kit", () => {
+  const code = buildBeat({
     ...score,
-    seed: 1,
-    patternCount: 8
+    partitions: [{ labels, tree: null, cuts: null }]
   });
 
-  assert.equal(shifted[0].bank, BANKS[1]);
+  assert.equal(DRUM_BANK, "RolandTR909");
+  assert.equal(code.match(/\.bank\("RolandTR909"\)/g).length, 1);
+  assert.doesNotMatch(code, /Akai|Linn|Boss|Emu|Oberheim|Yamaha|Sakata/);
   assert.equal(DRUMS.length, 11);
-  assert.equal(BANKS.length, 15);
+
+  const shifted = buildBeat({
+    ...score,
+    seed: 4,
+    patternCount: 3,
+    partitions: [{ labels, tree: null, cuts: null }]
+  });
+
+  assert.equal(shifted.match(/\.bank\("RolandTR909"\)/g).length, 1);
 });
 
 test("the tree walks by direction and accents cuts", () => {
@@ -168,7 +173,8 @@ test("the pattern is valid script and keeps each partition for one cycle per row
   assert.match(code, /\[3, stack\(/);
   assert.match(code, /note\(`</);
   assert.match(code, /c4@3 d4@1/);
-  assert.match(code, /\.s\("sine"\)/);
+  assert.match(code, /\.s\("piano"\)\.clip\(1\)/);
+  assert.match(code, /\.bank\("RolandTR909"\)/);
   assert.match(code, /\.euclid\(5, 16\)/);
   assert.doesNotMatch(code, /s\(`</);
   assert.match(code, /\.slow\(4\)/);
