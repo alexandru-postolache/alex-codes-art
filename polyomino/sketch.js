@@ -26,8 +26,9 @@
   Patterns may repeat when there are more regions than sets.
 
   The Beats folder plays the partition with Strudel.
-  Each row is a bar, region sizes are Euclidean densities,
-  and the spanning tree is a quiet pitched line.
+  Each row is a bar of melody. Region sizes are Euclidean
+  drum densities of at most 16 steps, and the spanning
+  tree is a quiet pitched line.
 */
 
 const RANDOM_CANVAS = 700;
