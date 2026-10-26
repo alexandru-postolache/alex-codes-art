@@ -22,6 +22,8 @@
 
   Each region is filled from a palette built by ColorGenerator.
   The Color folder chooses the base color and the scheme.
+  The Tiles folder can fill each region with a Kenney pattern.
+  Patterns may repeat when there are more regions than sets.
 */
 
 const RANDOM_CANVAS = 700;
@@ -75,6 +77,11 @@ const params = {
   increaseSaturation: false,
   increaseBrightness: true,
 
+  // Kenney Pattern Pack Extra. Each region takes one pattern.
+  useTiles: true,
+  patternCount: 8,
+  patternScale: 1,
+
   strokeWidth: 2.2,
   // Measured relative to one grid cell.
   regionInset: 0.095,
@@ -119,7 +126,11 @@ const readout = {
 
 const CUT_COLOR = "#c4552a";
 
-function setup() {
+const PATTERN_COUNT = 84;
+let patternImages = [];
+let tileInputs = {};
+
+async function setup() {
   const canvas = createCanvas(
     windowWidth,
     windowHeight
@@ -127,8 +138,16 @@ function setup() {
 
   canvas.parent("sketch");
   pixelDensity(2);
-
   noLoop();
+
+  const loads = [];
+
+  for (let index = 0; index < PATTERN_COUNT; index++) {
+    const name = String(index).padStart(3, "0");
+    loads.push(loadImage(`tiles/pattern_${name}.png`));
+  }
+
+  patternImages = await Promise.all(loads);
   setupPane();
   rebuild(true);
 }
@@ -373,6 +392,9 @@ const DRAWING_KEYS = new Set([
   "harmonyDegree",
   "increaseSaturation",
   "increaseBrightness",
+  "useTiles",
+  "patternCount",
+  "patternScale",
   "strokeWidth",
   "regionInset",
   "cornerRadius",
@@ -648,6 +670,30 @@ function setupPane() {
 
   updateColorVisibility();
 
+  const tileFolder = pane.addFolder({
+    title: "Tiles"
+  });
+
+  tileFolder.addInput(params, "useTiles", {
+    label: "patterns"
+  });
+
+  tileInputs.count = tileFolder.addInput(params, "patternCount", {
+    label: "sets",
+    min: 1,
+    max: PATTERN_COUNT,
+    step: 1
+  });
+
+  tileInputs.scale = tileFolder.addInput(params, "patternScale", {
+    label: "scale",
+    min: 0.4,
+    max: 2.5,
+    step: 0.05
+  });
+
+  updateTileVisibility();
+
   summaryMonitor = pane.addMonitor(
     readout,
     "summary",
@@ -677,6 +723,10 @@ function setupPane() {
 
     if (presetKey === "colorScheme") {
       updateColorVisibility();
+    }
+
+    if (presetKey === "useTiles") {
+      updateTileVisibility();
     }
 
     // Drawing and layout values repaint while the pointer is still down.
@@ -747,6 +797,18 @@ function updateColorVisibility() {
     scheme !== "analogous" && scheme !== "split";
   colorInputs.increaseSaturation.hidden = scheme !== "monochromatic";
   colorInputs.increaseBrightness.hidden = scheme !== "monochromatic";
+}
+
+function updateTileVisibility() {
+  const hidden = !params.useTiles;
+
+  if (tileInputs.count) {
+    tileInputs.count.hidden = hidden;
+  }
+
+  if (tileInputs.scale) {
+    tileInputs.scale.hidden = hidden;
+  }
 }
 
 function updatePaneVisibility() {
@@ -1045,6 +1107,86 @@ function regionFill(label) {
 
   const index = abs(label) % colors.length;
   return colors[index];
+}
+
+function patternIndexFor(label) {
+  const total = patternImages.length;
+
+  if (total === 0) {
+    return 0;
+  }
+
+  const used = constrain(
+    round(params.patternCount),
+    1,
+    total
+  );
+  const shift = abs(floor(params.seed)) % used;
+
+  return (abs(label) + shift) % used;
+}
+
+function patternSource(index) {
+  const pattern = patternImages[index];
+
+  if (!pattern || !pattern.width) {
+    return null;
+  }
+
+  return pattern.canvas || pattern.elt || null;
+}
+
+function contourBounds(contours) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  for (const contour of contours) {
+    for (const point of contour) {
+      minX = min(minX, point.x);
+      minY = min(minY, point.y);
+      maxX = max(maxX, point.x);
+      maxY = max(maxY, point.y);
+    }
+  }
+
+  return { minX, minY, maxX, maxY };
+}
+
+function stampPattern(ctx, source, originX, originY, motif, bounds) {
+  const startX = originX + floor((bounds.minX - originX) / motif) * motif;
+  const startY = originY + floor((bounds.minY - originY) / motif) * motif;
+  const bleed = 0.75;
+
+  for (let y = startY; y < bounds.maxY; y += motif) {
+    for (let x = startX; x < bounds.maxX; x += motif) {
+      ctx.drawImage(source, x, y, motif + bleed, motif + bleed);
+    }
+  }
+}
+
+/*
+  The Kenney patterns are black and white. Multiply keeps the
+  white parts of a pattern in the region color and the black
+  parts as the motif.
+*/
+function paintPatternFill(ctx, label, originX, originY, cellSize, bounds) {
+  ctx.fillStyle = regionFill(label);
+  ctx.fill("evenodd");
+
+  const source = patternSource(patternIndexFor(label));
+
+  if (!source) {
+    return;
+  }
+
+  const motif = max(8, cellSize * params.patternScale);
+
+  ctx.save();
+  ctx.globalCompositeOperation = "multiply";
+  stampPattern(ctx, source, originX, originY, motif, bounds);
+  ctx.restore();
 }
 
 function withAlpha(css, alpha) {
@@ -1400,13 +1542,21 @@ function paintAnimationCells(ctx, place, step) {
   for (let index = 0; index < gridSize * gridSize; index++) {
     let fill = "rgba(41, 41, 50, 0.04)";
 
-    if (regions) {
+    if (regions && params.useTiles) {
+      fill = regionFill(animation.grid[index]);
+    } else if (regions) {
       fill = withAlpha(regionFill(animation.grid[index]), wash);
     } else if (visited && visited[index]) {
       fill = "rgba(41, 41, 50, 0.09)";
     }
 
-    paintCell(ctx, place, index, fill);
+    paintCell(
+      ctx,
+      place,
+      index,
+      fill,
+      regions && params.useTiles ? animation.grid[index] : null
+    );
   }
 
   let highlight = -1;
@@ -1446,7 +1596,7 @@ function grownCells(step) {
   return visited;
 }
 
-function paintCell(ctx, place, index, fill) {
+function paintCell(ctx, place, index, fill, patternLabel) {
   const x = index % gridSize;
   const y = floor(index / gridSize);
   const gap = place.cell * 0.1;
@@ -1461,6 +1611,29 @@ function paintCell(ctx, place, index, fill) {
   ctx.roundRect(left, top, side, side, place.cell * 0.08);
   ctx.fill();
   ctx.stroke();
+
+  if (patternLabel == null || !params.useTiles) {
+    return;
+  }
+
+  const source = patternSource(patternIndexFor(patternLabel));
+
+  if (!source) {
+    return;
+  }
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(left, top, side, side, place.cell * 0.08);
+  ctx.clip();
+  ctx.globalCompositeOperation = "multiply";
+  stampPattern(ctx, source, place.originX, place.originY, max(8, place.cell * params.patternScale), {
+    minX: left,
+    minY: top,
+    maxX: left + side,
+    maxY: top + side
+  });
+  ctx.restore();
 }
 
 function paintAnimationTree(ctx, place, step) {
@@ -2052,6 +2225,7 @@ function drawPartition(
   let cursor = 0;
 
   for (const item of regionContours) {
+    target.save();
     target.beginPath();
 
     for (let i = 0; i < item.pixelContours.length; i++) {
@@ -2063,8 +2237,22 @@ function drawPartition(
       );
     }
 
-    target.fillStyle = regionFill(item.region);
-    target.fill("evenodd");
+    if (params.useTiles) {
+      target.clip("evenodd");
+      paintPatternFill(
+        target,
+        item.region,
+        originX,
+        originY,
+        cellSize,
+        contourBounds(item.pixelContours)
+      );
+    } else {
+      target.fillStyle = regionFill(item.region);
+      target.fill("evenodd");
+    }
+
+    target.restore();
     cursor += item.pixelContours.length;
   }
 
