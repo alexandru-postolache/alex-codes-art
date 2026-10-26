@@ -130,14 +130,7 @@ const PATTERN_COUNT = 84;
 let patternImages = [];
 let tileInputs = {};
 
-function preload() {
-  for (let index = 0; index < PATTERN_COUNT; index++) {
-    const name = String(index).padStart(3, "0");
-    patternImages.push(loadImage(`tiles/pattern_${name}.png`));
-  }
-}
-
-function setup() {
+async function setup() {
   const canvas = createCanvas(
     windowWidth,
     windowHeight
@@ -145,8 +138,16 @@ function setup() {
 
   canvas.parent("sketch");
   pixelDensity(2);
-
   noLoop();
+
+  const loads = [];
+
+  for (let index = 0; index < PATTERN_COUNT; index++) {
+    const name = String(index).padStart(3, "0");
+    loads.push(loadImage(`tiles/pattern_${name}.png`));
+  }
+
+  patternImages = await Promise.all(loads);
   setupPane();
   rebuild(true);
 }
@@ -1126,13 +1127,13 @@ function patternIndexFor(label) {
 }
 
 function patternSource(index) {
-  const image = patternImages[index];
+  const pattern = patternImages[index];
 
-  if (!image || !image.width) {
+  if (!pattern || !pattern.width) {
     return null;
   }
 
-  return image.canvas || image.elt || null;
+  return pattern.canvas || pattern.elt || null;
 }
 
 function contourBounds(contours) {
