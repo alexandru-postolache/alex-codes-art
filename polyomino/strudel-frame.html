@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Polyomino beats</title>
+  </head>
+  <body>
+    <script type="module">
+      import {
+        evaluate,
+        getAudioContext,
+        hush,
+        initAudio,
+        initStrudel,
+        samples
+      } from "https://unpkg.com/@strudel/web@1.3.0/dist/index.mjs";
+
+      const parentOrigin = new URL(document.referrer || location.href).origin;
+
+      function report(message) {
+        parent.postMessage(
+          { source: "polyomino-beats", ...message },
+          parentOrigin
+        );
+      }
+
+      const ready = initStrudel({
+        miniAllStrings: false,
+        prebake: () =>
+          samples(
+            "https://raw.githubusercontent.com/felixroos/dough-samples/main/tidal-drum-machines.json"
+          )
+      });
+
+      // Called synchronously from a click in the parent page.
+      // Creating and resuming the context has to start on that gesture.
+      window.polyominoUnlock = () => {
+        const context = getAudioContext();
+
+        if (context.state === "suspended") {
+          return context.resume();
+        }
+
+        return Promise.resolve();
+      };
+
+      ready
+        .then(() => initAudio())
+        .then(() => {
+          report({ type: "status", status: "ready" });
+        })
+        .catch((error) => {
+          report({
+            type: "error",
+            message: error && error.message ? error.message : String(error)
+          });
+        });
+
+      window.addEventListener("message", async (event) => {
+        if (event.origin !== parentOrigin) {
+          return;
+        }
+
+        const data = event.data;
+
+        if (!data || data.source !== "polyomino-beats") {
+          return;
+        }
+
+        if (data.type === "stop") {
+          try {
+            hush();
+          } catch (error) {
+            console.error(error);
+          }
+
+          report({ type: "status", status: "stopped" });
+          return;
+        }
+
+        if (data.type !== "play") {
+          return;
+        }
+
+        try {
+          await ready;
+          await Promise.race([
+            window.polyominoUnlock(),
+            new Promise((resolve) => {
+              setTimeout(resolve, 400);
+            })
+          ]);
+
+          const pattern = await evaluate(data.code, true);
+          let hits = null;
+
+          if (pattern && pattern.queryArc) {
+            hits = pattern
+              .queryArc(0, 1)
+              .filter((hap) => !hap.hasOnset || hap.hasOnset())
+              .length;
+          }
+
+          const audio = getAudioContext().state;
+          report({
+            type: "status",
+            status: audio === "running" ? "playing" : "suspended",
+            hits,
+            audio
+          });
+        } catch (error) {
+          report({
+            type: "error",
+            message: error && error.message ? error.message : String(error)
+          });
+        }
+      });
+    </script>
+  </body>
+</html>

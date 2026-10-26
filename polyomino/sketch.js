@@ -24,6 +24,10 @@
   The Color folder chooses the base color and the scheme.
   The Tiles folder can fill each region with a Kenney pattern.
   Patterns may repeat when there are more regions than sets.
+
+  The Beats folder plays the partition with Strudel.
+  Each row is a bar, region sizes are Euclidean densities,
+  and the spanning tree is a quiet pitched line.
 */
 
 const RANDOM_CANVAS = 700;
@@ -92,7 +96,16 @@ const params = {
   shapeScale: 0.72,
 
   // Steps per second while the animated mode is playing.
-  playbackSpeed: 16
+  playbackSpeed: 16,
+
+  // Strudel playback. Play starts on a click, then follows
+  // the partition as it changes.
+  beatPlay: false,
+  beatShape: true,
+  beatSizes: true,
+  beatTree: true,
+  beatTempo: 0.8,
+  beatLevel: 0.8
 };
 
 // Active grid size. ALL_3X3 always uses 3.
@@ -130,6 +143,18 @@ const PATTERN_COUNT = 84;
 let patternImages = [];
 let tileInputs = {};
 
+let beatPlayInput;
+let beatStatusMonitor;
+let beatCodeView;
+let beatTimer = 0;
+let beatToken = 0;
+let lastPlayedCode = "";
+let beatAudible = false;
+
+const beatReadout = {
+  status: "loading samples"
+};
+
 async function setup() {
   const canvas = createCanvas(
     windowWidth,
@@ -150,6 +175,7 @@ async function setup() {
   patternImages = await Promise.all(loads);
   setupPane();
   rebuild(true);
+  watchBeatPlayer();
 }
 
 function draw() {
@@ -416,6 +442,18 @@ const STRUCTURAL_KEYS = new Set([
   "regionCount",
   "columnCount",
   "rowCount",
+  "seed"
+]);
+
+const BEAT_KEYS = new Set([
+  "beatPlay",
+  "beatShape",
+  "beatSizes",
+  "beatTree",
+  "beatTempo",
+  "beatLevel",
+  "baseColor",
+  "patternCount",
   "seed"
 ]);
 
@@ -694,6 +732,72 @@ function setupPane() {
 
   updateTileVisibility();
 
+  const beatsFolder = pane.addFolder({
+    title: "Beats"
+  });
+
+  beatPlayInput = beatsFolder.addInput(params, "beatPlay", {
+    label: "play"
+  });
+
+  beatPlayInput.disabled = true;
+
+  beatsFolder.addInput(params, "beatShape", {
+    label: "shape"
+  });
+
+  beatsFolder.addInput(params, "beatSizes", {
+    label: "sizes"
+  });
+
+  beatsFolder.addInput(params, "beatTree", {
+    label: "tree"
+  });
+
+  beatsFolder.addInput(params, "beatTempo", {
+    label: "tempo",
+    min: 0.25,
+    max: 2,
+    step: 0.05
+  });
+
+  beatsFolder.addInput(params, "beatLevel", {
+    label: "level",
+    min: 0,
+    max: 1,
+    step: 0.05
+  });
+
+  beatStatusMonitor = beatsFolder.addMonitor(beatReadout, "status", {
+    label: "audio",
+    interval: 0
+  });
+
+  beatsFolder.addButton({
+    title: "Copy pattern"
+  }).on("click", () => {
+    copyBeatCode();
+  });
+
+  beatsFolder.addButton({
+    title: "Open in Strudel"
+  }).on("click", () => {
+    openBeatInStrudel();
+  });
+
+  const beatPanel = document.createElement("div");
+  beatPanel.id = "beat-panel";
+
+  const beatLabel = document.createElement("div");
+  beatLabel.id = "beat-label";
+  beatLabel.textContent = "Pattern";
+  beatPanel.appendChild(beatLabel);
+
+  beatCodeView = document.createElement("pre");
+  beatCodeView.id = "beat-code";
+  beatPanel.appendChild(beatCodeView);
+  container.appendChild(beatPanel);
+
   summaryMonitor = pane.addMonitor(
     readout,
     "summary",
@@ -721,6 +825,16 @@ function setupPane() {
       return;
     }
 
+    if (presetKey === "beatPlay") {
+      if (params.beatPlay) {
+        scheduleBeat();
+      } else {
+        stopBeat();
+      }
+
+      return;
+    }
+
     if (presetKey === "colorScheme") {
       updateColorVisibility();
     }
@@ -736,6 +850,7 @@ function setupPane() {
       LAYOUT_KEYS.has(presetKey)
     ) {
       draw();
+      syncBeat(presetKey);
       return;
     }
 
@@ -750,6 +865,8 @@ function setupPane() {
     if (STRUCTURAL_KEYS.has(presetKey)) {
       rebuild(true);
     }
+
+    syncBeat(presetKey);
   });
 }
 
@@ -798,6 +915,188 @@ function updateColorVisibility() {
   colorInputs.increaseSaturation.hidden = scheme !== "monochromatic";
   colorInputs.increaseBrightness.hidden = scheme !== "monochromatic";
 }
+
+function watchBeatPlayer() {
+  if (!window.PolyominoPlayer) {
+    setBeatStatus("audio failed to load");
+    return;
+  }
+
+  PolyominoPlayer.ready.then(() => {
+    if (beatPlayInput) {
+      beatPlayInput.disabled = false;
+    }
+
+    if (!params.beatPlay) {
+      setBeatStatus("ready");
+    }
+  }).catch((error) => {
+    console.error(error);
+    setBeatStatus(error.message || "audio failed to load");
+  });
+}
+
+function syncBeat(presetKey) {
+  if (STRUCTURAL_KEYS.has(presetKey)) {
+    return;
+  }
+
+  if (!BEAT_KEYS.has(presetKey)) {
+    return;
+  }
+
+  scheduleBeat();
+}
+
+function beatScore() {
+  return {
+    gridSize,
+    cps: params.beatTempo,
+    gain: params.beatLevel,
+    rootMidi: window.PolyominoBeats
+      ? PolyominoBeats.rootMidiFromColor(params.baseColor)
+      : 48,
+    patternCount: params.patternCount,
+    seed: params.seed,
+    layers: {
+      shape: params.beatShape,
+      sizes: params.beatSizes,
+      tree: params.beatTree
+    },
+    partitions: partitions.map((grid) => ({
+      labels: Array.from(grid),
+      tree: grid.tree || null,
+      cuts: grid.cuts || null,
+      start: grid.start
+    }))
+  };
+}
+
+function refreshBeatCode() {
+  if (!window.PolyominoBeats || !beatCodeView) {
+    return "";
+  }
+
+  const patternText = PolyominoBeats.buildBeat(beatScore());
+  beatCodeView.textContent = patternText;
+  return patternText;
+}
+
+function scheduleBeat() {
+  const patternText = refreshBeatCode();
+
+  if (!params.beatPlay || !window.PolyominoPlayer) {
+    return;
+  }
+
+  clearTimeout(beatTimer);
+  const token = ++beatToken;
+
+  beatTimer = setTimeout(() => {
+    startBeat(patternText, token);
+  }, 80);
+}
+
+async function startBeat(patternText, token) {
+  if (!params.beatPlay || token !== beatToken) {
+    return;
+  }
+
+  if (patternText === lastPlayedCode && beatAudible) {
+    setBeatStatus("playing");
+    return;
+  }
+
+  setBeatStatus("loading");
+
+  try {
+    await PolyominoPlayer.ready;
+
+    if (!params.beatPlay || token !== beatToken) {
+      return;
+    }
+
+    const result = await PolyominoPlayer.play(patternText);
+
+    if (!params.beatPlay || token !== beatToken) {
+      PolyominoPlayer.stop();
+      return;
+    }
+
+    lastPlayedCode = patternText;
+    const hits = result && Number.isFinite(result.hits)
+      ? result.hits
+      : null;
+    const audible = !result || result.status !== "suspended";
+    beatAudible = audible;
+
+    if (!audible) {
+      setBeatStatus("click to hear");
+      return;
+    }
+
+    setBeatStatus(
+      hits === null
+        ? "playing"
+        : `${hits} hits`
+    );
+  } catch (error) {
+    console.error(error);
+
+    if (token === beatToken) {
+      setBeatStatus(error.message || "audio failed");
+    }
+  }
+}
+
+function stopBeat() {
+  beatToken += 1;
+  lastPlayedCode = "";
+  beatAudible = false;
+  clearTimeout(beatTimer);
+
+  if (window.PolyominoPlayer) {
+    PolyominoPlayer.stop();
+  }
+
+  setBeatStatus("stopped");
+}
+
+function setBeatStatus(status) {
+  beatReadout.status = status;
+
+  if (beatStatusMonitor) {
+    beatStatusMonitor.refresh();
+  }
+}
+
+function copyBeatCode() {
+  const patternText = refreshBeatCode();
+
+  if (!patternText || !navigator.clipboard) {
+    return;
+  }
+
+  navigator.clipboard.writeText(patternText).catch((error) => {
+    console.error(error);
+    setBeatStatus("could not copy");
+  });
+}
+
+function openBeatInStrudel() {
+  const patternText = refreshBeatCode();
+  const encoded = encodeURIComponent(btoa(patternText));
+  window.open(`https://strudel.cc/#${encoded}`, "_blank", "noopener");
+}
+
+document.addEventListener("pointerdown", () => {
+  if (!params.beatPlay || beatAudible) {
+    return;
+  }
+
+  lastPlayedCode = "";
+  scheduleBeat();
+}, true);
 
 function updateTileVisibility() {
   const hidden = !params.useTiles;
@@ -968,6 +1267,11 @@ function rebuild(regenerate) {
   }
 
   fitCanvas();
+  refreshBeatCode();
+
+  if (params.beatPlay) {
+    scheduleBeat();
+  }
 }
 
 function partitionSummary(grids) {
@@ -3180,12 +3484,21 @@ function generateRandomPartition(
       sizesFit
     ) {
       const labeled = normalizeLabels(grid);
+      labeled.tree = tree.map((edge) => ({
+        a: edge.a,
+        b: edge.b
+      }));
+      labeled.cuts = cutEdges.map((edge) => ({
+        a: edge.a,
+        b: edge.b
+      }));
+      labeled.start = tree.start;
 
       if (trace) {
-        trace.tree = tree;
-        trace.cuts = cutEdges;
+        trace.tree = labeled.tree;
+        trace.cuts = labeled.cuts;
         trace.grid = labeled;
-        trace.start = tree.start;
+        trace.start = labeled.start;
         trace.attempts = attempt + 1;
         trace.regionCount = regionCount;
       }
