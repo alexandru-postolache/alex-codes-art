@@ -1,10 +1,14 @@
 /*
   Turn a polyomino partition into a Strudel pattern.
 
-  Rows are bars. A hit starts where the region changes,
-  and the following cells are how long that hit lasts.
+  Rows are bars of melody. A note starts where the region
+  changes, and the following cells are how long it lasts.
+  The region's place in a minor scale, from the base color,
+  chooses the pitch.
 
-  Each region size is an Euclidean density on its own drum.
+  Each region size is an Euclidean drum density. The bar
+  never has more than 16 steps, so a larger grid is played
+  in sixteenth notes.
   The spanning tree is a quiet pitch line: right and left
   step by a tone, up by a fifth, down by an octave.
   A cut in the tree is an accent.
@@ -60,13 +64,18 @@ const NOTE_NAMES = [
 
 const LOW_MIDI = 48;
 const HIGH_MIDI = 84;
+const EUCLID_MAX = 16;
+
+// Natural minor. Region 0 is the root from the base color.
+const MINOR = [0, 2, 3, 5, 7, 8, 10];
 
 export function buildBeat(score) {
   const cps = formatNum(score.cps ?? 0.8);
   const level = formatNum(score.gain ?? 0.8);
   const header = [
-    "// One cycle is one row. A hit starts where the region changes.",
-    "// Region size is an Euclidean density. The tree is a quiet pitch line.",
+    "// One cycle is one row. A note starts where the region changes.",
+    "// Region size is an Euclidean density of at most 16 steps.",
+    "// The tree is a quiet pitch line.",
     `setcps(${cps})`
   ];
 
@@ -123,10 +132,10 @@ export function shapeRows(labels, size, score) {
 
     rows.push({
       sound: runs
-        .map((run) => `${drumFor(run.label)}@${run.length}`)
-        .join(" "),
-      bank: runs
-        .map((run) => `${bankFor(run.label, score)}@${run.length}`)
+        .map((run) => {
+          const note = noteForRegion(run.label, score.rootMidi);
+          return `${note}@${run.length}`;
+        })
         .join(" ")
     });
   }
@@ -136,7 +145,7 @@ export function shapeRows(labels, size, score) {
 
 export function sizeVoices(labels, score) {
   const size = gridSizeOf(labels, score.gridSize);
-  const steps = size * size;
+  const area = size * size;
   const counts = new Map();
 
   for (const label of labels) {
@@ -145,12 +154,39 @@ export function sizeVoices(labels, score) {
 
   return [...counts.keys()]
     .sort((a, b) => a - b)
-    .map((label) => ({
-      drum: drumFor(label),
-      pulses: Math.max(1, Math.min(counts.get(label), steps)),
-      steps,
-      bank: bankFor(label, score)
-    }));
+    .map((label) => {
+      const slot = euclidPair(counts.get(label), area);
+
+      return {
+        drum: drumFor(label),
+        pulses: slot.pulses,
+        steps: slot.steps,
+        bank: bankFor(label, score)
+      };
+    });
+}
+
+// Fit a region into a bar of at most 16 steps.
+// Smaller grids keep one step per cell. Larger grids
+// are rescaled onto sixteen sixteenth notes.
+export function euclidPair(count, area) {
+  const cells = Math.max(1, area);
+  const steps = Math.min(cells, EUCLID_MAX);
+  const scaled = Math.round((count * steps) / cells);
+
+  return {
+    pulses: Math.max(1, Math.min(steps, scaled)),
+    steps
+  };
+}
+
+export function noteForRegion(label, rootMidi) {
+  const degree = Math.abs(label);
+  const scaleDegree = degree % MINOR.length;
+  const octave = Math.floor(degree / MINOR.length);
+  const midi = (rootMidi ?? LOW_MIDI) + MINOR[scaleDegree] + (octave * 12);
+
+  return midiName(foldMidi(midi));
 }
 
 export function treeLine(partition, size, rootMidi) {
@@ -201,15 +237,12 @@ function sectionCode(partition, score) {
 
 function shapeVoice(labels, size, score) {
   const rows = shapeRows(labels, size, score);
-  const sounds = rows.map((row) => `  ${row.sound}`).join("\n");
-  const banks = rows.map((row) => `  ${row.bank}`).join("\n");
+  const notes = rows.map((row) => `  ${row.sound}`).join("\n");
 
   return [
-    "s(`<",
-    sounds,
-    ">`).bank(`<",
-    banks,
-    ">`).gain(0.95)"
+    "note(`<",
+    notes,
+    ">`).s(\"sine\").gain(0.7)"
   ].join("\n");
 }
 
