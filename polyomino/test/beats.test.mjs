@@ -4,6 +4,7 @@ import {
   BANKS,
   DRUMS,
   buildBeat,
+  euclidPair,
   rootMidiFromColor,
   runsInRow,
   shapeRows,
@@ -28,7 +29,7 @@ const labels = [
   2, 2, 3, 0
 ];
 
-test("a row sounds where the region changes and holds for the run", () => {
+test("a row is a melody where the region changes and holds for the run", () => {
   assert.deepEqual(runsInRow([0, 0, 0, 1, 1]), [
     { label: 0, length: 3 },
     { label: 1, length: 2 }
@@ -37,10 +38,10 @@ test("a row sounds where the region changes and holds for the run", () => {
   const rows = shapeRows(labels, 4, score);
 
   assert.equal(rows.length, 4);
-  assert.equal(rows[0].sound, "bd@3 sd@1");
-  assert.equal(rows[1].sound, "bd@1 hh@2 sd@1");
-  assert.equal(rows[2].sound, "hh@2 cp@2");
-  assert.equal(rows[3].sound, "hh@2 cp@1 bd@1");
+  assert.equal(rows[0].sound, "c4@3 d4@1");
+  assert.equal(rows[1].sound, "c4@1 d#4@2 d4@1");
+  assert.equal(rows[2].sound, "d#4@2 f4@2");
+  assert.equal(rows[3].sound, "d#4@2 f4@1 c4@1");
 
   for (const row of rows) {
     const weights = row.sound
@@ -65,17 +66,37 @@ test("region size is the Euclidean pulse count on that region's drum", () => {
   );
 });
 
-test("the tile set picks the drum machine", () => {
-  const first = shapeRows(labels, 4, score)[0];
-  assert.equal(first.bank, `${BANKS[0]}@3 ${BANKS[1]}@1`);
+test("a grid larger than 16 cells is rescaled onto sixteen steps", () => {
+  assert.deepEqual(euclidPair(12, 25), { pulses: 8, steps: 16 });
+  assert.deepEqual(euclidPair(1, 25), { pulses: 1, steps: 16 });
+  assert.deepEqual(euclidPair(9, 9), { pulses: 9, steps: 9 });
+  assert.deepEqual(euclidPair(40, 144), { pulses: 4, steps: 16 });
 
-  const shifted = shapeRows(labels, 4, {
+  const big = new Array(36).fill(0);
+  big[35] = 1;
+  const voices = sizeVoices(big, { ...score, gridSize: 6 });
+
+  assert.deepEqual(
+    voices.map((voice) => [voice.pulses, voice.steps]),
+    [
+      [16, 16],
+      [1, 16]
+    ]
+  );
+});
+
+test("the tile set picks the drum machine for the size voices", () => {
+  const voices = sizeVoices(labels, score);
+  assert.equal(voices[0].bank, BANKS[0]);
+  assert.equal(voices[1].bank, BANKS[1]);
+
+  const shifted = sizeVoices(labels, {
     ...score,
     seed: 1,
     patternCount: 8
-  })[0];
+  });
 
-  assert.equal(shifted.bank, `${BANKS[1]}@3 ${BANKS[2]}@1`);
+  assert.equal(shifted[0].bank, BANKS[1]);
   assert.equal(DRUMS.length, 11);
   assert.equal(BANKS.length, 15);
 });
@@ -145,7 +166,11 @@ test("the pattern is valid script and keeps each partition for one cycle per row
   assert.match(code, /setcps\(0\.8\)/);
   assert.match(code, /arrange\(\n {2}\[4, stack\(/);
   assert.match(code, /\[3, stack\(/);
+  assert.match(code, /note\(`</);
+  assert.match(code, /c4@3 d4@1/);
+  assert.match(code, /\.s\("sine"\)/);
   assert.match(code, /\.euclid\(5, 16\)/);
+  assert.doesNotMatch(code, /s\(`</);
   assert.match(code, /\.slow\(4\)/);
   assert.match(code, /note\("c4 d4 d3"\)/);
   assert.match(code, /\.gain\("0\.28 0\.28 0\.85"\)/);
