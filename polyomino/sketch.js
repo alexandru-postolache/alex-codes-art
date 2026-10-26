@@ -26,6 +26,10 @@
 
 const RANDOM_CANVAS = 700;
 
+// Tile size at which a fitted sheet matches the frame.
+// Larger values draw a larger piece. Smaller values draw a smaller one.
+const TILE_REFERENCE = 105;
+
 const MAX_GRID_SIZE = 12;
 
 const params = {
@@ -185,9 +189,6 @@ function paintPartitions(target, style) {
   const shape =
     min(frame.width, frame.height) * params.shapeScale;
 
-  const reference = RANDOM_CANVAS * params.shapeScale;
-  const pixelScale = reference === 0 ? 1 : shape / reference;
-
   drawPartition(
     partitions[0],
     frame.x + frame.width / 2,
@@ -195,7 +196,7 @@ function paintPartitions(target, style) {
     shape,
     style,
     target,
-    pixelScale
+    inkScale(shape)
   );
 }
 
@@ -213,6 +214,8 @@ function contentFrame() {
 }
 
 // Fit the tile block to the open area and center it.
+// The pitch fills that area. The piece then grows with tile size,
+// so a larger tile draws a larger partition instead of a smaller one.
 function sheetPlacement(frame) {
   const columns = max(1, sheetColumns());
   const rows = max(
@@ -223,15 +226,16 @@ function sheetPlacement(frame) {
   const margin = params.pageMargin;
   const availW = max(1, frame.width - margin * 2);
   const availH = max(1, frame.height - margin * 2);
-  const naturalW = columns * params.tileSize;
-  const naturalH = rows * params.tileSize;
-  const fit = min(
-    availW / naturalW,
-    availH / naturalH
+  const fitted = min(
+    availW / (columns * TILE_REFERENCE),
+    availH / (rows * TILE_REFERENCE)
   );
+  const tileScale = TILE_REFERENCE === 0
+    ? 1
+    : params.tileSize / TILE_REFERENCE;
 
-  const tile = params.tileSize * fit;
-  const shape = params.shapeSize * fit;
+  const tile = TILE_REFERENCE * fitted;
+  const shape = params.shapeSize * fitted * tileScale;
   const drawnW = columns * tile;
   const drawnH = rows * tile;
 
@@ -242,10 +246,21 @@ function sheetPlacement(frame) {
     originY: frame.y + (frame.height - drawnH) / 2,
     tile,
     shape,
-    pixelScale: params.shapeSize === 0
-      ? 1
-      : shape / params.shapeSize
+    pixelScale: inkScale(shape)
   };
+}
+
+// Stroke and corner radius follow the on-screen size of one piece.
+// The reference is the single-piece canvas, so a sheet does not
+// thicken the stroke just because more pieces were added.
+function inkScale(drawnSize) {
+  const reference = RANDOM_CANVAS * params.shapeScale;
+
+  if (reference <= 0) {
+    return 1;
+  }
+
+  return drawnSize / reference;
 }
 
 function usesSheet() {
@@ -538,7 +553,7 @@ function setupPane() {
 
   drawingFolder.addInput(params, "strokeWidth", {
     label: "stroke",
-    min: 0.5,
+    min: 0,
     max: 16,
     step: 0.1
   });
@@ -1334,7 +1349,6 @@ function paintAnimation() {
 function animationPlace() {
   const frame = contentFrame();
   const shape = min(frame.width, frame.height) * params.shapeScale;
-  const reference = RANDOM_CANVAS * params.shapeScale;
 
   return {
     frame,
@@ -1342,7 +1356,7 @@ function animationPlace() {
     originY: frame.y + (frame.height - shape) / 2,
     size: shape,
     cell: shape / gridSize,
-    pixelScale: reference === 0 ? 1 : shape / reference
+    pixelScale: inkScale(shape)
   };
 }
 
@@ -1526,10 +1540,16 @@ function cellCenter(index, place) {
 }
 
 function paintAnimationOutline(ctx, place, step) {
+  const lineWidth = params.strokeWidth * place.pixelScale;
+
+  if (lineWidth <= 0) {
+    return;
+  }
+
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.strokeStyle = cssColor(params.outlineColor);
-  ctx.lineWidth = params.strokeWidth * place.pixelScale;
+  ctx.lineWidth = lineWidth;
 
   if (step.type === "boundary") {
     let remaining = step.count;
@@ -1966,7 +1986,7 @@ function drawPartition(
   const originX = centerX - size / 2;
   const originY = centerY - size / 2;
   const cellSize = size / gridSize;
-  const scale = pixelScale || 1;
+  const scale = pixelScale == null ? 1 : pixelScale;
 
   const target = ctx || drawingContext;
   const regionContours = [];
@@ -2022,8 +2042,10 @@ function drawPartition(
 
   target.save();
 
+  const lineWidth = max(0, params.strokeWidth) * scale;
+
   target.strokeStyle = cssColor(params.outlineColor);
-  target.lineWidth = params.strokeWidth * scale;
+  target.lineWidth = lineWidth;
   target.lineCap = "round";
   target.lineJoin = "round";
 
@@ -2046,7 +2068,7 @@ function drawPartition(
     cursor += item.pixelContours.length;
   }
 
-  if (style === "fill") {
+  if (style === "fill" || lineWidth <= 0) {
     target.restore();
     return;
   }
