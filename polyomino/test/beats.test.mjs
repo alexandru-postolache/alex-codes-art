@@ -12,8 +12,7 @@ import {
   rootMidiFromColor,
   runsInRow,
   shapeRows,
-  sizeVoices,
-  treeLine
+  sizeVoices
 } from "../beats.mjs";
 
 const score = {
@@ -119,41 +118,7 @@ test("every size voice uses the same drum kit", () => {
   assert.equal(shifted.match(/\.bank\("RolandTR909"\)/g).length, 1);
 });
 
-test("the tree walks by direction and accents cuts", () => {
-  const line = treeLine({
-    tree: [
-      { a: 0, b: 1 },
-      { a: 1, b: 5 },
-      { a: 5, b: 4 },
-      { a: 4, b: 0 }
-    ],
-    cuts: [{ a: 1, b: 5 }]
-  }, 4, 60);
-
-  assert.deepEqual(line.notes, ["c4", "d4", "d3", "c3", "g3"]);
-  assert.deepEqual(line.gains, ["0.8", "0.8", "1", "0.8", "0.8"]);
-});
-
-test("pitch stays inside the playing range", () => {
-  const downs = Array.from({ length: 8 }, (_, index) => ({
-    a: index,
-    b: index + 4
-  }));
-
-  const line = treeLine({
-    tree: downs,
-    cuts: []
-  }, 4, 48);
-
-  for (const note of line.notes) {
-    assert.match(note, /^[a-g]#?[2-6]$/);
-  }
-
-  assert.equal(line.notes[0], "c3");
-  assert.ok(line.notes.every((note) => note.endsWith("3") || note.endsWith("4") || note.endsWith("5") || note.endsWith("6") || note.endsWith("2")));
-});
-
-test("the base color chooses the tree's starting note", () => {
+test("the base color chooses the bass root", () => {
   assert.equal(rootMidiFromColor("#ff0000"), 48);
   assert.equal(rootMidiFromColor("#00ff00"), 52);
   assert.equal(rootMidiFromColor("#0000ff"), 56);
@@ -192,11 +157,11 @@ test("the pattern is valid script and holds each piece for its whole melody", ()
   assert.match(code, /\.euclid\(3, 8\)/);
   assert.doesNotMatch(code, /euclid\(\d+, 16\)/);
   assert.doesNotMatch(code, /s\(`</);
-  assert.match(code, /\.s\("sawtooth"\)\.attack\(0\.02\)\.release\(0\.2\)\.lpf\(800\)\.slow\(8\)/);
+  assert.match(code, /\.s\("sawtooth"\)\.attack\(0\.02\)\.release\(0\.2\)\.lpf\(800\)\.gain\(0\.8\)\.slow\(8\)/);
+  assert.match(code, /note\("c2@5 d2@2 d#2@6 f2@3"\)/);
+  assert.match(code, /note\("c2@4 d2@4 d#2@1"\)\.s\("sawtooth"\).+\.slow\(4\.5\)/);
   assert.doesNotMatch(code, /\.s\("bass"\)/);
   assert.doesNotMatch(code, /triangle|sine/);
-  assert.match(code, /note\("c2@2"\)/);
-  assert.match(code, /\.gain\("1"\)/);
   assert.match(code, /\.postgain\(0\.7\)/);
   assert.doesNotThrow(() => {
     new Function(code);
@@ -249,7 +214,7 @@ test("instrument samples and drum kits can be chosen", () => {
   });
 
   assert.match(code, /\.s\("harp"\)\.clip\(1\)\.gain\(0\.8\)\.fast\(2\)/);
-  assert.match(code, /\.s\("pipeorgan_quiet_pedal"\)\.clip\(1\)\.slow\(8\)/);
+  assert.match(code, /\.s\("pipeorgan_quiet_pedal"\)\.clip\(1\)\.gain\(0\.8\)\.slow\(8\)/);
   assert.doesNotMatch(code, /lpf\(800\)/);
   assert.match(code, /\.bank\("LinnDrum"\)/);
   assert.doesNotMatch(code, /RolandTR909/);
@@ -265,7 +230,7 @@ test("instrument samples and drum kits can be chosen", () => {
   });
 
   assert.match(fallback, /\.s\("piano"\)\.clip\(1\)/);
-  assert.match(fallback, /\.s\("sawtooth"\)\.attack\(0\.02\)\.release\(0\.2\)\.lpf\(800\)/);
+  assert.match(fallback, /\.s\("sawtooth"\)\.attack\(0\.02\)\.release\(0\.2\)\.lpf\(800\)\.gain\(0\.8\)/);
   assert.match(fallback, /\.bank\("RolandTR909"\)/);
 
   const guitar = buildBeat({
@@ -343,105 +308,66 @@ test("a drum hit lights its region and then fades", () => {
   assert.ok(region.strength < 1);
 });
 
-test("the tree light walks the edges and marks a cut", () => {
-  const partition = {
-    labels,
-    start: 0,
-    tree: [
-      { a: 0, b: 1 },
-      { a: 1, b: 5 }
-    ],
-    cuts: [{ a: 1, b: 5 }]
-  };
+test("the bass light sits on the sounding region", () => {
   const heard = {
     ...score,
     layers: { shape: false, sizes: false, tree: true },
-    partitions: [partition]
+    partitions: [{ labels, tree: null, cuts: null }]
   };
 
   const opening = playingAt(heard, 0);
-  assert.deepEqual(opening.tree.cells, [0, 1, 5]);
-  assert.equal(opening.tree.head, 0);
-  assert.equal(opening.tree.noteStart, 0);
-  assert.equal(opening.tree.accent, true);
+  assert.equal(opening.tree.label, 0);
+  assert.deepEqual(opening.tree.cells, [0, 1, 2, 4, 15]);
+  assert.equal(opening.tree.progress, 0);
 
-  const midway = playingAt(heard, 2);
-  assert.equal(midway.tree.head, 0.5);
-  assert.equal(midway.tree.noteStart, 0);
-  assert.equal(midway.tree.accent, true);
+  const next = playingAt(heard, 2.5);
+  assert.equal(next.tree.label, 1);
+  assert.deepEqual(next.tree.cells, [3, 7]);
+  assert.equal(next.tree.progress, 0);
 
-  const cut = playingAt(heard, 16 / 3);
-  assert.ok(Math.abs(cut.tree.head - 4 / 3) < 1e-9);
-  assert.equal(cut.tree.noteStart, 0);
-  assert.equal(cut.tree.accent, true);
+  const later = playingAt(heard, 4);
+  assert.equal(later.tree.label, 2);
+  assert.deepEqual(later.tree.cells, [5, 6, 8, 9, 12, 13]);
+  assert.ok(Math.abs(later.tree.progress - (0.5 / 3)) < 1e-9);
 });
 
-test("a bass note holds for two steps, then one", () => {
-  const five = buildBeat({
+test("a bass note is the region root held for the region's size", () => {
+  const code = buildBeat({
     ...score,
     layers: { shape: false, sizes: false, tree: true },
-    partitions: [{
-      labels,
-      tree: [
-        { a: 0, b: 1 },
-        { a: 1, b: 5 },
-        { a: 5, b: 4 },
-        { a: 4, b: 0 },
-        { a: 0, b: 4 }
-      ],
-      cuts: [{ a: 1, b: 5 }]
-    }]
+    partitions: [{ labels, tree: null, cuts: null }]
   });
 
-  assert.match(five, /note\("c2@2 d1@1 c1@2"\)/);
-  assert.match(five, /\.gain\("1 0\.8 0\.8"\)/);
-  assert.match(five, /\.slow\(8\)/);
-  assert.doesNotMatch(five, /@3/);
+  assert.match(code, /note\("c2@5 d2@2 d#2@6 f2@3"\)/);
+  assert.match(code, /\.gain\(0\.8\)\.slow\(8\)/);
 
-  const heard = {
+  const sheet = buildBeat({
     ...score,
     layers: { shape: false, sizes: false, tree: true },
-    partitions: [{
-      labels,
-      tree: [
-        { a: 0, b: 1 },
-        { a: 1, b: 5 },
-        { a: 5, b: 4 },
-        { a: 4, b: 0 },
-        { a: 0, b: 4 }
-      ],
-      cuts: [{ a: 1, b: 5 }]
-    }]
-  };
-  const accented = playingAt(heard, 0);
-  const quiet = playingAt(heard, 3.2);
-
-  assert.equal(accented.tree.noteStart, 0);
-  assert.equal(accented.tree.accent, true);
-  assert.equal(quiet.tree.head, 2);
-  assert.equal(quiet.tree.noteStart, 2);
-  assert.equal(quiet.tree.accent, false);
-
-  const six = buildBeat({
-    ...score,
-    layers: { shape: false, sizes: false, tree: true },
-    partitions: [{
-      labels,
-      tree: [
-        { a: 0, b: 1 },
-        { a: 1, b: 5 },
-        { a: 5, b: 4 },
-        { a: 4, b: 0 },
-        { a: 0, b: 4 },
-        { a: 4, b: 5 }
-      ],
-      cuts: [{ a: 1, b: 5 }]
-    }]
+    partitions: [
+      { labels, tree: null, cuts: null },
+      {
+        labels: [0, 0, 1, 1, 1, 1, 0, 0, 2],
+        tree: null,
+        cuts: null
+      }
+    ]
   });
 
-  assert.match(six, /note\("c2@2 d1@1 c1@2 g1@1"\)/);
-  assert.match(six, /\.gain\("1 0\.8 0\.8 0\.8"\)/);
-  assert.doesNotMatch(six, /@3/);
+  assert.match(sheet, /arrange\(\n {2}\[8, /);
+  assert.match(sheet, /\[4\.5, /);
+  assert.equal(playingAt({
+    ...score,
+    layers: { shape: false, sizes: false, tree: true },
+    partitions: [
+      { labels, tree: null, cuts: null },
+      {
+        labels: [0, 0, 1, 1, 1, 1, 0, 0, 2],
+        tree: null,
+        cuts: null
+      }
+    ]
+  }, 8).index, 1);
 });
 
 test("the picture waits for the note that is leaving the speakers", () => {

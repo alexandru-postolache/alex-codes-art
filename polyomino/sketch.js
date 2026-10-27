@@ -31,14 +31,11 @@
   row takes half a bar. A sheet holds a piece until that
   melody finishes. Region sizes are Euclidean drum densities
   of at most 8 steps. The kit can be a TR-909, Linn, MPC-60,
-  DMX, or R-8.   The spanning tree is a low line at half speed:
-  saw, organ pedal, organ, folk harp, a bass guitar,
-  or a softer synth.
-  Each bass note holds for one or two steps. A dot walks
-  the tree with that note and leaves a trail along it,
-  at most two edges long.
+  DMX, or R-8. The bass plays each region's root and holds
+  it for the size of that region: saw, organ pedal, organ,
+  folk harp, a bass guitar, or a softer synth.
   While the sound plays, a light follows the chords, a region
-  softens on each drum, and a thin line walks the tree.
+  softens on each drum, and the bass region stays lit.
 */
 
 const RANDOM_CANVAS = 700;
@@ -785,11 +782,11 @@ function setupPane() {
   });
 
   beatsFolder.addInput(params, "beatTree", {
-    label: "tree"
+    label: "bass"
   });
 
   treeSoundInput = beatsFolder.addInput(params, "beatTreeSound", {
-    label: "tree sound",
+    label: "bass sound",
     options: soundOptions(PolyominoBeats.TREE_SOUNDS)
   });
 
@@ -2701,16 +2698,6 @@ function drawPartition(
     }
   }
 
-  if (music && music.tree) {
-    paintBeatTree(
-      target,
-      music.tree,
-      originX,
-      originY,
-      cellSize
-    );
-  }
-
   target.restore();
 }
 
@@ -2736,6 +2723,22 @@ function paintBeatWash(ctx, regions, music, originX, originY, cellSize) {
     ctx.fillStyle = withAlpha(BEAT_LIGHT, 0.22 * lit);
     ctx.fill("evenodd");
     ctx.restore();
+  }
+
+  if (music.tree) {
+    const bassRegion = regions.find((region) =>
+      region.region === music.tree.label
+    );
+
+    if (bassRegion) {
+      const held = 1 - (music.tree.progress || 0) * 0.35;
+
+      ctx.save();
+      traceRegion(ctx, bassRegion);
+      ctx.fillStyle = withAlpha(BEAT_LIGHT, 0.34 * held);
+      ctx.fill("evenodd");
+      ctx.restore();
+    }
   }
 
   if (!music.shape) {
@@ -2825,105 +2828,6 @@ function cellPoint(index, originX, originY, cellSize) {
   return {
     x: originX + (x + 0.5) * cellSize,
     y: originY + (y + 0.5) * cellSize
-  };
-}
-
-function paintBeatTree(ctx, tree, originX, originY, cellSize) {
-  const points = (tree.cells || []).map((cell) =>
-    cellPoint(cell, originX, originY, cellSize)
-  );
-
-  if (points.length === 0) {
-    return;
-  }
-
-  const head = tree.head || 0;
-  const trail = 2;
-  const noteStart = Number.isFinite(tree.noteStart) ? tree.noteStart : 0;
-  const from = Math.min(head, Math.max(noteStart, head - trail));
-  const samples = pathSamples(points, from, head);
-  const tip = samples[samples.length - 1];
-  const color = tree.accent ? CUT_COLOR : BEAT_LIGHT;
-
-  ctx.save();
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-
-  for (let index = 1; index < samples.length; index++) {
-    const previous = samples[index - 1];
-    const next = samples[index];
-    const age = (head - next.at) / trail;
-    const fade = constrain(1 - age, 0, 1);
-
-    ctx.strokeStyle = withAlpha(BEAT_LIGHT, 0.08 + 0.55 * fade);
-    ctx.lineWidth = max(1, cellSize * (0.012 + 0.03 * fade));
-    ctx.beginPath();
-    ctx.moveTo(previous.x, previous.y);
-    ctx.lineTo(next.x, next.y);
-    ctx.stroke();
-  }
-
-  const glow = ctx.createRadialGradient(
-    tip.x,
-    tip.y,
-    0,
-    tip.x,
-    tip.y,
-    cellSize * 0.28
-  );
-
-  glow.addColorStop(0, withAlpha(color, 0.55));
-  glow.addColorStop(1, withAlpha(color, 0));
-  ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(tip.x, tip.y, cellSize * 0.28, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = withAlpha(color, 0.95);
-  ctx.beginPath();
-  ctx.arc(tip.x, tip.y, cellSize * 0.07, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function pathSamples(points, from, to) {
-  const samples = [pointOnPath(points, from)];
-  const lastIndex = points.length - 1;
-
-  for (let index = Math.ceil(from); index <= lastIndex && index < to; index++) {
-    if (index > from) {
-      samples.push({
-        x: points[index].x,
-        y: points[index].y,
-        at: index
-      });
-    }
-  }
-
-  const end = pointOnPath(points, to);
-  const previous = samples[samples.length - 1];
-
-  if (!previous || Math.abs(previous.at - end.at) > 0.0001) {
-    samples.push(end);
-  }
-
-  return samples;
-}
-
-function pointOnPath(points, at) {
-  if (points.length === 1 || at <= 0) {
-    return { x: points[0].x, y: points[0].y, at: 0 };
-  }
-
-  const limit = points.length - 1;
-  const clamped = Math.min(limit, Math.max(0, at));
-  const index = Math.min(limit - 1, Math.floor(clamped));
-  const blend = clamped - index;
-
-  return {
-    x: lerp(points[index].x, points[index + 1].x, blend),
-    y: lerp(points[index].y, points[index + 1].y, blend),
-    at: clamped
   };
 }
 
