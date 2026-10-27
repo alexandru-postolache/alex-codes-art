@@ -191,7 +191,8 @@ test("the pattern is valid script and holds each piece for its whole melody", ()
   assert.match(code, /\.euclid\(3, 8\)/);
   assert.doesNotMatch(code, /euclid\(\d+, 16\)/);
   assert.doesNotMatch(code, /s\(`</);
-  assert.match(code, /\.s\("bass"\)\.clip\(1\)\.slow\(8\)/);
+  assert.match(code, /\.s\("sawtooth"\)\.attack\(0\.02\)\.release\(0\.2\)\.lpf\(800\)\.slow\(8\)/);
+  assert.doesNotMatch(code, /\.s\("bass"\)/);
   assert.doesNotMatch(code, /triangle|sine/);
   assert.match(code, /note\("c2 d2 d1"\)/);
   assert.match(code, /\.gain\("0\.8 0\.8 1"\)/);
@@ -199,6 +200,36 @@ test("the pattern is valid script and holds each piece for its whole melody", ()
   assert.doesNotThrow(() => {
     new Function(code);
   });
+});
+
+test("the shape and the tree can use another built-in sound", () => {
+  const code = buildBeat({
+    ...score,
+    sounds: { shape: "supersaw", tree: "sine" },
+    partitions: [{
+      labels,
+      tree: [{ a: 0, b: 1 }],
+      cuts: []
+    }]
+  });
+
+  assert.match(code, /\.s\("supersaw"\)\.attack\(0\.02\)\.release\(0\.2\)\.gain\(0\.8\)\.fast\(2\)/);
+  assert.match(code, /\.s\("sine"\)\.attack\(0\.02\)\.release\(0\.2\)\.lpf\(800\)/);
+  assert.doesNotMatch(code, /\.s\("piano"\)|\.s\("bass"\)|\.s\("sawtooth"\)/);
+
+  const fallback = buildBeat({
+    ...score,
+    sounds: { shape: "bd", tree: "saw\"); hush(" },
+    partitions: [{
+      labels,
+      tree: [{ a: 0, b: 1 }],
+      cuts: []
+    }]
+  });
+
+  assert.match(fallback, /\.s\("piano"\)\.clip\(1\)/);
+  assert.match(fallback, /\.s\("sawtooth"\)/);
+  assert.doesNotMatch(fallback, /hush/);
 });
 
 test("euclidean hits match the drum pattern", () => {
