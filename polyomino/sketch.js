@@ -27,11 +27,12 @@
 
   The Beats folder plays the partition with Strudel.
   Each region is a minor-scale triad. The shape can be a
-  piano, a soft synth, a pure synth, or a pad, and each row
-  takes half a bar. A sheet holds a piece until that melody
-  finishes. Region sizes are Euclidean drum densities of at
-  most 8 steps on one kit. The spanning tree is a built-in
-  bass synth at half speed: saw, square, round, or sub.
+  piano, harp, marimba, vibes, organ, or a synth, and each
+  row takes half a bar. A sheet holds a piece until that
+  melody finishes. Region sizes are Euclidean drum densities
+  of at most 8 steps. The kit can be a TR-909, Linn, MPC-60,
+  DMX, or R-8. The spanning tree is a low line at half speed:
+  saw, organ pedal, organ, folk harp, or a softer synth.
   While the sound plays, a light follows the chords, a region
   softens on each drum, and a thin line walks the tree.
 */
@@ -110,6 +111,7 @@ const params = {
   beatShape: true,
   beatShapeSound: "piano",
   beatSizes: true,
+  beatDrumKit: "RolandTR909",
   beatTree: true,
   beatTreeSound: "sawtooth",
   beatTempo: 0.8,
@@ -154,6 +156,7 @@ let tileInputs = {};
 let beatPlayInput;
 let shapeSoundInput;
 let treeSoundInput;
+let drumKitInput;
 let beatStatusMonitor;
 let beatCodeView;
 let beatTimer = 0;
@@ -463,6 +466,7 @@ const BEAT_KEYS = new Set([
   "beatShape",
   "beatShapeSound",
   "beatSizes",
+  "beatDrumKit",
   "beatTree",
   "beatTreeSound",
   "beatTempo",
@@ -770,6 +774,11 @@ function setupPane() {
     label: "sizes"
   });
 
+  drumKitInput = beatsFolder.addInput(params, "beatDrumKit", {
+    label: "kit",
+    options: soundOptions(PolyominoBeats.DRUM_KITS)
+  });
+
   beatsFolder.addInput(params, "beatTree", {
     label: "tree"
   });
@@ -852,7 +861,11 @@ function setupPane() {
       return;
     }
 
-    if (presetKey === "beatShape" || presetKey === "beatTree") {
+    if (
+      presetKey === "beatShape" ||
+      presetKey === "beatTree" ||
+      presetKey === "beatSizes"
+    ) {
       updateBeatSoundVisibility();
     }
 
@@ -939,6 +952,10 @@ function updateBeatSoundVisibility() {
   if (treeSoundInput) {
     treeSoundInput.hidden = !params.beatTree;
   }
+
+  if (drumKitInput) {
+    drumKitInput.hidden = !params.beatSizes;
+  }
 }
 
 function updateRegionCountAvailability() {
@@ -1011,7 +1028,8 @@ function beatScore() {
     seed: params.seed,
     sounds: {
       shape: params.beatShapeSound,
-      tree: params.beatTreeSound
+      tree: params.beatTreeSound,
+      kit: params.beatDrumKit
     },
     layers: {
       shape: params.beatShape,
