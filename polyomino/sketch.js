@@ -34,8 +34,9 @@
   DMX, or R-8.   The spanning tree is a low line at half speed:
   saw, organ pedal, organ, folk harp, a bass guitar,
   or a softer synth.
-  Each bass note holds for one, two, or three steps. A dot walks
-  the tree and leaves a trail of two edges.
+  Each bass note holds for one or two steps. A dot walks
+  the tree with that note and leaves a trail along it,
+  at most two edges long.
   While the sound plays, a light follows the chords, a region
   softens on each drum, and a thin line walks the tree.
 */
@@ -2837,7 +2838,9 @@ function paintBeatTree(ctx, tree, originX, originY, cellSize) {
 
   const head = tree.head || 0;
   const trail = 2;
-  const samples = pathSamples(points, Math.max(0, head - trail), head);
+  const noteStart = Number.isFinite(tree.noteStart) ? tree.noteStart : 0;
+  const from = Math.min(head, Math.max(noteStart, head - trail));
+  const samples = pathSamples(points, from, head);
   const tip = samples[samples.length - 1];
   const color = tree.accent ? CUT_COLOR : BEAT_LIGHT;
 

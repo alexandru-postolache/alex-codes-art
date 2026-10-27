@@ -4,6 +4,7 @@ import {
   DRUM_BANK,
   DRUMS,
   SIZE_BLOOM,
+  audibleCycle,
   buildBeat,
   euclidPair,
   euclidPattern,
@@ -361,18 +362,21 @@ test("the tree light walks the edges and marks a cut", () => {
   const opening = playingAt(heard, 0);
   assert.deepEqual(opening.tree.cells, [0, 1, 5]);
   assert.equal(opening.tree.head, 0);
-  assert.equal(opening.tree.accent, false);
+  assert.equal(opening.tree.noteStart, 0);
+  assert.equal(opening.tree.accent, true);
 
   const midway = playingAt(heard, 2);
   assert.equal(midway.tree.head, 0.5);
-  assert.equal(midway.tree.accent, false);
+  assert.equal(midway.tree.noteStart, 0);
+  assert.equal(midway.tree.accent, true);
 
   const cut = playingAt(heard, 16 / 3);
   assert.ok(Math.abs(cut.tree.head - 4 / 3) < 1e-9);
+  assert.equal(cut.tree.noteStart, 0);
   assert.equal(cut.tree.accent, true);
 });
 
-test("a bass note holds for two steps, then three, then one", () => {
+test("a bass note holds for two steps, then one", () => {
   const five = buildBeat({
     ...score,
     layers: { shape: false, sizes: false, tree: true },
@@ -389,9 +393,34 @@ test("a bass note holds for two steps, then three, then one", () => {
     }]
   });
 
-  assert.match(five, /note\("c2@2 d1@3"\)/);
-  assert.match(five, /\.gain\("1 0\.8"\)/);
+  assert.match(five, /note\("c2@2 d1@1 c1@2"\)/);
+  assert.match(five, /\.gain\("1 0\.8 0\.8"\)/);
   assert.match(five, /\.slow\(8\)/);
+  assert.doesNotMatch(five, /@3/);
+
+  const heard = {
+    ...score,
+    layers: { shape: false, sizes: false, tree: true },
+    partitions: [{
+      labels,
+      tree: [
+        { a: 0, b: 1 },
+        { a: 1, b: 5 },
+        { a: 5, b: 4 },
+        { a: 4, b: 0 },
+        { a: 0, b: 4 }
+      ],
+      cuts: [{ a: 1, b: 5 }]
+    }]
+  };
+  const accented = playingAt(heard, 0);
+  const quiet = playingAt(heard, 3.2);
+
+  assert.equal(accented.tree.noteStart, 0);
+  assert.equal(accented.tree.accent, true);
+  assert.equal(quiet.tree.head, 2);
+  assert.equal(quiet.tree.noteStart, 2);
+  assert.equal(quiet.tree.accent, false);
 
   const six = buildBeat({
     ...score,
@@ -410,8 +439,17 @@ test("a bass note holds for two steps, then three, then one", () => {
     }]
   });
 
-  assert.match(six, /note\("c2@2 d1@3 g1@1"\)/);
-  assert.match(six, /\.gain\("1 0\.8 0\.8"\)/);
+  assert.match(six, /note\("c2@2 d1@1 c1@2 g1@1"\)/);
+  assert.match(six, /\.gain\("1 0\.8 0\.8 0\.8"\)/);
+  assert.doesNotMatch(six, /@3/);
+});
+
+test("the picture waits for the note that is leaving the speakers", () => {
+  const shifted = audibleCycle(2, 0.8, 0.03);
+
+  assert.ok(Math.abs(shifted - (2 - 0.8 * 0.08)) < 1e-9);
+  assert.equal(audibleCycle(0.02, 0.8, 0.03), 0);
+  assert.equal(audibleCycle(4, 0, 0.03), 4);
 });
 
 test("a sheet shows the partition that is playing", () => {

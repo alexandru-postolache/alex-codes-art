@@ -14,9 +14,9 @@
   in eighth notes. The kit can be one of several drum machines.
   The spanning tree is a low line, played at half the speed:
   right and left step by a tone, up by a fifth, down by an octave.
-  A note holds for two steps, then three, then one, and that
-  cycle repeats, so the pitch stays while the line keeps moving.
-  A cut in the tree is an accent.
+  A note holds for two steps, then one, and that cycle repeats,
+  so the pitch stays while the line keeps moving.
+  A cut in the tree accents that whole note.
   Sawtooth is the default bass. A lowpass keeps that synth low.
   The other basses are instruments, including bass guitars.
 */
@@ -425,9 +425,8 @@ function treeAt(partition, size, time) {
 
   const local = wrapCycle(time, period);
   const head = (local / period) * segments;
-  const edgeIndex = Math.min(segments - 1, Math.floor(head));
-  const edge = tree[edgeIndex];
   const cuts = new Set((partition.cuts || []).map(edgeKey));
+  const place = holdAt(tree, cuts, head);
   const start = Number.isInteger(partition.start)
     ? partition.start
     : tree[0].a;
@@ -440,8 +439,55 @@ function treeAt(partition, size, time) {
   return {
     cells,
     head,
-    accent: cuts.has(edgeKey(edge))
+    noteStart: place.start,
+    accent: place.accent
   };
+}
+
+// The note sounding at this point on the walk.
+// A cut anywhere in the hold accents the whole note.
+function holdAt(tree, cuts, head) {
+  const groups = holdGroups(tree.length);
+  let cursor = 0;
+
+  for (const hold of groups) {
+    const end = cursor + hold;
+
+    if (head < end || end >= tree.length) {
+      let accent = false;
+
+      for (let index = cursor; index < end && index < tree.length; index++) {
+        if (cuts.has(edgeKey(tree[index]))) {
+          accent = true;
+          break;
+        }
+      }
+
+      return { start: cursor, accent };
+    }
+
+    cursor = end;
+  }
+
+  return { start: 0, accent: false };
+}
+
+// Strudel's clock leads the sample that is starting by one tick.
+// The speakers add their own delay after that.
+const SOUND_LEAD = 0.05;
+
+export function audibleCycle(cycle, cps, outputLatency = 0) {
+  if (!Number.isFinite(cycle)) {
+    return null;
+  }
+
+  const rate = Number.isFinite(cps) && cps > 0 ? cps : 0;
+  const output = Number.isFinite(outputLatency) && outputLatency > 0
+    ? outputLatency
+    : 0;
+  const audible = cycle - (SOUND_LEAD + output) * rate;
+
+  return audible > 0 ? audible : 0;
 }
 
 function wrapCycle(cycle, period) {
@@ -613,7 +659,7 @@ function treeVoice(partition, size, score) {
 }
 
 // The walk still visits every edge. A sounding note covers
-// two steps, then three, then one, and that cycle repeats.
+// two steps, then one, and that cycle repeats.
 function heldBass(partition, size, rootMidi) {
   const line = treeLine(partition, size, rootMidi);
   const segments = Math.max(0, line.notes.length - 1);
@@ -633,7 +679,7 @@ function heldBass(partition, size, rootMidi) {
 }
 
 // Hold lengths, in steps of the walk. A short remainder is kept.
-const HOLDS = [2, 3, 1];
+const HOLDS = [2, 1];
 
 function holdGroups(count) {
   if (count <= 0) {
