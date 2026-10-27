@@ -26,11 +26,13 @@
   Patterns may repeat when there are more regions than sets.
 
   The Beats folder plays the partition with Strudel.
-  Each row of piano takes half a bar. Region sizes are Euclidean
-  drum densities of at most 8 steps on one kit, and the
-  spanning tree is a bass line at half speed. While the sound
-  plays, a light follows the piano, a region softens on
-  each drum, and a thin line walks the tree.
+  Each region of the piano is a minor-scale triad, and each
+  row takes half a bar. A sheet holds a piece until that
+  melody finishes. Region sizes are Euclidean drum densities
+  of at most 8 steps on one kit, and the spanning tree is a
+  bass line at half speed. While the sound plays, a light
+  follows the piano, a region softens on each drum, and a
+  thin line walks the tree.
 */
 
 const RANDOM_CANVAS = 700;
