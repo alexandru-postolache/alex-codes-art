@@ -12,12 +12,10 @@
   Each region size is an Euclidean drum density on one kit.
   The bar never has more than 8 steps, so a larger grid is played
   in eighth notes. The kit can be one of several drum machines.
-  The spanning tree is a low line, played at half the speed:
-  right and left step by a tone, up by a fifth, down by an octave.
-  A note holds for two steps, then one, and that cycle repeats,
-  so the pitch stays while the line keeps moving.
-  A cut in the tree accents that whole note.
-  Sawtooth is the default bass. A lowpass keeps that synth low.
+  The bass plays each region's root, two octaves down, and holds
+  it for as many cells as the region has. One pass through the
+  regions lasts as long as one pass through the melody.
+  Sawtooth is the fallback bass. A lowpass keeps that synth low.
   The other basses are instruments, including bass guitars.
 */
 
@@ -49,15 +47,10 @@ export const DRUM_KITS = [
 // The piano line is played this many times faster than the bar.
 export const SHAPE_RATE = 2;
 
-// The bass line is this many times slower than the bar.
-export const TREE_RATE = 2;
-
-// The bass sits this many octaves under the walk.
+// The bass sits this many octaves under the region's root.
 const BASS_OCTAVES = 2;
 
-// A walking note, and a cut. The cut is full level.
 const BASS_GAIN = "0.8";
-const BASS_ACCENT = "1";
 
 // A short fade so an oscillator does not tick at the ends.
 const SYNTH_ATTACK = 0.02;
@@ -131,7 +124,7 @@ export function buildBeat(score) {
     `// The shape plays ${shapeName} chords where the region changes, two rows per cycle.`,
     "// A sheet holds each piece until that melody finishes.",
     "// Region size is an Euclidean density of at most 8 steps.",
-    `// The tree is a ${treeName} bass line at half speed.`,
+    `// The bass is each region's root on ${treeName}, held for the region's size.`,
     `setcps(${cps})`
   ];
 
@@ -303,8 +296,8 @@ export function playingAt(score, cycle) {
     shown.sizes = sizesAt(labels, score, place.time);
   }
 
-  if (layers.tree && partition.tree && partition.tree.length > 0) {
-    shown.tree = treeAt(partition, size, place.time);
+  if (layers.tree && labels.length > 0) {
+    shown.tree = bassAt(labels, size, place.time);
   }
 
   return shown;
@@ -414,62 +407,44 @@ function sizesAt(labels, score, time) {
   return blooms;
 }
 
-function treeAt(partition, size, time) {
-  const tree = partition.tree || [];
-  const segments = tree.length;
-  const period = size * TREE_RATE;
+function bassAt(labels, size, time) {
+  const events = bassEvents(labels);
+  const period = melodySpan(size);
 
-  if (!(period > 0) || segments === 0) {
+  if (!(period > 0) || events.length === 0) {
     return null;
   }
 
   const local = wrapCycle(time, period);
-  const head = (local / period) * segments;
-  const cuts = new Set((partition.cuts || []).map(edgeKey));
-  const place = holdAt(tree, cuts, head);
-  const start = Number.isInteger(partition.start)
-    ? partition.start
-    : tree[0].a;
-  const cells = [start];
+  const event = events.find((item) =>
+    local >= item.begin && local < item.end
+  );
 
-  for (const step of tree) {
-    cells.push(step.b);
+  if (!event) {
+    return null;
   }
 
   return {
-    cells,
-    head,
-    noteStart: place.start,
-    accent: place.accent
+    label: event.label,
+    cells: event.cells,
+    progress: (local - event.begin) / (event.end - event.begin)
   };
 }
 
-// The note sounding at this point on the walk.
-// A cut anywhere in the hold accents the whole note.
-function holdAt(tree, cuts, head) {
-  const groups = holdGroups(tree.length);
+function bassEvents(labels) {
+  const line = bassLine(labels);
   let cursor = 0;
 
-  for (const hold of groups) {
-    const end = cursor + hold;
+  return line.map((region) => {
+    const begin = cursor / SHAPE_RATE;
+    cursor += region.weight;
 
-    if (head < end || end >= tree.length) {
-      let accent = false;
-
-      for (let index = cursor; index < end && index < tree.length; index++) {
-        if (cuts.has(edgeKey(tree[index]))) {
-          accent = true;
-          break;
-        }
-      }
-
-      return { start: cursor, accent };
-    }
-
-    cursor = end;
-  }
-
-  return { start: 0, accent: false };
+    return {
+      ...region,
+      begin,
+      end: cursor / SHAPE_RATE
+    };
+  });
 }
 
 // Strudel's clock leads the sample that is starting by one tick.
@@ -555,33 +530,47 @@ function foldChord(tones) {
 }
 
 // How many cycles a sheet spends on one piece.
-// The piano section lasts for the whole melody.
-// The other layers keep one cycle per row.
+// The piano and the bass each take one pass through the piece.
+// Drums alone keep one cycle per row.
 function sectionSpan(partition, score) {
   const labels = partition.labels || [];
   const size = gridSizeOf(labels, score.gridSize);
   const layers = score.layers || {};
 
-  if (layers.shape && labels.length > 0) {
-    return (size * size) / SHAPE_RATE;
+  if (labels.length > 0 && (layers.shape || layers.tree)) {
+    return melodySpan(size);
   }
 
   return size;
 }
 
-export function treeLine(partition, size, rootMidi) {
-  const cuts = new Set((partition.cuts || []).map(edgeKey));
-  let midi = foldMidi(rootMidi ?? LOW_MIDI);
-  const notes = [midiName(midi)];
-  const gains = [BASS_GAIN];
+function melodySpan(size) {
+  return (size * size) / SHAPE_RATE;
+}
 
-  for (const edge of partition.tree || []) {
-    midi = foldMidi(midi + intervalFor(edge, size));
-    notes.push(midiName(midi));
-    gains.push(cuts.has(edgeKey(edge)) ? BASS_ACCENT : BASS_GAIN);
-  }
+function bassLine(labels, rootMidi) {
+  const groups = new Map();
 
-  return { notes, gains };
+  labels.forEach((label, index) => {
+    if (!groups.has(label)) {
+      groups.set(label, []);
+    }
+
+    groups.get(label).push(index);
+  });
+
+  return [...groups.keys()]
+    .sort((left, right) => left - right)
+    .map((label) => {
+      const cells = groups.get(label);
+
+      return {
+        label,
+        cells,
+        note: bassNote(noteForRegion(label, rootMidi)),
+        weight: cells.length
+      };
+    });
 }
 
 function sectionCode(partition, score) {
@@ -598,8 +587,8 @@ function sectionCode(partition, score) {
     voices.push(sizeVoice(labels, score));
   }
 
-  if (layers.tree && partition.tree && partition.tree.length > 0) {
-    voices.push(treeVoice(partition, size, score));
+  if (layers.tree && labels.length > 0) {
+    voices.push(treeVoice(labels, size, score));
   }
 
   if (voices.length === 0) {
@@ -643,61 +632,13 @@ function sizeVoice(labels, score) {
   return `stack(\n${lines.join(",\n")}\n).bank("${kit}").gain(0.4)`;
 }
 
-function treeVoice(partition, size, score) {
-  const line = heldBass(partition, size, score.rootMidi);
-  const notes = line.notes.map((note, index) =>
-    `${note}@${line.weights[index]}`
+function treeVoice(labels, size, score) {
+  const notes = bassLine(labels, score.rootMidi).map((region) =>
+    `${region.note}@${region.weight}`
   );
   const tone = treeTone(treeSound(score));
 
-  return [
-    `note("${notes.join(" ")}")`,
-    `.gain("${line.gains.join(" ")}")`,
-    tone,
-    `.slow(${size * TREE_RATE})`
-  ].join("");
-}
-
-// The walk still visits every edge. A sounding note covers
-// two steps, then one, and that cycle repeats.
-function heldBass(partition, size, rootMidi) {
-  const line = treeLine(partition, size, rootMidi);
-  const segments = Math.max(0, line.notes.length - 1);
-  const groups = holdGroups(segments);
-  const notes = [];
-  const gains = [];
-  let cursor = 0;
-
-  for (const hold of groups) {
-    notes.push(bassNote(line.notes[cursor]));
-    const heard = line.gains.slice(cursor + 1, cursor + hold + 1);
-    gains.push(heard.includes(BASS_ACCENT) ? BASS_ACCENT : BASS_GAIN);
-    cursor += hold;
-  }
-
-  return { notes, gains, weights: groups };
-}
-
-// Hold lengths, in steps of the walk. A short remainder is kept.
-const HOLDS = [2, 1];
-
-function holdGroups(count) {
-  if (count <= 0) {
-    return [];
-  }
-
-  const groups = [];
-  let left = count;
-  let index = 0;
-
-  while (left > 0) {
-    const take = Math.min(left, HOLDS[index % HOLDS.length]);
-    groups.push(take);
-    left -= take;
-    index += 1;
-  }
-
-  return groups;
+  return `note("${notes.join(" ")}")${tone}.gain(${BASS_GAIN}).slow(${formatNum(melodySpan(size))})`;
 }
 
 function shapeSoundName(score) {
@@ -806,35 +747,6 @@ function gridSizeOf(labels, fallback) {
   }
 
   return fallback || 1;
-}
-
-function intervalFor(edge, size) {
-  const ax = edge.a % size;
-  const ay = Math.floor(edge.a / size);
-  const bx = edge.b % size;
-  const by = Math.floor(edge.b / size);
-
-  if (bx === ax + 1 && by === ay) {
-    return 2;
-  }
-
-  if (bx === ax - 1 && by === ay) {
-    return -2;
-  }
-
-  if (bx === ax && by === ay - 1) {
-    return 7;
-  }
-
-  if (bx === ax && by === ay + 1) {
-    return -12;
-  }
-
-  return 0;
-}
-
-function edgeKey(edge) {
-  return `${edge.a}:${edge.b}`;
 }
 
 function foldMidi(midi) {
