@@ -26,7 +26,7 @@
   Patterns may repeat when there are more regions than sets.
 
   The Beats folder plays the partition with Strudel.
-  Each row is a bar of piano. Region sizes are Euclidean
+  Each row of piano takes half a bar. Region sizes are Euclidean
   drum densities of at most 16 steps on one kit, and the
   spanning tree is a quiet pitched line.
 */
