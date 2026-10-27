@@ -93,7 +93,8 @@ const params = {
   increaseBrightness: true,
 
   // Kenney Pattern Pack Extra. Each region takes one pattern.
-  useTiles: true,
+  // Off when the page opens, so regions start as flat color.
+  useTiles: false,
   patternCount: 8,
   patternScale: 1,
 
@@ -115,9 +116,9 @@ const params = {
   beatShape: true,
   beatShapeSound: "piano",
   beatSizes: true,
-  beatDrumKit: "RolandTR909",
+  beatDrumKit: "LinnDrum",
   beatTree: true,
-  beatTreeSound: "sawtooth",
+  beatTreeSound: "bass3",
   beatTempo: 0.8,
   beatLevel: 0.8
 };
