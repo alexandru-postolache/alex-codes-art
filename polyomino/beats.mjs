@@ -14,8 +14,10 @@
   in eighth notes. The kit can be one of several drum machines.
   The spanning tree is a low line, played at half the speed:
   right and left step by a tone, up by a fifth, down by an octave.
-  A cut in the tree is an accent. Sawtooth is the default bass.
-  A lowpass keeps that synth low. The other basses are instruments.
+  A note holds for two or three steps, so the pitch stays
+  while the line keeps moving. A cut in the tree is an accent.
+  Sawtooth is the default bass. A lowpass keeps that synth low.
+  The other basses are instruments.
 */
 
 export const DRUMS = [
@@ -410,28 +412,31 @@ function sizesAt(labels, score, time) {
 
 function treeAt(partition, size, time) {
   const tree = partition.tree || [];
-  const count = tree.length + 1;
+  const segments = tree.length;
   const period = size * TREE_RATE;
 
-  if (!(period > 0) || count === 0) {
+  if (!(period > 0) || segments === 0) {
     return null;
   }
 
-  const noteLength = period / count;
   const local = wrapCycle(time, period);
-  const index = Math.min(count - 1, Math.floor(local / noteLength));
-  const edge = index === 0 ? null : tree[index - 1];
+  const head = (local / period) * segments;
+  const edgeIndex = Math.min(segments - 1, Math.floor(head));
+  const edge = tree[edgeIndex];
   const cuts = new Set((partition.cuts || []).map(edgeKey));
   const start = Number.isInteger(partition.start)
     ? partition.start
     : tree[0].a;
+  const cells = [start];
+
+  for (const step of tree) {
+    cells.push(step.b);
+  }
 
   return {
-    cell: edge ? edge.b : start,
-    from: edge ? edge.a : null,
-    to: edge ? edge.b : null,
-    accent: edge ? cuts.has(edgeKey(edge)) : false,
-    progress: (local - index * noteLength) / noteLength
+    cells,
+    head,
+    accent: cuts.has(edgeKey(edge))
   };
 }
 
@@ -589,8 +594,10 @@ function sizeVoice(labels, score) {
 }
 
 function treeVoice(partition, size, score) {
-  const line = treeLine(partition, size, score.rootMidi);
-  const notes = line.notes.map(bassNote);
+  const line = heldBass(partition, size, score.rootMidi);
+  const notes = line.notes.map((note, index) =>
+    `${note}@${line.weights[index]}`
+  );
   const tone = treeTone(treeSound(score));
 
   return [
@@ -599,6 +606,59 @@ function treeVoice(partition, size, score) {
     tone,
     `.slow(${size * TREE_RATE})`
   ].join("");
+}
+
+// The walk still visits every edge. A sounding note covers
+// the next two steps, then the next three, and so on.
+function heldBass(partition, size, rootMidi) {
+  const line = treeLine(partition, size, rootMidi);
+  const segments = Math.max(0, line.notes.length - 1);
+  const groups = holdGroups(segments);
+  const notes = [];
+  const gains = [];
+  let cursor = 0;
+
+  for (const hold of groups) {
+    notes.push(bassNote(line.notes[cursor]));
+    const heard = line.gains.slice(cursor + 1, cursor + hold + 1);
+    gains.push(heard.includes(BASS_ACCENT) ? BASS_ACCENT : BASS_GAIN);
+    cursor += hold;
+  }
+
+  return { notes, gains, weights: groups };
+}
+
+function holdGroups(count) {
+  if (count <= 0) {
+    return [];
+  }
+
+  if (count <= 3) {
+    return [count];
+  }
+
+  const groups = [];
+  let left = count;
+  let three = false;
+
+  while (left > 0) {
+    if (left === 4) {
+      groups.push(2, 2);
+      break;
+    }
+
+    const take = Math.min(left, three ? 3 : 2);
+    groups.push(take);
+    left -= take;
+    three = !three;
+  }
+
+  if (groups.length > 1 && groups[groups.length - 1] === 1) {
+    groups[groups.length - 2] += 1;
+    groups.pop();
+  }
+
+  return groups;
 }
 
 function shapeSoundName(score) {
