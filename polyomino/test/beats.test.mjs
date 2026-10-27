@@ -173,7 +173,8 @@ test("the pattern is valid script and keeps each partition for one cycle per row
   assert.match(code, /\[3, stack\(/);
   assert.match(code, /note\(`</);
   assert.match(code, /c4@3 d4@1/);
-  assert.match(code, /\.s\("piano"\)\.clip\(1\)/);
+  assert.match(code, /\.s\("piano"\)\.clip\(1\)\.gain\(0\.8\)\.fast\(2\)/);
+  assert.equal(code.match(/\.fast\(2\)/g).length, 2);
   assert.match(code, /\.bank\("RolandTR909"\)/);
   assert.match(code, /\.euclid\(5, 16\)/);
   assert.doesNotMatch(code, /s\(`</);

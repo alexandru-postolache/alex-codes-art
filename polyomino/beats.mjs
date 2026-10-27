@@ -1,8 +1,9 @@
 /*
   Turn a polyomino partition into a Strudel pattern.
 
-  Rows are bars of melody. A note starts where the region
-  changes, and the following cells are how long it lasts.
+  Rows are bars of melody, played at twice the bar rate.
+  A note starts where the region changes, and the following
+  cells are how long it lasts.
   The region's place in a minor scale, from the base color,
   chooses the pitch. The melody is a piano.
 
@@ -57,7 +58,7 @@ export function buildBeat(score) {
   const cps = formatNum(score.cps ?? 0.8);
   const level = formatNum(score.gain ?? 0.8);
   const header = [
-    "// One cycle is one row. A note starts where the region changes.",
+    "// The piano plays two rows per cycle. A note starts where the region changes.",
     "// Region size is an Euclidean density of at most 16 steps.",
     "// The tree is a quiet pitch line.",
     `setcps(${cps})`
@@ -225,7 +226,7 @@ function shapeVoice(labels, size, score) {
   return [
     "note(`<",
     notes,
-    ">`).s(\"piano\").clip(1).gain(0.8)"
+    ">`).s(\"piano\").clip(1).gain(0.8).fast(2)"
   ].join("\n");
 }
 
