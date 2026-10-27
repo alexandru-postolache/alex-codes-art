@@ -31,10 +31,11 @@
   row takes half a bar. A sheet holds a piece until that
   melody finishes. Region sizes are Euclidean drum densities
   of at most 8 steps. The kit can be a TR-909, Linn, MPC-60,
-  DMX, or R-8. The spanning tree is a low line at half speed:
-  saw, organ pedal, organ, folk harp, or a softer synth.
-  Each bass note holds for two or three steps. A dot walks
-  the tree and leaves a short trail.
+  DMX, or R-8.   The spanning tree is a low line at half speed:
+  saw, organ pedal, organ, folk harp, a bass guitar,
+  or a softer synth.
+  Each bass note holds for one, two, or three steps. A dot walks
+  the tree and leaves a trail of two edges.
   While the sound plays, a light follows the chords, a region
   softens on each drum, and a thin line walks the tree.
 */
@@ -2835,7 +2836,7 @@ function paintBeatTree(ctx, tree, originX, originY, cellSize) {
   }
 
   const head = tree.head || 0;
-  const trail = 3;
+  const trail = 2;
   const samples = pathSamples(points, Math.max(0, head - trail), head);
   const tip = samples[samples.length - 1];
   const color = tree.accent ? CUT_COLOR : BEAT_LIGHT;

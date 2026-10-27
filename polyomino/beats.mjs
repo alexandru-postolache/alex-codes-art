@@ -14,10 +14,11 @@
   in eighth notes. The kit can be one of several drum machines.
   The spanning tree is a low line, played at half the speed:
   right and left step by a tone, up by a fifth, down by an octave.
-  A note holds for two or three steps, so the pitch stays
-  while the line keeps moving. A cut in the tree is an accent.
+  A note holds for two steps, then three, then one, and that
+  cycle repeats, so the pitch stays while the line keeps moving.
+  A cut in the tree is an accent.
   Sawtooth is the default bass. A lowpass keeps that synth low.
-  The other basses are instruments.
+  The other basses are instruments, including bass guitars.
 */
 
 export const DRUMS = [
@@ -79,12 +80,15 @@ export const SHAPE_SOUNDS = [
 ];
 
 // Low sounds. Sawtooth is the default synth bass.
-// Pedal, organ, and folk harp are sampled instruments.
+// The sampled instruments include three bass guitars.
 export const TREE_SOUNDS = [
   { label: "Saw", value: "sawtooth" },
   { label: "Pedal", value: "pipeorgan_quiet_pedal", sample: true },
   { label: "Organ", value: "organ_full", sample: true },
   { label: "Folk harp", value: "folkharp", sample: true },
+  { label: "Jazz bass", value: "jvbass", sample: true },
+  { label: "Finger bass", value: "bass3", sample: true },
+  { label: "Drive bass", value: "bass2", sample: true },
   { label: "Square", value: "square" },
   { label: "Round", value: "triangle" },
   { label: "Sub", value: "sine" }
@@ -609,7 +613,7 @@ function treeVoice(partition, size, score) {
 }
 
 // The walk still visits every edge. A sounding note covers
-// the next two steps, then the next three, and so on.
+// two steps, then three, then one, and that cycle repeats.
 function heldBass(partition, size, rootMidi) {
   const line = treeLine(partition, size, rootMidi);
   const segments = Math.max(0, line.notes.length - 1);
@@ -628,34 +632,23 @@ function heldBass(partition, size, rootMidi) {
   return { notes, gains, weights: groups };
 }
 
+// Hold lengths, in steps of the walk. A short remainder is kept.
+const HOLDS = [2, 3, 1];
+
 function holdGroups(count) {
   if (count <= 0) {
     return [];
   }
 
-  if (count <= 3) {
-    return [count];
-  }
-
   const groups = [];
   let left = count;
-  let three = false;
+  let index = 0;
 
   while (left > 0) {
-    if (left === 4) {
-      groups.push(2, 2);
-      break;
-    }
-
-    const take = Math.min(left, three ? 3 : 2);
+    const take = Math.min(left, HOLDS[index % HOLDS.length]);
     groups.push(take);
     left -= take;
-    three = !three;
-  }
-
-  if (groups.length > 1 && groups[groups.length - 1] === 1) {
-    groups[groups.length - 2] += 1;
-    groups.pop();
+    index += 1;
   }
 
   return groups;
