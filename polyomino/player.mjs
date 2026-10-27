@@ -7,6 +7,7 @@ import {
   DRUM_KITS,
   SHAPE_SOUNDS,
   TREE_SOUNDS,
+  audibleCycle,
   buildBeat,
   playingAt,
   rootMidiFromColor
@@ -109,7 +110,23 @@ function cycle() {
 
   try {
     const value = Number(child.getTime());
-    return Number.isFinite(value) ? value : null;
+
+    if (!Number.isFinite(value)) {
+      return null;
+    }
+
+    const cps = Number(typeof child.getCps === "function" ? child.getCps() : 0);
+    let output = 0;
+
+    if (typeof child.getAudioContext === "function") {
+      const audio = child.getAudioContext();
+
+      if (audio && Number.isFinite(audio.outputLatency)) {
+        output = audio.outputLatency;
+      }
+    }
+
+    return audibleCycle(value, cps, output);
   } catch (error) {
     return null;
   }
