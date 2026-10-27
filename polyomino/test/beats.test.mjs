@@ -61,19 +61,19 @@ test("region size is the Euclidean pulse count on that region's drum", () => {
   assert.deepEqual(
     voices.map((voice) => [voice.drum, voice.pulses, voice.steps]),
     [
-      ["bd", 5, 16],
-      ["sd", 2, 16],
-      ["hh", 6, 16],
-      ["cp", 3, 16]
+      ["bd", 3, 8],
+      ["sd", 1, 8],
+      ["hh", 3, 8],
+      ["cp", 2, 8]
     ]
   );
 });
 
-test("a grid larger than 16 cells is rescaled onto sixteen steps", () => {
-  assert.deepEqual(euclidPair(12, 25), { pulses: 8, steps: 16 });
-  assert.deepEqual(euclidPair(1, 25), { pulses: 1, steps: 16 });
-  assert.deepEqual(euclidPair(9, 9), { pulses: 9, steps: 9 });
-  assert.deepEqual(euclidPair(40, 144), { pulses: 4, steps: 16 });
+test("a grid larger than 8 cells is rescaled onto eight steps", () => {
+  assert.deepEqual(euclidPair(12, 25), { pulses: 4, steps: 8 });
+  assert.deepEqual(euclidPair(1, 25), { pulses: 1, steps: 8 });
+  assert.deepEqual(euclidPair(9, 9), { pulses: 8, steps: 8 });
+  assert.deepEqual(euclidPair(40, 144), { pulses: 2, steps: 8 });
 
   const big = new Array(36).fill(0);
   big[35] = 1;
@@ -82,8 +82,8 @@ test("a grid larger than 16 cells is rescaled onto sixteen steps", () => {
   assert.deepEqual(
     voices.map((voice) => [voice.pulses, voice.steps]),
     [
-      [16, 16],
-      [1, 16]
+      [8, 8],
+      [1, 8]
     ]
   );
 });
@@ -179,10 +179,12 @@ test("the pattern is valid script and keeps each partition for one cycle per row
   assert.match(code, /\.s\("piano"\)\.clip\(1\)\.gain\(0\.8\)\.fast\(2\)/);
   assert.equal(code.match(/\.fast\(2\)/g).length, 2);
   assert.match(code, /\.bank\("RolandTR909"\)/);
-  assert.match(code, /\.euclid\(5, 16\)/);
+  assert.match(code, /\.euclid\(3, 8\)/);
+  assert.doesNotMatch(code, /euclid\(\d+, 16\)/);
   assert.doesNotMatch(code, /s\(`</);
-  assert.match(code, /\.slow\(4\)/);
-  assert.match(code, /note\("c4 d4 d3"\)/);
+  assert.match(code, /\.s\("bass"\)\.clip\(1\)\.slow\(8\)/);
+  assert.doesNotMatch(code, /triangle|sine/);
+  assert.match(code, /note\("c2 d2 d1"\)/);
   assert.match(code, /\.gain\("0\.28 0\.28 0\.85"\)/);
   assert.match(code, /\.postgain\(0\.7\)/);
   assert.doesNotThrow(() => {
@@ -271,7 +273,7 @@ test("the tree light walks the edges and marks a cut", () => {
   assert.equal(opening.tree.from, null);
   assert.equal(opening.tree.accent, false);
 
-  const cut = playingAt(heard, 8 / 3);
+  const cut = playingAt(heard, 16 / 3);
   assert.equal(cut.tree.cell, 5);
   assert.equal(cut.tree.from, 1);
   assert.equal(cut.tree.to, 5);

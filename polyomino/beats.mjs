@@ -8,10 +8,10 @@
   chooses the pitch. The melody is a piano.
 
   Each region size is an Euclidean drum density on one kit.
-  The bar never has more than 16 steps, so a larger grid is played
-  in sixteenth notes.
-  The spanning tree is a quiet pitch line: right and left
-  step by a tone, up by a fifth, down by an octave.
+  The bar never has more than 8 steps, so a larger grid is played
+  in eighth notes.
+  The spanning tree is a bass line, played at half the speed:
+  right and left step by a tone, up by a fifth, down by an octave.
   A cut in the tree is an accent.
 */
 
@@ -35,6 +35,12 @@ export const DRUM_BANK = "RolandTR909";
 // The piano line is played this many times faster than the bar.
 export const SHAPE_RATE = 2;
 
+// The bass line is this many times slower than the bar.
+export const TREE_RATE = 2;
+
+// The bass sits this many octaves under the walk.
+const BASS_OCTAVES = 2;
+
 // How long a drum hit stays lit, in cycles.
 export const SIZE_BLOOM = 0.35;
 
@@ -55,7 +61,7 @@ const NOTE_NAMES = [
 
 const LOW_MIDI = 48;
 const HIGH_MIDI = 84;
-const EUCLID_MAX = 16;
+const EUCLID_MAX = 8;
 
 // Natural minor. Region 0 is the root from the base color.
 const MINOR = [0, 2, 3, 5, 7, 8, 10];
@@ -65,8 +71,8 @@ export function buildBeat(score) {
   const level = formatNum(score.gain ?? 0.8);
   const header = [
     "// The piano plays two rows per cycle. A note starts where the region changes.",
-    "// Region size is an Euclidean density of at most 16 steps.",
-    "// The tree is a quiet pitch line.",
+    "// Region size is an Euclidean density of at most 8 steps.",
+    "// The tree is a bass line at half speed.",
     `setcps(${cps})`
   ];
 
@@ -157,9 +163,6 @@ export function sizeVoices(labels, score) {
     });
 }
 
-// Fit a region into a bar of at most 16 steps.
-// Smaller grids keep one step per cell. Larger grids
-// are rescaled onto sixteen sixteenth notes.
 // The same Bjorklund pattern Strudel's euclid() uses.
 // A 1 is a hit. The list is one cycle, divided into equal steps.
 export function euclidPattern(pulses, steps) {
@@ -357,7 +360,7 @@ function sizesAt(labels, score, time) {
 function treeAt(partition, size, time) {
   const tree = partition.tree || [];
   const count = tree.length + 1;
-  const period = size;
+  const period = size * TREE_RATE;
 
   if (!(period > 0) || count === 0) {
     return null;
@@ -390,6 +393,9 @@ function wrapCycle(cycle, period) {
   return wrapped < 0 ? wrapped + period : wrapped;
 }
 
+// Fit a region into a bar of at most 8 steps.
+// Smaller grids keep one step per cell. Larger grids
+// are rescaled onto eight eighth notes.
 export function euclidPair(count, area) {
   const cells = Math.max(1, area);
   const steps = Math.min(cells, EUCLID_MAX);
@@ -484,13 +490,25 @@ function sizeVoice(labels, score) {
 
 function treeVoice(partition, size, rootMidi) {
   const line = treeLine(partition, size, rootMidi);
+  const notes = line.notes.map(bassNote);
 
   return [
-    `note("${line.notes.join(" ")}")`,
+    `note("${notes.join(" ")}")`,
     `.gain("${line.gains.join(" ")}")`,
-    `.s("triangle")`,
-    `.slow(${size})`
+    `.s("bass")`,
+    `.clip(1)`,
+    `.slow(${size * TREE_RATE})`
   ].join("");
+}
+
+function bassNote(name) {
+  const match = /^([a-g]#?)(-?\d+)$/.exec(name);
+
+  if (!match) {
+    return name;
+  }
+
+  return `${match[1]}${Number(match[2]) - BASS_OCTAVES}`;
 }
 
 export function runsInRow(row) {
