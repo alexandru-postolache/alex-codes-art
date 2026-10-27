@@ -32,6 +32,12 @@ export const DRUMS = [
 // One kit for every size voice.
 export const DRUM_BANK = "RolandTR909";
 
+// The piano line is played this many times faster than the bar.
+export const SHAPE_RATE = 2;
+
+// How long a drum hit stays lit, in cycles.
+export const SIZE_BLOOM = 0.35;
+
 const NOTE_NAMES = [
   "c",
   "c#",
@@ -143,6 +149,7 @@ export function sizeVoices(labels, score) {
       const slot = euclidPair(counts.get(label), area);
 
       return {
+        label,
         drum: drumFor(label),
         pulses: slot.pulses,
         steps: slot.steps
@@ -153,6 +160,236 @@ export function sizeVoices(labels, score) {
 // Fit a region into a bar of at most 16 steps.
 // Smaller grids keep one step per cell. Larger grids
 // are rescaled onto sixteen sixteenth notes.
+// The same Bjorklund pattern Strudel's euclid() uses.
+// A 1 is a hit. The list is one cycle, divided into equal steps.
+export function euclidPattern(pulses, steps) {
+  const count = Math.max(0, Math.round(steps));
+  const hits = Math.max(0, Math.min(count, Math.round(pulses)));
+
+  if (count === 0) {
+    return [];
+  }
+
+  const ones = Array.from({ length: hits }, () => [1]);
+  const zeros = Array.from({ length: count - hits }, () => [0]);
+  const mixed = distributeHits([hits, count - hits], [ones, zeros]);
+
+  return mixed[0].flat().concat(mixed[1].flat());
+}
+
+function distributeHits(counts, groups) {
+  const [left, right] = counts;
+
+  if (Math.min(left, right) <= 1) {
+    return groups;
+  }
+
+  if (left > right) {
+    const [head, tail] = splitGroups(right, groups[0]);
+
+    return distributeHits(
+      [right, left - right],
+      [zipGroups(head, groups[1]), tail]
+    );
+  }
+
+  const [head, tail] = splitGroups(left, groups[1]);
+
+  return distributeHits(
+    [left, right - left],
+    [zipGroups(groups[0], head), tail]
+  );
+}
+
+function splitGroups(count, groups) {
+  return [groups.slice(0, count), groups.slice(count)];
+}
+
+function zipGroups(left, right) {
+  return left.map((group, index) => group.concat(right[index]));
+}
+
+// What the piece should show at a scheduler cycle.
+// A single partition keeps each layer on its own loop.
+// A sheet holds each partition for one cycle per row.
+export function playingAt(score, cycle) {
+  if (!Number.isFinite(cycle)) {
+    return null;
+  }
+
+  const partitions = score.partitions || [];
+
+  if (partitions.length === 0) {
+    return null;
+  }
+
+  const place = placeCycle(partitions, score.gridSize, cycle);
+  const partition = partitions[place.index];
+  const labels = partition.labels || [];
+  const size = gridSizeOf(labels, score.gridSize);
+  const layers = score.layers || {};
+  const shown = {
+    index: place.index,
+    shape: null,
+    sizes: [],
+    tree: null
+  };
+
+  if (layers.shape && labels.length > 0) {
+    shown.shape = shapeAt(labels, size, place.time);
+  }
+
+  if (layers.sizes && labels.length > 0) {
+    shown.sizes = sizesAt(labels, score, place.time);
+  }
+
+  if (layers.tree && partition.tree && partition.tree.length > 0) {
+    shown.tree = treeAt(partition, size, place.time);
+  }
+
+  return shown;
+}
+
+function placeCycle(partitions, fallback, cycle) {
+  if (partitions.length === 1) {
+    return { index: 0, time: cycle };
+  }
+
+  const spans = partitions.map((partition) =>
+    gridSizeOf(partition.labels, fallback)
+  );
+  const total = spans.reduce((sum, span) => sum + span, 0);
+  let local = wrapCycle(cycle, total);
+
+  for (let index = 0; index < spans.length; index++) {
+    if (local < spans[index] || index === spans.length - 1) {
+      return { index, time: local };
+    }
+
+    local -= spans[index];
+  }
+
+  return { index: 0, time: 0 };
+}
+
+function shapeAt(labels, size, time) {
+  const events = [];
+  let cursor = 0;
+
+  for (let y = 0; y < size; y++) {
+    const row = labels.slice(y * size, (y + 1) * size);
+    let x = 0;
+
+    for (const run of runsInRow(row)) {
+      const cells = [];
+
+      for (let step = 0; step < run.length; step++) {
+        cells.push(y * size + x + step);
+      }
+
+      const begin = cursor / SHAPE_RATE;
+      cursor += run.length;
+      events.push({
+        cells,
+        label: run.label,
+        begin,
+        end: cursor / SHAPE_RATE
+      });
+      x += run.length;
+    }
+  }
+
+  const period = cursor / SHAPE_RATE;
+
+  if (!(period > 0)) {
+    return null;
+  }
+
+  const local = wrapCycle(time, period);
+  const event = events.find((item) =>
+    local >= item.begin && local < item.end
+  );
+
+  if (!event) {
+    return null;
+  }
+
+  return {
+    cells: event.cells,
+    label: event.label,
+    progress: (local - event.begin) / (event.end - event.begin)
+  };
+}
+
+function sizesAt(labels, score, time) {
+  const local = wrapCycle(time, 1);
+  const blooms = [];
+
+  for (const voice of sizeVoices(labels, score)) {
+    const pattern = euclidPattern(voice.pulses, voice.steps);
+
+    pattern.forEach((hit, index) => {
+      if (!hit) {
+        return;
+      }
+
+      let age = local - index / voice.steps;
+
+      if (age < 0) {
+        age += 1;
+      }
+
+      if (age > SIZE_BLOOM) {
+        return;
+      }
+
+      blooms.push({
+        label: voice.label,
+        age,
+        strength: 1 - age / SIZE_BLOOM
+      });
+    });
+  }
+
+  return blooms;
+}
+
+function treeAt(partition, size, time) {
+  const tree = partition.tree || [];
+  const count = tree.length + 1;
+  const period = size;
+
+  if (!(period > 0) || count === 0) {
+    return null;
+  }
+
+  const noteLength = period / count;
+  const local = wrapCycle(time, period);
+  const index = Math.min(count - 1, Math.floor(local / noteLength));
+  const edge = index === 0 ? null : tree[index - 1];
+  const cuts = new Set((partition.cuts || []).map(edgeKey));
+  const start = Number.isInteger(partition.start)
+    ? partition.start
+    : tree[0].a;
+
+  return {
+    cell: edge ? edge.b : start,
+    from: edge ? edge.a : null,
+    to: edge ? edge.b : null,
+    accent: edge ? cuts.has(edgeKey(edge)) : false,
+    progress: (local - index * noteLength) / noteLength
+  };
+}
+
+function wrapCycle(cycle, period) {
+  if (!(period > 0)) {
+    return 0;
+  }
+
+  const wrapped = cycle % period;
+  return wrapped < 0 ? wrapped + period : wrapped;
+}
+
 export function euclidPair(count, area) {
   const cells = Math.max(1, area);
   const steps = Math.min(cells, EUCLID_MAX);
@@ -226,7 +463,7 @@ function shapeVoice(labels, size, score) {
   return [
     "note(`<",
     notes,
-    ">`).s(\"piano\").clip(1).gain(0.8).fast(2)"
+    `>\`).s("piano").clip(1).gain(0.8).fast(${SHAPE_RATE})`
   ].join("\n");
 }
 

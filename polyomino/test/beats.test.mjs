@@ -3,8 +3,11 @@ import test from "node:test";
 import {
   DRUM_BANK,
   DRUMS,
+  SIZE_BLOOM,
   buildBeat,
   euclidPair,
+  euclidPattern,
+  playingAt,
   rootMidiFromColor,
   runsInRow,
   shapeRows,
@@ -185,6 +188,112 @@ test("the pattern is valid script and keeps each partition for one cycle per row
   assert.doesNotThrow(() => {
     new Function(code);
   });
+});
+
+test("euclidean hits match the drum pattern", () => {
+  assert.deepEqual(euclidPattern(3, 8), [1, 0, 0, 1, 0, 0, 1, 0]);
+  assert.deepEqual(
+    euclidPattern(5, 16),
+    [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0]
+  );
+  assert.deepEqual(euclidPattern(1, 4), [1, 0, 0, 0]);
+  assert.deepEqual(euclidPattern(4, 4), [1, 1, 1, 1]);
+});
+
+test("the shape light follows the sounding run", () => {
+  const frame = playingAt({
+    ...score,
+    partitions: [{ labels, tree: null, cuts: null }]
+  }, 0);
+
+  assert.equal(frame.index, 0);
+  assert.deepEqual(frame.shape.cells, [0, 1, 2]);
+  assert.equal(frame.shape.label, 0);
+  assert.equal(frame.shape.progress, 0);
+
+  const next = playingAt({
+    ...score,
+    partitions: [{ labels, tree: null, cuts: null }]
+  }, 1.5);
+
+  assert.deepEqual(next.shape.cells, [3]);
+  assert.equal(next.shape.label, 1);
+
+  const wrapped = playingAt({
+    ...score,
+    partitions: [{ labels, tree: null, cuts: null }]
+  }, 8);
+
+  assert.deepEqual(wrapped.shape.cells, [0, 1, 2]);
+});
+
+test("a drum hit lights its region and then fades", () => {
+  const downbeat = playingAt({
+    ...score,
+    layers: { shape: false, sizes: true, tree: false },
+    partitions: [{ labels, tree: null, cuts: null }]
+  }, 0);
+
+  assert.ok(downbeat.sizes.some((bloom) =>
+    bloom.label === 0 && bloom.strength === 1
+  ));
+
+  const later = playingAt({
+    ...score,
+    layers: { shape: false, sizes: true, tree: false },
+    partitions: [{ labels, tree: null, cuts: null }]
+  }, 0.05);
+  const region = later.sizes.find((bloom) => bloom.label === 0);
+
+  assert.ok(region);
+  assert.ok(region.age > 0);
+  assert.ok(region.strength < 1);
+});
+
+test("the tree light walks the edges and marks a cut", () => {
+  const partition = {
+    labels,
+    start: 0,
+    tree: [
+      { a: 0, b: 1 },
+      { a: 1, b: 5 }
+    ],
+    cuts: [{ a: 1, b: 5 }]
+  };
+  const heard = {
+    ...score,
+    layers: { shape: false, sizes: false, tree: true },
+    partitions: [partition]
+  };
+
+  const opening = playingAt(heard, 0);
+  assert.equal(opening.tree.cell, 0);
+  assert.equal(opening.tree.from, null);
+  assert.equal(opening.tree.accent, false);
+
+  const cut = playingAt(heard, 8 / 3);
+  assert.equal(cut.tree.cell, 5);
+  assert.equal(cut.tree.from, 1);
+  assert.equal(cut.tree.to, 5);
+  assert.equal(cut.tree.accent, true);
+});
+
+test("a sheet shows the partition that is playing", () => {
+  const heard = {
+    ...score,
+    partitions: [
+      { labels, tree: null, cuts: null },
+      {
+        labels: [0, 0, 1, 1, 1, 1, 0, 0, 2],
+        tree: null,
+        cuts: null
+      }
+    ]
+  };
+
+  assert.equal(playingAt(heard, 0).index, 0);
+  assert.equal(playingAt(heard, 4).index, 1);
+  assert.equal(playingAt(heard, 7).index, 0);
 });
 
 test("turning the layers off leaves silence", () => {
