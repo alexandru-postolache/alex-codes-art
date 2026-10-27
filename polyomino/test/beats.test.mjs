@@ -266,6 +266,20 @@ test("instrument samples and drum kits can be chosen", () => {
   assert.match(fallback, /\.s\("piano"\)\.clip\(1\)/);
   assert.match(fallback, /\.s\("sawtooth"\)\.attack\(0\.02\)\.release\(0\.2\)\.lpf\(800\)/);
   assert.match(fallback, /\.bank\("RolandTR909"\)/);
+
+  const guitar = buildBeat({
+    ...score,
+    sounds: { tree: "jvbass" },
+    layers: { shape: false, sizes: false, tree: true },
+    partitions: [{
+      labels,
+      tree: [{ a: 0, b: 1 }],
+      cuts: []
+    }]
+  });
+
+  assert.match(guitar, /\.s\("jvbass"\)\.clip\(1\)/);
+  assert.doesNotMatch(guitar, /lpf\(800\)/);
 });
 
 test("euclidean hits match the drum pattern", () => {
@@ -358,8 +372,8 @@ test("the tree light walks the edges and marks a cut", () => {
   assert.equal(cut.tree.accent, true);
 });
 
-test("a bass note holds across two or three steps of the walk", () => {
-  const code = buildBeat({
+test("a bass note holds for two steps, then three, then one", () => {
+  const five = buildBeat({
     ...score,
     layers: { shape: false, sizes: false, tree: true },
     partitions: [{
@@ -375,9 +389,29 @@ test("a bass note holds across two or three steps of the walk", () => {
     }]
   });
 
-  assert.match(code, /note\("c2@2 d1@3"\)/);
-  assert.match(code, /\.gain\("1 0\.8"\)/);
-  assert.match(code, /\.slow\(8\)/);
+  assert.match(five, /note\("c2@2 d1@3"\)/);
+  assert.match(five, /\.gain\("1 0\.8"\)/);
+  assert.match(five, /\.slow\(8\)/);
+
+  const six = buildBeat({
+    ...score,
+    layers: { shape: false, sizes: false, tree: true },
+    partitions: [{
+      labels,
+      tree: [
+        { a: 0, b: 1 },
+        { a: 1, b: 5 },
+        { a: 5, b: 4 },
+        { a: 4, b: 0 },
+        { a: 0, b: 4 },
+        { a: 4, b: 5 }
+      ],
+      cuts: [{ a: 1, b: 5 }]
+    }]
+  });
+
+  assert.match(six, /note\("c2@2 d1@3 g1@1"\)/);
+  assert.match(six, /\.gain\("1 0\.8 0\.8"\)/);
 });
 
 test("a sheet shows the partition that is playing", () => {
