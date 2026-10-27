@@ -41,10 +41,10 @@ test("a row is a melody where the region changes and holds for the run", () => {
   const rows = shapeRows(labels, 4, score);
 
   assert.equal(rows.length, 4);
-  assert.equal(rows[0].sound, "c4@3 d4@1");
-  assert.equal(rows[1].sound, "c4@1 d#4@2 d4@1");
-  assert.equal(rows[2].sound, "d#4@2 f4@2");
-  assert.equal(rows[3].sound, "d#4@2 f4@1 c4@1");
+  assert.equal(rows[0].sound, "[c4,d#4,g4]@3 [d4,f4,g#4]@1");
+  assert.equal(rows[1].sound, "[c4,d#4,g4]@1 [d#4,g4,a#4]@2 [d4,f4,g#4]@1");
+  assert.equal(rows[2].sound, "[d#4,g4,a#4]@2 [f4,g#4,c5]@2");
+  assert.equal(rows[3].sound, "[d#4,g4,a#4]@2 [f4,g#4,c5]@1 [c4,d#4,g4]@1");
 
   for (const row of rows) {
     const weights = row.sound
@@ -52,7 +52,16 @@ test("a row is a melody where the region changes and holds for the run", () => {
       .map((event) => Number(event.split("@")[1]));
 
     assert.equal(weights.reduce((sum, weight) => sum + weight, 0), 4);
+    assert.ok(row.sound.split(" ").every((event) =>
+      /^\[[a-g]#?\d,[a-g]#?\d,[a-g]#?\d\]@\d+$/.test(event)
+    ));
   }
+});
+
+test("a triad near the top of the piano shifts down together", () => {
+  const rows = shapeRows([6], 1, { ...score, rootMidi: 84 });
+
+  assert.equal(rows[0].sound, "[a#4,d5,f5]@1");
 });
 
 test("region size is the Euclidean pulse count on that region's drum", () => {
@@ -151,7 +160,7 @@ test("the base color chooses the tree's starting note", () => {
   assert.equal(rootMidiFromColor("#fff"), 48);
 });
 
-test("the pattern is valid script and keeps each partition for one cycle per row", () => {
+test("the pattern is valid script and holds each piece for its whole melody", () => {
   const code = buildBeat({
     ...score,
     partitions: [
@@ -172,10 +181,10 @@ test("the pattern is valid script and keeps each partition for one cycle per row
   });
 
   assert.match(code, /setcps\(0\.8\)/);
-  assert.match(code, /arrange\(\n {2}\[4, stack\(/);
-  assert.match(code, /\[3, stack\(/);
+  assert.match(code, /arrange\(\n {2}\[8, stack\(/);
+  assert.match(code, /\[4\.5, stack\(/);
   assert.match(code, /note\(`</);
-  assert.match(code, /c4@3 d4@1/);
+  assert.match(code, /\[c4,d#4,g4\]@3 \[d4,f4,g#4\]@1/);
   assert.match(code, /\.s\("piano"\)\.clip\(1\)\.gain\(0\.8\)\.fast\(2\)/);
   assert.equal(code.match(/\.fast\(2\)/g).length, 2);
   assert.match(code, /\.bank\("RolandTR909"\)/);
@@ -294,8 +303,23 @@ test("a sheet shows the partition that is playing", () => {
   };
 
   assert.equal(playingAt(heard, 0).index, 0);
-  assert.equal(playingAt(heard, 4).index, 1);
-  assert.equal(playingAt(heard, 7).index, 0);
+  assert.equal(playingAt(heard, 4).index, 0);
+  assert.deepEqual(playingAt(heard, 4).shape.cells, [8, 9]);
+  assert.equal(playingAt(heard, 8).index, 1);
+  assert.deepEqual(playingAt(heard, 8).shape.cells, [0, 1]);
+  assert.equal(playingAt(heard, 12.5).index, 0);
+  assert.deepEqual(playingAt(heard, 12.5).shape.cells, [0, 1, 2]);
+
+  const drums = {
+    ...heard,
+    layers: { shape: false, sizes: true, tree: false }
+  };
+  const drumCode = buildBeat(drums);
+
+  assert.match(drumCode, /arrange\(\n {2}\[4, stack\(/);
+  assert.match(drumCode, /\[3, stack\(/);
+  assert.equal(playingAt(drums, 4).index, 1);
+  assert.equal(playingAt(drums, 7).index, 0);
 });
 
 test("turning the layers off leaves silence", () => {

@@ -2,10 +2,11 @@
   Turn a polyomino partition into a Strudel pattern.
 
   Rows are bars of melody, played at twice the bar rate.
-  A note starts where the region changes, and the following
+  A chord starts where the region changes, and the following
   cells are how long it lasts.
   The region's place in a minor scale, from the base color,
-  chooses the pitch. The melody is a piano.
+  chooses the triad. The melody is a piano.
+  A sheet holds each piece until that melody finishes.
 
   Each region size is an Euclidean drum density on one kit.
   The bar never has more than 8 steps, so a larger grid is played
@@ -70,7 +71,8 @@ export function buildBeat(score) {
   const cps = formatNum(score.cps ?? 0.8);
   const level = formatNum(score.gain ?? 0.8);
   const header = [
-    "// The piano plays two rows per cycle. A note starts where the region changes.",
+    "// The piano plays a triad where the region changes, two rows per cycle.",
+    "// A sheet holds each piece until that melody finishes.",
     "// Region size is an Euclidean density of at most 8 steps.",
     "// The tree is a bass line at half speed.",
     `setcps(${cps})`
@@ -94,10 +96,7 @@ export function buildBeat(score) {
     body = sections[0];
   } else {
     const blocks = partitions.map((partition, index) => {
-      const cycles = gridSizeOf(
-        partition.labels,
-        score.gridSize
-      );
+      const cycles = formatNum(sectionSpan(partition, score));
 
       return `  [${cycles}, ${indent(sections[index], 4, true)}]`;
     });
@@ -130,8 +129,8 @@ export function shapeRows(labels, size, score) {
     rows.push({
       sound: runs
         .map((run) => {
-          const note = noteForRegion(run.label, score.rootMidi);
-          return `${note}@${run.length}`;
+          const chord = chordForRegion(run.label, score.rootMidi);
+          return `[${chord.join(",")}]@${run.length}`;
         })
         .join(" ")
     });
@@ -214,7 +213,8 @@ function zipGroups(left, right) {
 
 // What the piece should show at a scheduler cycle.
 // A single partition keeps each layer on its own loop.
-// A sheet holds each partition for one cycle per row.
+// A sheet holds each piece for the whole piano melody.
+// With the piano off, each piece lasts one cycle per row.
 export function playingAt(score, cycle) {
   if (!Number.isFinite(cycle)) {
     return null;
@@ -226,7 +226,7 @@ export function playingAt(score, cycle) {
     return null;
   }
 
-  const place = placeCycle(partitions, score.gridSize, cycle);
+  const place = placeCycle(partitions, score, cycle);
   const partition = partitions[place.index];
   const labels = partition.labels || [];
   const size = gridSizeOf(labels, score.gridSize);
@@ -253,13 +253,13 @@ export function playingAt(score, cycle) {
   return shown;
 }
 
-function placeCycle(partitions, fallback, cycle) {
+function placeCycle(partitions, score, cycle) {
   if (partitions.length === 1) {
     return { index: 0, time: cycle };
   }
 
   const spans = partitions.map((partition) =>
-    gridSizeOf(partition.labels, fallback)
+    sectionSpan(partition, score)
   );
   const total = spans.reduce((sum, span) => sum + span, 0);
   let local = wrapCycle(cycle, total);
@@ -414,6 +414,53 @@ export function noteForRegion(label, rootMidi) {
   const midi = (rootMidi ?? LOW_MIDI) + MINOR[scaleDegree] + (octave * 12);
 
   return midiName(foldMidi(midi));
+}
+
+// A diatonic triad on this region's natural-minor degree.
+// The root is the note the region already played. The third
+// and the fifth are two and four scale steps above it.
+// The whole triad shifts by octaves so the voicing stays together.
+function chordForRegion(label, rootMidi) {
+  const degree = Math.abs(label);
+  const root = rootMidi ?? LOW_MIDI;
+  const tones = [0, 2, 4].map((step) => {
+    const scaleIndex = degree + step;
+    const scaleDegree = scaleIndex % MINOR.length;
+    const octave = Math.floor(scaleIndex / MINOR.length);
+
+    return root + MINOR[scaleDegree] + (octave * 12);
+  });
+
+  return foldChord(tones).map(midiName);
+}
+
+function foldChord(tones) {
+  let notes = tones.map((tone) => Math.round(tone));
+
+  while (Math.max(...notes) > HIGH_MIDI) {
+    notes = notes.map((tone) => tone - 12);
+  }
+
+  while (Math.min(...notes) < LOW_MIDI) {
+    notes = notes.map((tone) => tone + 12);
+  }
+
+  return notes;
+}
+
+// How many cycles a sheet spends on one piece.
+// The piano section lasts for the whole melody.
+// The other layers keep one cycle per row.
+function sectionSpan(partition, score) {
+  const labels = partition.labels || [];
+  const size = gridSizeOf(labels, score.gridSize);
+  const layers = score.layers || {};
+
+  if (layers.shape && labels.length > 0) {
+    return (size * size) / SHAPE_RATE;
+  }
+
+  return size;
 }
 
 export function treeLine(partition, size, rootMidi) {
