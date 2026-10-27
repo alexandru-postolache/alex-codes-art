@@ -130,7 +130,7 @@ test("the tree walks by direction and accents cuts", () => {
   }, 4, 60);
 
   assert.deepEqual(line.notes, ["c4", "d4", "d3", "c3", "g3"]);
-  assert.deepEqual(line.gains, ["0.28", "0.28", "0.85", "0.28", "0.28"]);
+  assert.deepEqual(line.gains, ["0.8", "0.8", "1", "0.8", "0.8"]);
 });
 
 test("pitch stays inside the playing range", () => {
@@ -194,7 +194,7 @@ test("the pattern is valid script and holds each piece for its whole melody", ()
   assert.match(code, /\.s\("bass"\)\.clip\(1\)\.slow\(8\)/);
   assert.doesNotMatch(code, /triangle|sine/);
   assert.match(code, /note\("c2 d2 d1"\)/);
-  assert.match(code, /\.gain\("0\.28 0\.28 0\.85"\)/);
+  assert.match(code, /\.gain\("0\.8 0\.8 1"\)/);
   assert.match(code, /\.postgain\(0\.7\)/);
   assert.doesNotThrow(() => {
     new Function(code);

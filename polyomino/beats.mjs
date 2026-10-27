@@ -42,6 +42,10 @@ export const TREE_RATE = 2;
 // The bass sits this many octaves under the walk.
 const BASS_OCTAVES = 2;
 
+// A walking note, and a cut. The cut is full level.
+const BASS_GAIN = "0.8";
+const BASS_ACCENT = "1";
+
 // How long a drum hit stays lit, in cycles.
 export const SIZE_BLOOM = 0.35;
 
@@ -467,12 +471,12 @@ export function treeLine(partition, size, rootMidi) {
   const cuts = new Set((partition.cuts || []).map(edgeKey));
   let midi = foldMidi(rootMidi ?? LOW_MIDI);
   const notes = [midiName(midi)];
-  const gains = ["0.28"];
+  const gains = [BASS_GAIN];
 
   for (const edge of partition.tree || []) {
     midi = foldMidi(midi + intervalFor(edge, size));
     notes.push(midiName(midi));
-    gains.push(cuts.has(edgeKey(edge)) ? "0.85" : "0.28");
+    gains.push(cuts.has(edgeKey(edge)) ? BASS_ACCENT : BASS_GAIN);
   }
 
   return { notes, gains };
