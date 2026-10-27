@@ -27,8 +27,8 @@
 
   The Beats folder plays the partition with Strudel.
   Each row of piano takes half a bar. Region sizes are Euclidean
-  drum densities of at most 16 steps on one kit, and the
-  spanning tree is a quiet pitched line. While the sound
+  drum densities of at most 8 steps on one kit, and the
+  spanning tree is a bass line at half speed. While the sound
   plays, a light follows the piano, a region softens on
   each drum, and a thin line walks the tree.
 */
