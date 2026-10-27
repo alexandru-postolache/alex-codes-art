@@ -3,7 +3,7 @@
   replace p5 functions such as floor, color, and loop.
 */
 
-import { buildBeat, rootMidiFromColor } from "./beats.mjs";
+import { buildBeat, playingAt, rootMidiFromColor } from "./beats.mjs";
 
 const frame = document.createElement("iframe");
 frame.id = "strudel-frame";
@@ -93,6 +93,21 @@ function play(code) {
   return run;
 }
 
+function cycle() {
+  const child = frame.contentWindow;
+
+  if (!child || typeof child.getTime !== "function") {
+    return null;
+  }
+
+  try {
+    const value = Number(child.getTime());
+    return Number.isFinite(value) ? value : null;
+  } catch (error) {
+    return null;
+  }
+}
+
 function stop() {
   const child = frame.contentWindow;
 
@@ -113,6 +128,7 @@ function stop() {
 
 window.PolyominoBeats = {
   buildBeat,
+  playingAt,
   rootMidiFromColor
 };
 
@@ -120,5 +136,6 @@ window.PolyominoPlayer = {
   ready,
   play,
   stop,
-  unlock
+  unlock,
+  cycle
 };

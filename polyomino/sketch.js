@@ -28,7 +28,9 @@
   The Beats folder plays the partition with Strudel.
   Each row of piano takes half a bar. Region sizes are Euclidean
   drum densities of at most 16 steps on one kit, and the
-  spanning tree is a quiet pitched line.
+  spanning tree is a quiet pitched line. While the sound
+  plays, a light follows the piano, a region softens on
+  each drum, and a thin line walks the tree.
 */
 
 const RANDOM_CANVAS = 700;
@@ -199,6 +201,7 @@ function draw() {
 
 function paintPartitions(target, style) {
   const frame = contentFrame();
+  const music = currentMusic();
 
   if (usesSheet()) {
     const placement = sheetPlacement(frame);
@@ -225,7 +228,8 @@ function paintPartitions(target, style) {
         placement.shape,
         style,
         target,
-        placement.pixelScale
+        placement.pixelScale,
+        music && music.index === i ? music : null
       );
     }
 
@@ -242,7 +246,8 @@ function paintPartitions(target, style) {
     shape,
     style,
     target,
-    inkScale(shape)
+    inkScale(shape),
+    music && music.index === 0 ? music : null
   );
 }
 
@@ -1033,9 +1038,11 @@ async function startBeat(patternText, token) {
 
     if (!audible) {
       setBeatStatus("click to hear");
+      followBeatClock();
       return;
     }
 
+    followBeatClock();
     setBeatStatus(
       hits === null
         ? "playing"
@@ -1061,6 +1068,38 @@ function stopBeat() {
   }
 
   setBeatStatus("stopped");
+  followBeatClock();
+  redraw();
+}
+
+function followBeatClock() {
+  const animating = params.mode === "ANIMATE" && animation;
+
+  if (animating || (params.beatPlay && beatAudible)) {
+    loop();
+    return;
+  }
+
+  noLoop();
+}
+
+function currentMusic() {
+  if (
+    !params.beatPlay ||
+    !beatAudible ||
+    !window.PolyominoPlayer ||
+    !window.PolyominoBeats
+  ) {
+    return null;
+  }
+
+  const cycle = PolyominoPlayer.cycle();
+
+  if (cycle == null) {
+    return null;
+  }
+
+  return PolyominoBeats.playingAt(beatScore(), cycle);
 }
 
 function setBeatStatus(status) {
@@ -1261,18 +1300,14 @@ function rebuild(regenerate) {
     summaryMonitor.refresh();
   }
 
-  if (params.mode === "ANIMATE" && animation) {
-    loop();
-  } else {
-    noLoop();
-  }
-
   fitCanvas();
   refreshBeatCode();
 
   if (params.beatPlay) {
     scheduleBeat();
   }
+
+  followBeatClock();
 }
 
 function partitionSummary(grids) {
@@ -2457,7 +2492,8 @@ function drawPartition(
   size,
   style,
   ctx,
-  pixelScale
+  pixelScale,
+  music
 ) {
   const regions = getRegionLabels(grid);
 
@@ -2530,6 +2566,10 @@ function drawPartition(
   let cursor = 0;
 
   for (const item of regionContours) {
+    item.radii = radii.slice(
+      cursor,
+      cursor + item.pixelContours.length
+    );
     target.save();
     target.beginPath();
 
@@ -2561,27 +2601,185 @@ function drawPartition(
     cursor += item.pixelContours.length;
   }
 
-  if (style === "fill" || lineWidth <= 0) {
-    target.restore();
-    return;
+  if (music) {
+    paintBeatWash(
+      target,
+      regionContours,
+      music,
+      originX,
+      originY,
+      cellSize
+    );
   }
 
-  cursor = 0;
+  if (style !== "fill" && lineWidth > 0) {
+    cursor = 0;
 
-  for (const item of regionContours) {
-    for (let i = 0; i < item.pixelContours.length; i++) {
-      drawRoundedContour(
-        target,
-        item.pixelContours[i],
-        radii[cursor + i],
-        "stroke"
-      );
+    for (const item of regionContours) {
+      for (let i = 0; i < item.pixelContours.length; i++) {
+        drawRoundedContour(
+          target,
+          item.pixelContours[i],
+          radii[cursor + i],
+          "stroke"
+        );
+      }
+
+      cursor += item.pixelContours.length;
     }
+  }
 
-    cursor += item.pixelContours.length;
+  if (music && music.tree) {
+    paintBeatTree(
+      target,
+      music.tree,
+      originX,
+      originY,
+      cellSize
+    );
   }
 
   target.restore();
+}
+
+const BEAT_LIGHT = "rgba(255, 250, 243, 1)";
+
+function paintBeatWash(ctx, regions, music, originX, originY, cellSize) {
+  const strength = new Map();
+
+  for (const bloom of music.sizes || []) {
+    const previous = strength.get(bloom.label) || 0;
+    strength.set(bloom.label, Math.max(previous, bloom.strength));
+  }
+
+  for (const item of regions) {
+    const lit = strength.get(item.region) || 0;
+
+    if (lit <= 0) {
+      continue;
+    }
+
+    ctx.save();
+    traceRegion(ctx, item);
+    ctx.fillStyle = withAlpha(BEAT_LIGHT, 0.22 * lit);
+    ctx.fill("evenodd");
+    ctx.restore();
+  }
+
+  if (!music.shape) {
+    return;
+  }
+
+  const item = regions.find((region) =>
+    region.region === music.shape.label
+  );
+
+  if (!item) {
+    return;
+  }
+
+  const point = pointAlongCells(
+    music.shape.cells,
+    music.shape.progress,
+    originX,
+    originY,
+    cellSize
+  );
+  const radius = cellSize * 0.95;
+
+  ctx.save();
+  traceRegion(ctx, item);
+  ctx.clip("evenodd");
+
+  const glow = ctx.createRadialGradient(
+    point.x,
+    point.y,
+    cellSize * 0.04,
+    point.x,
+    point.y,
+    radius
+  );
+  const alpha = 0.62 * (1 - music.shape.progress * 0.28);
+
+  glow.addColorStop(0, withAlpha(BEAT_LIGHT, alpha));
+  glow.addColorStop(1, withAlpha(BEAT_LIGHT, 0));
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function traceRegion(ctx, item) {
+  ctx.beginPath();
+
+  for (let i = 0; i < item.pixelContours.length; i++) {
+    drawRoundedContour(
+      ctx,
+      item.pixelContours[i],
+      item.radii[i],
+      "path"
+    );
+  }
+}
+
+function pointAlongCells(cells, progress, originX, originY, cellSize) {
+  if (!cells || cells.length === 0) {
+    return { x: originX, y: originY };
+  }
+
+  const first = cellPoint(cells[0], originX, originY, cellSize);
+
+  if (cells.length === 1) {
+    return first;
+  }
+
+  const span = (cells.length - 1) * constrain(progress, 0, 1);
+  const index = min(floor(span), cells.length - 2);
+  const start = cellPoint(cells[index], originX, originY, cellSize);
+  const end = cellPoint(cells[index + 1], originX, originY, cellSize);
+  const blend = span - index;
+
+  return {
+    x: lerp(start.x, end.x, blend),
+    y: lerp(start.y, end.y, blend)
+  };
+}
+
+function cellPoint(index, originX, originY, cellSize) {
+  const x = index % gridSize;
+  const y = floor(index / gridSize);
+
+  return {
+    x: originX + (x + 0.5) * cellSize,
+    y: originY + (y + 0.5) * cellSize
+  };
+}
+
+function paintBeatTree(ctx, tree, originX, originY, cellSize) {
+  const here = cellPoint(tree.cell, originX, originY, cellSize);
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.strokeStyle = tree.accent
+    ? withAlpha(CUT_COLOR, 0.9)
+    : withAlpha(BEAT_LIGHT, 0.82);
+  ctx.fillStyle = ctx.strokeStyle;
+  ctx.lineWidth = max(1.25, cellSize * (tree.accent ? 0.045 : 0.03));
+
+  if (tree.from != null && tree.to != null) {
+    const from = cellPoint(tree.from, originX, originY, cellSize);
+
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(here.x, here.y);
+    ctx.stroke();
+  }
+
+  ctx.beginPath();
+  ctx.arc(here.x, here.y, cellSize * (tree.accent ? 0.09 : 0.07), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 /* =========================================================
