@@ -33,6 +33,8 @@
   of at most 8 steps. The kit can be a TR-909, Linn, MPC-60,
   DMX, or R-8. The spanning tree is a low line at half speed:
   saw, organ pedal, organ, folk harp, or a softer synth.
+  Each bass note holds for two or three steps. A dot walks
+  the tree and leaves a short trail.
   While the sound plays, a light follows the chords, a region
   softens on each drum, and a thin line walks the tree.
 */
@@ -2824,29 +2826,100 @@ function cellPoint(index, originX, originY, cellSize) {
 }
 
 function paintBeatTree(ctx, tree, originX, originY, cellSize) {
-  const here = cellPoint(tree.cell, originX, originY, cellSize);
+  const points = (tree.cells || []).map((cell) =>
+    cellPoint(cell, originX, originY, cellSize)
+  );
+
+  if (points.length === 0) {
+    return;
+  }
+
+  const head = tree.head || 0;
+  const trail = 3;
+  const samples = pathSamples(points, Math.max(0, head - trail), head);
+  const tip = samples[samples.length - 1];
+  const color = tree.accent ? CUT_COLOR : BEAT_LIGHT;
 
   ctx.save();
   ctx.lineCap = "round";
-  ctx.strokeStyle = tree.accent
-    ? withAlpha(CUT_COLOR, 0.9)
-    : withAlpha(BEAT_LIGHT, 0.82);
-  ctx.fillStyle = ctx.strokeStyle;
-  ctx.lineWidth = max(1.25, cellSize * (tree.accent ? 0.045 : 0.03));
+  ctx.lineJoin = "round";
 
-  if (tree.from != null && tree.to != null) {
-    const from = cellPoint(tree.from, originX, originY, cellSize);
+  for (let index = 1; index < samples.length; index++) {
+    const previous = samples[index - 1];
+    const next = samples[index];
+    const age = (head - next.at) / trail;
+    const fade = constrain(1 - age, 0, 1);
 
+    ctx.strokeStyle = withAlpha(BEAT_LIGHT, 0.08 + 0.55 * fade);
+    ctx.lineWidth = max(1, cellSize * (0.012 + 0.03 * fade));
     ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(here.x, here.y);
+    ctx.moveTo(previous.x, previous.y);
+    ctx.lineTo(next.x, next.y);
     ctx.stroke();
   }
 
+  const glow = ctx.createRadialGradient(
+    tip.x,
+    tip.y,
+    0,
+    tip.x,
+    tip.y,
+    cellSize * 0.28
+  );
+
+  glow.addColorStop(0, withAlpha(color, 0.55));
+  glow.addColorStop(1, withAlpha(color, 0));
+  ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.arc(here.x, here.y, cellSize * (tree.accent ? 0.09 : 0.07), 0, Math.PI * 2);
+  ctx.arc(tip.x, tip.y, cellSize * 0.28, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = withAlpha(color, 0.95);
+  ctx.beginPath();
+  ctx.arc(tip.x, tip.y, cellSize * 0.07, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+}
+
+function pathSamples(points, from, to) {
+  const samples = [pointOnPath(points, from)];
+  const lastIndex = points.length - 1;
+
+  for (let index = Math.ceil(from); index <= lastIndex && index < to; index++) {
+    if (index > from) {
+      samples.push({
+        x: points[index].x,
+        y: points[index].y,
+        at: index
+      });
+    }
+  }
+
+  const end = pointOnPath(points, to);
+  const previous = samples[samples.length - 1];
+
+  if (!previous || Math.abs(previous.at - end.at) > 0.0001) {
+    samples.push(end);
+  }
+
+  return samples;
+}
+
+function pointOnPath(points, at) {
+  if (points.length === 1 || at <= 0) {
+    return { x: points[0].x, y: points[0].y, at: 0 };
+  }
+
+  const limit = points.length - 1;
+  const clamped = Math.min(limit, Math.max(0, at));
+  const index = Math.min(limit - 1, Math.floor(clamped));
+  const blend = clamped - index;
+
+  return {
+    x: lerp(points[index].x, points[index + 1].x, blend),
+    y: lerp(points[index].y, points[index + 1].y, blend),
+    at: clamped
+  };
 }
 
 /* =========================================================

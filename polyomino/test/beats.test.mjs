@@ -194,8 +194,8 @@ test("the pattern is valid script and holds each piece for its whole melody", ()
   assert.match(code, /\.s\("sawtooth"\)\.attack\(0\.02\)\.release\(0\.2\)\.lpf\(800\)\.slow\(8\)/);
   assert.doesNotMatch(code, /\.s\("bass"\)/);
   assert.doesNotMatch(code, /triangle|sine/);
-  assert.match(code, /note\("c2 d2 d1"\)/);
-  assert.match(code, /\.gain\("0\.8 0\.8 1"\)/);
+  assert.match(code, /note\("c2@2"\)/);
+  assert.match(code, /\.gain\("1"\)/);
   assert.match(code, /\.postgain\(0\.7\)/);
   assert.doesNotThrow(() => {
     new Function(code);
@@ -345,15 +345,39 @@ test("the tree light walks the edges and marks a cut", () => {
   };
 
   const opening = playingAt(heard, 0);
-  assert.equal(opening.tree.cell, 0);
-  assert.equal(opening.tree.from, null);
+  assert.deepEqual(opening.tree.cells, [0, 1, 5]);
+  assert.equal(opening.tree.head, 0);
   assert.equal(opening.tree.accent, false);
 
+  const midway = playingAt(heard, 2);
+  assert.equal(midway.tree.head, 0.5);
+  assert.equal(midway.tree.accent, false);
+
   const cut = playingAt(heard, 16 / 3);
-  assert.equal(cut.tree.cell, 5);
-  assert.equal(cut.tree.from, 1);
-  assert.equal(cut.tree.to, 5);
+  assert.ok(Math.abs(cut.tree.head - 4 / 3) < 1e-9);
   assert.equal(cut.tree.accent, true);
+});
+
+test("a bass note holds across two or three steps of the walk", () => {
+  const code = buildBeat({
+    ...score,
+    layers: { shape: false, sizes: false, tree: true },
+    partitions: [{
+      labels,
+      tree: [
+        { a: 0, b: 1 },
+        { a: 1, b: 5 },
+        { a: 5, b: 4 },
+        { a: 4, b: 0 },
+        { a: 0, b: 4 }
+      ],
+      cuts: [{ a: 1, b: 5 }]
+    }]
+  });
+
+  assert.match(code, /note\("c2@2 d1@3"\)/);
+  assert.match(code, /\.gain\("1 0\.8"\)/);
+  assert.match(code, /\.slow\(8\)/);
 });
 
 test("a sheet shows the partition that is playing", () => {
