@@ -232,6 +232,42 @@ test("the shape and the tree can use another built-in sound", () => {
   assert.doesNotMatch(fallback, /hush/);
 });
 
+test("instrument samples and drum kits can be chosen", () => {
+  const code = buildBeat({
+    ...score,
+    sounds: {
+      shape: "harp",
+      tree: "pipeorgan_quiet_pedal",
+      kit: "LinnDrum"
+    },
+    partitions: [{
+      labels,
+      tree: [{ a: 0, b: 1 }],
+      cuts: []
+    }]
+  });
+
+  assert.match(code, /\.s\("harp"\)\.clip\(1\)\.gain\(0\.8\)\.fast\(2\)/);
+  assert.match(code, /\.s\("pipeorgan_quiet_pedal"\)\.clip\(1\)\.slow\(8\)/);
+  assert.doesNotMatch(code, /lpf\(800\)/);
+  assert.match(code, /\.bank\("LinnDrum"\)/);
+  assert.doesNotMatch(code, /RolandTR909/);
+
+  const fallback = buildBeat({
+    ...score,
+    sounds: { shape: "not-a-sound", tree: "not-a-bass", kit: "not-a-kit" },
+    partitions: [{
+      labels,
+      tree: [{ a: 0, b: 1 }],
+      cuts: []
+    }]
+  });
+
+  assert.match(fallback, /\.s\("piano"\)\.clip\(1\)/);
+  assert.match(fallback, /\.s\("sawtooth"\)\.attack\(0\.02\)\.release\(0\.2\)\.lpf\(800\)/);
+  assert.match(fallback, /\.bank\("RolandTR909"\)/);
+});
+
 test("euclidean hits match the drum pattern", () => {
   assert.deepEqual(euclidPattern(3, 8), [1, 0, 0, 1, 0, 0, 1, 0]);
   assert.deepEqual(

@@ -4,6 +4,7 @@
 */
 
 import {
+  DRUM_KITS,
   SHAPE_SOUNDS,
   TREE_SOUNDS,
   buildBeat,
@@ -133,6 +134,7 @@ function stop() {
 }
 
 window.PolyominoBeats = {
+  DRUM_KITS,
   SHAPE_SOUNDS,
   TREE_SOUNDS,
   buildBeat,
