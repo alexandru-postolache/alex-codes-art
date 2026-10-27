@@ -26,13 +26,14 @@
   Patterns may repeat when there are more regions than sets.
 
   The Beats folder plays the partition with Strudel.
-  Each region of the piano is a minor-scale triad, and each
-  row takes half a bar. A sheet holds a piece until that
-  melody finishes. Region sizes are Euclidean drum densities
-  of at most 8 steps on one kit, and the spanning tree is a
-  bass line at half speed. While the sound plays, a light
-  follows the piano, a region softens on each drum, and a
-  thin line walks the tree.
+  Each region is a minor-scale triad. The shape can be a
+  piano, a soft synth, a pure synth, or a pad, and each row
+  takes half a bar. A sheet holds a piece until that melody
+  finishes. Region sizes are Euclidean drum densities of at
+  most 8 steps on one kit. The spanning tree is a built-in
+  bass synth at half speed: saw, square, round, or sub.
+  While the sound plays, a light follows the chords, a region
+  softens on each drum, and a thin line walks the tree.
 */
 
 const RANDOM_CANVAS = 700;
@@ -107,8 +108,10 @@ const params = {
   // the partition as it changes.
   beatPlay: false,
   beatShape: true,
+  beatShapeSound: "piano",
   beatSizes: true,
   beatTree: true,
+  beatTreeSound: "sawtooth",
   beatTempo: 0.8,
   beatLevel: 0.8
 };
@@ -149,6 +152,8 @@ let patternImages = [];
 let tileInputs = {};
 
 let beatPlayInput;
+let shapeSoundInput;
+let treeSoundInput;
 let beatStatusMonitor;
 let beatCodeView;
 let beatTimer = 0;
@@ -456,8 +461,10 @@ const STRUCTURAL_KEYS = new Set([
 const BEAT_KEYS = new Set([
   "beatPlay",
   "beatShape",
+  "beatShapeSound",
   "beatSizes",
   "beatTree",
+  "beatTreeSound",
   "beatTempo",
   "beatLevel",
   "baseColor",
@@ -754,6 +761,11 @@ function setupPane() {
     label: "shape"
   });
 
+  shapeSoundInput = beatsFolder.addInput(params, "beatShapeSound", {
+    label: "shape sound",
+    options: soundOptions(PolyominoBeats.SHAPE_SOUNDS)
+  });
+
   beatsFolder.addInput(params, "beatSizes", {
     label: "sizes"
   });
@@ -761,6 +773,13 @@ function setupPane() {
   beatsFolder.addInput(params, "beatTree", {
     label: "tree"
   });
+
+  treeSoundInput = beatsFolder.addInput(params, "beatTreeSound", {
+    label: "tree sound",
+    options: soundOptions(PolyominoBeats.TREE_SOUNDS)
+  });
+
+  updateBeatSoundVisibility();
 
   beatsFolder.addInput(params, "beatTempo", {
     label: "tempo",
@@ -833,6 +852,10 @@ function setupPane() {
       return;
     }
 
+    if (presetKey === "beatShape" || presetKey === "beatTree") {
+      updateBeatSoundVisibility();
+    }
+
     if (presetKey === "beatPlay") {
       if (params.beatPlay) {
         scheduleBeat();
@@ -895,6 +918,26 @@ function clampRegionCount() {
 
   if (regionInput) {
     regionInput.refresh();
+  }
+}
+
+function soundOptions(sounds) {
+  const options = {};
+
+  for (const sound of sounds) {
+    options[sound.label] = sound.value;
+  }
+
+  return options;
+}
+
+function updateBeatSoundVisibility() {
+  if (shapeSoundInput) {
+    shapeSoundInput.hidden = !params.beatShape;
+  }
+
+  if (treeSoundInput) {
+    treeSoundInput.hidden = !params.beatTree;
   }
 }
 
@@ -966,6 +1009,10 @@ function beatScore() {
       : 48,
     patternCount: params.patternCount,
     seed: params.seed,
+    sounds: {
+      shape: params.beatShapeSound,
+      tree: params.beatTreeSound
+    },
     layers: {
       shape: params.beatShape,
       sizes: params.beatSizes,

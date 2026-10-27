@@ -5,15 +5,17 @@
   A chord starts where the region changes, and the following
   cells are how long it lasts.
   The region's place in a minor scale, from the base color,
-  chooses the triad. The melody is a piano.
+  chooses the triad. The melody is a piano by default,
+  or another chord-friendly sound.
   A sheet holds each piece until that melody finishes.
 
   Each region size is an Euclidean drum density on one kit.
   The bar never has more than 8 steps, so a larger grid is played
   in eighth notes.
-  The spanning tree is a bass line, played at half the speed:
-  right and left step by a tone, up by a fifth, down by an octave.
-  A cut in the tree is an accent.
+  The spanning tree is a built-in synth bass, played at half
+  the speed: right and left step by a tone, up by a fifth,
+  down by an octave. A cut in the tree is an accent.
+  Sawtooth is the default bass. A lowpass keeps it low.
 */
 
 export const DRUMS = [
@@ -46,6 +48,32 @@ const BASS_OCTAVES = 2;
 const BASS_GAIN = "0.8";
 const BASS_ACCENT = "1";
 
+// A short fade so an oscillator does not tick at the ends.
+const SYNTH_ATTACK = 0.02;
+const SYNTH_RELEASE = 0.2;
+
+// Trims the harmonics that make a sawtooth a buzzer.
+const TREE_CUTOFF = 800;
+
+// Chord sounds. Piano is sampled. The others are built-in synths.
+export const SHAPE_SOUNDS = [
+  { label: "Piano", value: "piano" },
+  { label: "Soft", value: "triangle" },
+  { label: "Pure", value: "sine" },
+  { label: "Pad", value: "supersaw" }
+];
+
+// Low built-in synths. Sawtooth is the bass.
+export const TREE_SOUNDS = [
+  { label: "Saw", value: "sawtooth" },
+  { label: "Square", value: "square" },
+  { label: "Round", value: "triangle" },
+  { label: "Sub", value: "sine" }
+];
+
+const DEFAULT_SHAPE_SOUND = "piano";
+const DEFAULT_TREE_SOUND = "sawtooth";
+
 // How long a drum hit stays lit, in cycles.
 export const SIZE_BLOOM = 0.35;
 
@@ -74,11 +102,13 @@ const MINOR = [0, 2, 3, 5, 7, 8, 10];
 export function buildBeat(score) {
   const cps = formatNum(score.cps ?? 0.8);
   const level = formatNum(score.gain ?? 0.8);
+  const shapeName = shapeSoundName(score);
+  const treeName = treeSoundName(score);
   const header = [
-    "// The piano plays a triad where the region changes, two rows per cycle.",
+    `// The shape plays ${shapeName} chords where the region changes, two rows per cycle.`,
     "// A sheet holds each piece until that melody finishes.",
     "// Region size is an Euclidean density of at most 8 steps.",
-    "// The tree is a bass line at half speed.",
+    `// The tree is a ${treeName} bass line at half speed.`,
     `setcps(${cps})`
   ];
 
@@ -497,7 +527,7 @@ function sectionCode(partition, score) {
   }
 
   if (layers.tree && partition.tree && partition.tree.length > 0) {
-    voices.push(treeVoice(partition, size, score.rootMidi));
+    voices.push(treeVoice(partition, size, score));
   }
 
   if (voices.length === 0) {
@@ -516,11 +546,15 @@ function sectionCode(partition, score) {
 function shapeVoice(labels, size, score) {
   const rows = shapeRows(labels, size, score);
   const notes = rows.map((row) => `  ${row.sound}`).join("\n");
+  const sound = shapeSoundName(score);
+  const tone = sound === "piano"
+    ? `.s("piano").clip(1)`
+    : `.s("${sound}").attack(${SYNTH_ATTACK}).release(${SYNTH_RELEASE})`;
 
   return [
     "note(`<",
     notes,
-    `>\`).s("piano").clip(1).gain(0.8).fast(${SHAPE_RATE})`
+    `>\`)${tone}.gain(0.8).fast(${SHAPE_RATE})`
   ].join("\n");
 }
 
@@ -539,17 +573,41 @@ function sizeVoice(labels, score) {
   return `stack(\n${lines.join(",\n")}\n).bank("${DRUM_BANK}").gain(0.4)`;
 }
 
-function treeVoice(partition, size, rootMidi) {
-  const line = treeLine(partition, size, rootMidi);
+function treeVoice(partition, size, score) {
+  const line = treeLine(partition, size, score.rootMidi);
   const notes = line.notes.map(bassNote);
+  const sound = treeSoundName(score);
 
   return [
     `note("${notes.join(" ")}")`,
     `.gain("${line.gains.join(" ")}")`,
-    `.s("bass")`,
-    `.clip(1)`,
+    `.s("${sound}")`,
+    `.attack(${SYNTH_ATTACK})`,
+    `.release(${SYNTH_RELEASE})`,
+    `.lpf(${TREE_CUTOFF})`,
     `.slow(${size * TREE_RATE})`
   ].join("");
+}
+
+function shapeSoundName(score) {
+  return pickSound(
+    score.sounds && score.sounds.shape,
+    SHAPE_SOUNDS,
+    DEFAULT_SHAPE_SOUND
+  );
+}
+
+function treeSoundName(score) {
+  return pickSound(
+    score.sounds && score.sounds.tree,
+    TREE_SOUNDS,
+    DEFAULT_TREE_SOUND
+  );
+}
+
+function pickSound(name, choices, fallback) {
+  const known = choices.some((sound) => sound.value === name);
+  return known ? name : fallback;
 }
 
 function bassNote(name) {

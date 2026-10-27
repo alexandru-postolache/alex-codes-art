@@ -3,7 +3,13 @@
   replace p5 functions such as floor, color, and loop.
 */
 
-import { buildBeat, playingAt, rootMidiFromColor } from "./beats.mjs";
+import {
+  SHAPE_SOUNDS,
+  TREE_SOUNDS,
+  buildBeat,
+  playingAt,
+  rootMidiFromColor
+} from "./beats.mjs";
 
 const frame = document.createElement("iframe");
 frame.id = "strudel-frame";
@@ -127,6 +133,8 @@ function stop() {
 }
 
 window.PolyominoBeats = {
+  SHAPE_SOUNDS,
+  TREE_SOUNDS,
   buildBeat,
   playingAt,
   rootMidiFromColor
