@@ -1,0 +1,839 @@
+[
+  {
+    "name": "Grass",
+    "file": "Grass.png",
+    "frames": [
+      {
+        "name": "GrassBig01",
+        "x": 0,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 315,
+        "soil": 1232
+      },
+      {
+        "name": "GrassBig02",
+        "x": 912,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 314,
+        "soil": 1230
+      },
+      {
+        "name": "GrassBig03",
+        "x": 0,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 314,
+        "soil": 1252
+      },
+      {
+        "name": "GrassMid01",
+        "x": 912,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 322,
+        "soil": 1230
+      },
+      {
+        "name": "GrassMid02",
+        "x": 0,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 321,
+        "soil": 1228
+      },
+      {
+        "name": "GrassMid03",
+        "x": 912,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 326,
+        "soil": 1226
+      },
+      {
+        "name": "GrassSmall01",
+        "x": 0,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 323,
+        "soil": 1224
+      },
+      {
+        "name": "GrassSmall02",
+        "x": 912,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 322,
+        "soil": 1226
+      },
+      {
+        "name": "GrassSmall03",
+        "x": 0,
+        "y": 6072,
+        "width": 912,
+        "height": 1518,
+        "top": 321,
+        "soil": 1236
+      }
+    ]
+  },
+  {
+    "name": "Field",
+    "file": "Field.png",
+    "frames": [
+      {
+        "name": "GrassFieldBig01",
+        "x": 0,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 268,
+        "soil": 1198
+      },
+      {
+        "name": "GrassFieldBig02",
+        "x": 912,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 273,
+        "soil": 1236
+      },
+      {
+        "name": "GrassFieldBig03",
+        "x": 0,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 308,
+        "soil": 1240
+      },
+      {
+        "name": "GrassFieldFull",
+        "x": 912,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 261,
+        "soil": 1240
+      },
+      {
+        "name": "GrassFieldMid01",
+        "x": 0,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 318,
+        "soil": 1234
+      },
+      {
+        "name": "GrassFieldMid02",
+        "x": 912,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 312,
+        "soil": 1228
+      },
+      {
+        "name": "GrassFieldMid03",
+        "x": 0,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 315,
+        "soil": 1242
+      },
+      {
+        "name": "GrassFieldSmall01",
+        "x": 912,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 324,
+        "soil": 1236
+      },
+      {
+        "name": "GrassFieldSmall02",
+        "x": 0,
+        "y": 6072,
+        "width": 912,
+        "height": 1518,
+        "top": 322,
+        "soil": 1236
+      },
+      {
+        "name": "GrassFieldSmall03",
+        "x": 912,
+        "y": 6072,
+        "width": 912,
+        "height": 1518,
+        "top": 318,
+        "soil": 1236
+      }
+    ]
+  },
+  {
+    "name": "Forest",
+    "file": "Forest.png",
+    "frames": [
+      {
+        "name": "GrassForestBig01",
+        "x": 0,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 259,
+        "soil": 1234
+      },
+      {
+        "name": "GrassForestBig02",
+        "x": 912,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 312,
+        "soil": 1256
+      },
+      {
+        "name": "GrassForestBig03",
+        "x": 0,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 307,
+        "soil": 1240
+      },
+      {
+        "name": "GrassForestFull",
+        "x": 912,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 259,
+        "soil": 1234
+      },
+      {
+        "name": "GrassForestMid01",
+        "x": 0,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 318,
+        "soil": 1252
+      },
+      {
+        "name": "GrassForestMid02",
+        "x": 912,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 317,
+        "soil": 1250
+      },
+      {
+        "name": "GrassForestMid03",
+        "x": 0,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 240,
+        "soil": 1246
+      },
+      {
+        "name": "GrassForestSmall01",
+        "x": 912,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 310,
+        "soil": 1240
+      },
+      {
+        "name": "GrassForestSmall02",
+        "x": 0,
+        "y": 6072,
+        "width": 912,
+        "height": 1518,
+        "top": 315,
+        "soil": 1238
+      },
+      {
+        "name": "GrassForestSmall03",
+        "x": 912,
+        "y": 6072,
+        "width": 912,
+        "height": 1518,
+        "top": 315,
+        "soil": 1242
+      }
+    ]
+  },
+  {
+    "name": "Ground",
+    "file": "Ground.png",
+    "frames": [
+      {
+        "name": "GrassGroundBig01",
+        "x": 0,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 315,
+        "soil": 1248
+      },
+      {
+        "name": "GrassGroundBig02",
+        "x": 912,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 310,
+        "soil": 1232
+      },
+      {
+        "name": "GrassGroundBig03",
+        "x": 0,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 314,
+        "soil": 1246
+      },
+      {
+        "name": "GrassGroundFull",
+        "x": 912,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 314,
+        "soil": 1196
+      },
+      {
+        "name": "GrassGroundMid01",
+        "x": 0,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 322,
+        "soil": 1230
+      },
+      {
+        "name": "GrassGroundMid02",
+        "x": 912,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 321,
+        "soil": 1228
+      },
+      {
+        "name": "GrassGroundMid03",
+        "x": 0,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 325,
+        "soil": 1226
+      },
+      {
+        "name": "GrassGroundSmall01",
+        "x": 912,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 323,
+        "soil": 1224
+      },
+      {
+        "name": "GrassGroundSmall02",
+        "x": 0,
+        "y": 6072,
+        "width": 912,
+        "height": 1518,
+        "top": 322,
+        "soil": 1226
+      },
+      {
+        "name": "GrassGroundSmall03",
+        "x": 912,
+        "y": 6072,
+        "width": 912,
+        "height": 1518,
+        "top": 323,
+        "soil": 1234
+      }
+    ]
+  },
+  {
+    "name": "House",
+    "file": "House.png",
+    "frames": [
+      {
+        "name": "GrassHouseBig01",
+        "x": 0,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 318,
+        "soil": 1256
+      },
+      {
+        "name": "GrassHouseBig02",
+        "x": 912,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 319,
+        "soil": 1258
+      },
+      {
+        "name": "GrassHouseBig03",
+        "x": 0,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 318,
+        "soil": 1256
+      },
+      {
+        "name": "GrassHouseMid01",
+        "x": 912,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 314,
+        "soil": 1256
+      },
+      {
+        "name": "GrassHouseMid02",
+        "x": 0,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 316,
+        "soil": 1256
+      },
+      {
+        "name": "GrassHouseMid03",
+        "x": 912,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 316,
+        "soil": 1258
+      },
+      {
+        "name": "GrassHouseSmall01",
+        "x": 0,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 325,
+        "soil": 1264
+      },
+      {
+        "name": "GrassHouseSmall02",
+        "x": 912,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 319,
+        "soil": 1268
+      },
+      {
+        "name": "GrassHouseSmall03",
+        "x": 0,
+        "y": 6072,
+        "width": 912,
+        "height": 1518,
+        "top": 329,
+        "soil": 1258
+      }
+    ]
+  },
+  {
+    "name": "Stone",
+    "file": "Stone.png",
+    "frames": [
+      {
+        "name": "GrassStoneBig01",
+        "x": 0,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 204,
+        "soil": 1260
+      },
+      {
+        "name": "GrassStoneBig02",
+        "x": 912,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 193,
+        "soil": 1260
+      },
+      {
+        "name": "GrassStoneBig03",
+        "x": 0,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 193,
+        "soil": 1262
+      },
+      {
+        "name": "GrassStoneFull",
+        "x": 912,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 193,
+        "soil": 1262
+      },
+      {
+        "name": "GrassStoneMid01",
+        "x": 0,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 315,
+        "soil": 1262
+      },
+      {
+        "name": "GrassStoneMid02",
+        "x": 912,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 321,
+        "soil": 1250
+      },
+      {
+        "name": "GrassStoneMid03",
+        "x": 0,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 319,
+        "soil": 1262
+      },
+      {
+        "name": "GrassStoneSmall01",
+        "x": 912,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 315,
+        "soil": 1244
+      },
+      {
+        "name": "GrassStoneSmall02",
+        "x": 0,
+        "y": 6072,
+        "width": 912,
+        "height": 1518,
+        "top": 312,
+        "soil": 1242
+      },
+      {
+        "name": "GrassStoneSmall03",
+        "x": 912,
+        "y": 6072,
+        "width": 912,
+        "height": 1518,
+        "top": 316,
+        "soil": 1236
+      }
+    ]
+  },
+  {
+    "name": "Tree",
+    "file": "Tree.png",
+    "frames": [
+      {
+        "name": "GrassTreeBig01",
+        "x": 0,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 319,
+        "soil": 1246
+      },
+      {
+        "name": "GrassTreeBig02",
+        "x": 912,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 319,
+        "soil": 1246
+      },
+      {
+        "name": "GrassTreeBig03",
+        "x": 0,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 319,
+        "soil": 1238
+      },
+      {
+        "name": "GrassTreeFull",
+        "x": 912,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 319,
+        "soil": 1246
+      },
+      {
+        "name": "GrassTreeMid01",
+        "x": 0,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 321,
+        "soil": 1246
+      },
+      {
+        "name": "GrassTreeMid02",
+        "x": 912,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 319,
+        "soil": 1254
+      },
+      {
+        "name": "GrassTreeMid03",
+        "x": 0,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 334,
+        "soil": 1250
+      },
+      {
+        "name": "GrassTreeSmall01",
+        "x": 912,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 334,
+        "soil": 1240
+      },
+      {
+        "name": "GrassTreeSmall02",
+        "x": 0,
+        "y": 6072,
+        "width": 912,
+        "height": 1518,
+        "top": 316,
+        "soil": 1236
+      },
+      {
+        "name": "GrassTreeSmall03",
+        "x": 912,
+        "y": 6072,
+        "width": 912,
+        "height": 1518,
+        "top": 317,
+        "soil": 1238
+      }
+    ]
+  },
+  {
+    "name": "Village",
+    "file": "Village.png",
+    "frames": [
+      {
+        "name": "GrassVillageBig01",
+        "x": 0,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 311,
+        "soil": 1260
+      },
+      {
+        "name": "GrassVillageBig02",
+        "x": 912,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 318,
+        "soil": 1260
+      },
+      {
+        "name": "GrassVillageBig03",
+        "x": 0,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 318,
+        "soil": 1260
+      },
+      {
+        "name": "GrassVillageMid01",
+        "x": 912,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 317,
+        "soil": 1260
+      },
+      {
+        "name": "GrassVillageMid02",
+        "x": 0,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 318,
+        "soil": 1260
+      },
+      {
+        "name": "GrassVillageMid03",
+        "x": 912,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 318,
+        "soil": 1262
+      },
+      {
+        "name": "GrassVillageSmall01",
+        "x": 0,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 319,
+        "soil": 1262
+      },
+      {
+        "name": "GrassVillageSmall02",
+        "x": 912,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 319,
+        "soil": 1260
+      },
+      {
+        "name": "GrassVillageSmall03",
+        "x": 0,
+        "y": 6072,
+        "width": 912,
+        "height": 1518,
+        "top": 318,
+        "soil": 1270
+      }
+    ]
+  },
+  {
+    "name": "Water",
+    "file": "Water.png",
+    "frames": [
+      {
+        "name": "GrassWaterBig01",
+        "x": 0,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 384,
+        "soil": 1294
+      },
+      {
+        "name": "GrassWaterBig02",
+        "x": 912,
+        "y": 0,
+        "width": 912,
+        "height": 1518,
+        "top": 381,
+        "soil": 1286
+      },
+      {
+        "name": "GrassWaterBig03",
+        "x": 0,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 379,
+        "soil": 1286
+      },
+      {
+        "name": "GrassWaterFull",
+        "x": 912,
+        "y": 1518,
+        "width": 912,
+        "height": 1518,
+        "top": 382,
+        "soil": 1286
+      },
+      {
+        "name": "GrassWaterMid01",
+        "x": 0,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 365,
+        "soil": 1198
+      },
+      {
+        "name": "GrassWaterMid02",
+        "x": 912,
+        "y": 3036,
+        "width": 912,
+        "height": 1518,
+        "top": 314,
+        "soil": 1308
+      },
+      {
+        "name": "GrassWaterMid03",
+        "x": 0,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 378,
+        "soil": 1202
+      },
+      {
+        "name": "GrassWaterSmall01",
+        "x": 912,
+        "y": 4554,
+        "width": 912,
+        "height": 1518,
+        "top": 313,
+        "soil": 1200
+      },
+      {
+        "name": "GrassWaterSmall02",
+        "x": 0,
+        "y": 6072,
+        "width": 912,
+        "height": 1518,
+        "top": 323,
+        "soil": 1196
+      },
+      {
+        "name": "GrassWaterSmall03",
+        "x": 912,
+        "y": 6072,
+        "width": 912,
+        "height": 1518,
+        "top": 361,
+        "soil": 1306
+      }
+    ]
+  }
+]
