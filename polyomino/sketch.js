@@ -22,8 +22,9 @@
 
   Each region is filled from a palette built by ColorGenerator.
   The Color folder chooses the base color and the scheme.
-  The Tiles folder can fill each region with a Kenney pattern.
-  Patterns may repeat when there are more regions than sets.
+  The Tiles folder can fill each region with a biome.
+  One biome is used for the whole region. Biomes repeat
+  when there are more regions than the chosen set.
 
   The Beats folder plays the partition with Strudel.
   Each region is a minor-scale triad. The shape can be a
@@ -89,10 +90,10 @@ const params = {
   increaseSaturation: false,
   increaseBrightness: true,
 
-  // Kenney Pattern Pack Extra. Each region takes one pattern.
+  // Biome sheets in tiles/biomes. Each region takes one.
   // Off when the page opens, so regions start as flat color.
   useTiles: false,
-  patternCount: 8,
+  patternCount: 9,
   patternScale: 1,
 
   strokeWidth: 2.2,
@@ -151,8 +152,25 @@ const readout = {
 
 const CUT_COLOR = "#c4552a";
 
-const PATTERN_COUNT = 84;
+// Top-down ground from each sheet. The number is the last
+// row of that ground, above the side-view soil.
+const BIOMES = [
+  { file: "biomes/GrassBig01.png", bottom: 1210 },
+  { file: "biomes/GrassFieldFull.png", bottom: 1205 },
+  { file: "biomes/GrassForestFull.png", bottom: 1235 },
+  { file: "biomes/GrassGroundFull.png", bottom: 1205 },
+  { file: "biomes/GrassHouseBig01.png", bottom: 1265 },
+  { file: "biomes/GrassStoneFull.png", bottom: 1090 },
+  { file: "biomes/GrassTreeFull.png", bottom: 1220 },
+  { file: "biomes/GrassVillageBig01.png", bottom: 1260 },
+  { file: "biomes/GrassWaterFull.png", bottom: 1270 }
+];
+
+// Each sheet's ground is three tiles across.
+const BIOME_COLUMNS = 3;
+
 let patternImages = [];
+let biomeReady = null;
 let tileInputs = {};
 
 let beatPlayInput;
@@ -180,17 +198,10 @@ async function setup() {
   pixelDensity(2);
   noLoop();
 
-  const loads = [];
-
-  for (let index = 0; index < PATTERN_COUNT; index++) {
-    const name = String(index).padStart(3, "0");
-    loads.push(loadImage(`tiles/pattern_${name}.png`));
-  }
-
-  patternImages = await Promise.all(loads);
   setupPane();
   rebuild(true);
   watchBeatPlayer();
+  ensureBiomes();
 }
 
 function draw() {
@@ -734,13 +745,13 @@ function setupPane() {
   });
 
   tileFolder.addInput(params, "useTiles", {
-    label: "patterns"
+    label: "biomes"
   });
 
   tileInputs.count = tileFolder.addInput(params, "patternCount", {
     label: "sets",
     min: 1,
-    max: PATTERN_COUNT,
+    max: BIOMES.length,
     step: 1
   });
 
@@ -887,6 +898,14 @@ function setupPane() {
 
     if (presetKey === "useTiles") {
       updateTileVisibility();
+
+      if (params.useTiles) {
+        ensureBiomes().then(() => {
+          if (params.useTiles) {
+            draw();
+          }
+        });
+      }
     }
 
     // Drawing and layout values repaint while the pointer is still down.
@@ -1518,6 +1537,110 @@ function regionFill(label) {
   return colors[index];
 }
 
+function ensureBiomes() {
+  if (!biomeReady) {
+    biomeReady = loadBiomes();
+  }
+
+  return biomeReady;
+}
+
+async function loadBiomes() {
+  const images = await Promise.all(BIOMES.map(async (biome) => {
+    try {
+      return await loadImage(`tiles/${biome.file}`);
+    } catch (error) {
+      console.error(error);
+      return null;
+    }
+  }));
+
+  patternImages = images.map((image, index) =>
+    cropBiomeGround(image, BIOMES[index].bottom)
+  );
+}
+
+// Keep the top-down ground. The sheet's margin and its
+// side-view soil stay outside this crop.
+function cropBiomeGround(image, bottom) {
+  const source = image && (image.canvas || image.elt);
+
+  if (!source || !source.width || !source.height) {
+    return null;
+  }
+
+  const width = source.width;
+  const height = source.height;
+  const context = image.drawingContext
+    || source.getContext("2d", { willReadFrequently: true });
+  const pixels = context.getImageData(0, 0, width, height).data;
+  const cropBottom = Math.min(bottom, height - 1);
+  let top = 0;
+
+  for (let y = 0; y < cropBottom; y++) {
+    let count = 0;
+    const row = y * width;
+
+    for (let x = 0; x < width; x++) {
+      if (pixels[(row + x) * 4 + 3] > 40) {
+        count += 1;
+      }
+    }
+
+    if (count / width > 0.9) {
+      top = y;
+      break;
+    }
+  }
+
+  const columnCount = new Uint32Array(width);
+  const rows = Math.max(1, cropBottom - top);
+
+  for (let y = top; y < cropBottom; y++) {
+    const row = y * width;
+
+    for (let x = 0; x < width; x++) {
+      if (pixels[(row + x) * 4 + 3] > 40) {
+        columnCount[x] += 1;
+      }
+    }
+  }
+
+  let left = 0;
+  let right = width - 1;
+  const solid = rows * 0.7;
+
+  while (left < right && columnCount[left] < solid) {
+    left += 1;
+  }
+
+  while (right > left && columnCount[right] < solid) {
+    right -= 1;
+  }
+
+  left = Math.min(left + 12, right);
+  right = Math.max(right - 12, left);
+
+  const cropWidth = right - left + 1;
+  const cropHeight = cropBottom - top;
+  const crop = document.createElement("canvas");
+  crop.width = cropWidth;
+  crop.height = cropHeight;
+  crop.getContext("2d").drawImage(
+    source,
+    left,
+    top,
+    cropWidth,
+    cropHeight,
+    0,
+    0,
+    cropWidth,
+    cropHeight
+  );
+
+  return crop;
+}
+
 function patternIndexFor(label) {
   const total = patternImages.length;
 
@@ -1542,7 +1665,17 @@ function patternSource(index) {
     return null;
   }
 
-  return pattern.canvas || pattern.elt || null;
+  return pattern.canvas || pattern.elt || pattern;
+}
+
+function biomeSize(source, cellSize) {
+  const tile = max(16, cellSize * params.patternScale);
+  const destWidth = tile * BIOME_COLUMNS;
+
+  return {
+    width: destWidth,
+    height: destWidth * (source.height / source.width)
+  };
 }
 
 function contourBounds(contours) {
@@ -1563,38 +1696,47 @@ function contourBounds(contours) {
   return { minX, minY, maxX, maxY };
 }
 
-function stampPattern(ctx, source, originX, originY, motif, bounds) {
-  const startX = originX + floor((bounds.minX - originX) / motif) * motif;
-  const startY = originY + floor((bounds.minY - originY) / motif) * motif;
+function stampPattern(ctx, source, originX, originY, destWidth, destHeight, bounds) {
+  const startX = originX + floor((bounds.minX - originX) / destWidth) * destWidth;
+  const startY = originY + floor((bounds.minY - originY) / destHeight) * destHeight;
   const bleed = 0.75;
 
-  for (let y = startY; y < bounds.maxY; y += motif) {
-    for (let x = startX; x < bounds.maxX; x += motif) {
-      ctx.drawImage(source, x, y, motif + bleed, motif + bleed);
+  for (let y = startY; y < bounds.maxY; y += destHeight) {
+    for (let x = startX; x < bounds.maxX; x += destWidth) {
+      ctx.drawImage(
+        source,
+        x,
+        y,
+        destWidth + bleed,
+        destHeight + bleed
+      );
     }
   }
 }
 
-/*
-  The Kenney patterns are black and white. Multiply keeps the
-  white parts of a pattern in the region color and the black
-  parts as the motif.
-*/
+// One biome covers the region. Flat color shows until it loads.
 function paintPatternFill(ctx, label, originX, originY, cellSize, bounds) {
+  const source = patternSource(patternIndexFor(label));
+
   ctx.fillStyle = regionFill(label);
   ctx.fill("evenodd");
-
-  const source = patternSource(patternIndexFor(label));
 
   if (!source) {
     return;
   }
 
-  const motif = max(8, cellSize * params.patternScale);
+  const size = biomeSize(source, cellSize);
 
   ctx.save();
-  ctx.globalCompositeOperation = "multiply";
-  stampPattern(ctx, source, originX, originY, motif, bounds);
+  stampPattern(
+    ctx,
+    source,
+    originX,
+    originY,
+    size.width,
+    size.height,
+    bounds
+  );
   ctx.restore();
 }
 
@@ -2031,12 +2173,13 @@ function paintCell(ctx, place, index, fill, patternLabel) {
     return;
   }
 
+  const size = biomeSize(source, place.cell);
+
   ctx.save();
   ctx.beginPath();
   ctx.roundRect(left, top, side, side, place.cell * 0.08);
   ctx.clip();
-  ctx.globalCompositeOperation = "multiply";
-  stampPattern(ctx, source, place.originX, place.originY, max(8, place.cell * params.patternScale), {
+  stampPattern(ctx, source, place.originX, place.originY, size.width, size.height, {
     minX: left,
     minY: top,
     maxX: left + side,
