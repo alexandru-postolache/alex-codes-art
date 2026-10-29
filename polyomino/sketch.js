@@ -23,9 +23,10 @@
   Each region is filled from a palette built by ColorGenerator.
   The Color folder chooses the base color and the scheme.
   The Tiles folder can fill each region with a biome.
-  Each region keeps one biome set. Each grid cell is
-  covered by one whole picture from that set. The soil
-  strip hangs into the row below, and that row covers it.
+  Each region keeps one biome set. The pictures for a
+  set live in one atlas. Each grid cell is covered by
+  one whole picture from that atlas. The soil strip
+  hangs into the row below, and that row covers it.
 
   The Beats folder plays the partition with Strudel.
   Each region is a minor-scale triad. The shape can be a
@@ -91,7 +92,7 @@ const params = {
   increaseSaturation: false,
   increaseBrightness: true,
 
-  // Biome folders in tiles/biomes. Each region keeps one set.
+  // One atlas per biome folder. Each region keeps one set.
   // A whole picture covers each grid cell, and the row below
   // covers that picture's soil strip.
   // Off when the page opens, so regions start as flat color.
@@ -154,25 +155,17 @@ const readout = {
 
 const CUT_COLOR = "#c4552a";
 
-// Each folder is one biome set. A region keeps a single set,
-// and each grid cell is covered by one whole picture from it.
-const BIOME_SIZES = ["Big01", "Big02", "Big03", "Mid01", "Mid02", "Mid03", "Small01", "Small02", "Small03"];
-const BIOME_SIZES_FULL = ["Big01", "Big02", "Big03", "Full", "Mid01", "Mid02", "Mid03", "Small01", "Small02", "Small03"];
-
-function biomeFiles(folder, stem, names) {
-  return names.map((name) => `biomes/${folder}/${stem}${name}.png`);
-}
-
-const BIOME_SETS = [
-  biomeFiles("Grass", "Grass", BIOME_SIZES),
-  biomeFiles("Field", "GrassField", BIOME_SIZES_FULL),
-  biomeFiles("Forest", "GrassForest", BIOME_SIZES_FULL),
-  biomeFiles("Ground", "GrassGround", BIOME_SIZES_FULL),
-  biomeFiles("House", "GrassHouse", BIOME_SIZES),
-  biomeFiles("Stone", "GrassStone", BIOME_SIZES_FULL),
-  biomeFiles("Tree", "GrassTree", BIOME_SIZES_FULL),
-  biomeFiles("Village", "GrassVillage", BIOME_SIZES),
-  biomeFiles("Water", "GrassWater", BIOME_SIZES_FULL)
+// Each name is one biome atlas. A region keeps a single set.
+const BIOME_ATLASES = [
+  "Grass",
+  "Field",
+  "Forest",
+  "Ground",
+  "House",
+  "Stone",
+  "Tree",
+  "Village",
+  "Water"
 ];
 
 let biomeLayer = null;
@@ -759,7 +752,7 @@ function setupPane() {
   tileInputs.count = tileFolder.addInput(params, "patternCount", {
     label: "sets",
     min: 1,
-    max: BIOME_SETS.length,
+    max: BIOME_ATLASES.length,
     step: 1
   });
 
@@ -1543,121 +1536,53 @@ function ensureBiomes() {
 }
 
 async function loadBiomes() {
+  let manifest = [];
+
+  try {
+    const response = await fetch("tiles/atlases/index.json");
+    manifest = await response.json();
+  } catch (error) {
+    console.error(error);
+  }
+
+  const byName = new Map(manifest.map((atlas) => [atlas.name, atlas]));
   const sets = [];
 
-  for (const files of BIOME_SETS) {
-    const images = await Promise.all(files.map(async (file) => {
-      try {
-        const image = await loadImage(`tiles/${file}`);
-        const source = image && (image.canvas || image.elt);
+  for (const name of BIOME_ATLASES) {
+    const atlas = byName.get(name);
 
-        if (!source || !source.width || !source.height) {
-          return null;
-        }
-
-        return measurePicture(source);
-      } catch (error) {
-        console.error(error);
-        return null;
-      }
-    }));
-
-    const pool = images.filter(Boolean);
-    sets.push(pool.length > 0 ? pool : null);
-  }
-
-  patternImages = sets;
-}
-
-// The scene runs from the first opaque row to the soil strip.
-// Everything above that strip is what covers the grid cell.
-function measurePicture(source) {
-  const width = source.width;
-  const height = source.height;
-  const data = source.getContext("2d").getImageData(0, 0, width, height).data;
-  const x0 = Math.floor(width * 0.25);
-  const x1 = Math.floor(width * 0.75);
-
-  function rowAlpha(y) {
-    let total = 0;
-    let count = 0;
-
-    for (let x = x0; x < x1; x += 14) {
-      total += data[(y * width + x) * 4 + 3];
-      count += 1;
+    if (!atlas) {
+      sets.push(null);
+      continue;
     }
 
-    return total / count;
-  }
+    try {
+      const image = await loadImage(`tiles/atlases/${atlas.file}`);
+      const source = image && (image.canvas || image.elt);
 
-  function soilRow(y) {
-    let soil = 0;
-    let opaque = 0;
-
-    for (let x = x0; x < x1; x += 10) {
-      const index = (y * width + x) * 4;
-      const red = data[index];
-      const green = data[index + 1];
-      const blue = data[index + 2];
-      const alpha = data[index + 3];
-
-      if (alpha < 150) {
+      if (!source || !source.width || !source.height) {
+        sets.push(null);
         continue;
       }
 
-      opaque += 1;
+      const pool = atlas.frames.map((frame) => ({
+        image: source,
+        x: frame.x,
+        y: frame.y,
+        width: frame.width,
+        height: frame.height,
+        top: frame.top,
+        soil: frame.soil
+      }));
 
-      if (
-        red > 105 &&
-        blue < 105 &&
-        red > green + 18 &&
-        green < 165 &&
-        !(red > 200 && green > 150)
-      ) {
-        soil += 1;
-      }
-    }
-
-    return opaque > 8 && soil / opaque > 0.85;
-  }
-
-  let top = 0;
-
-  while (top < height - 1 && rowAlpha(top) < 240) {
-    top += 1;
-  }
-
-  const rows = [];
-
-  for (let y = Math.floor(height * 0.75); y < height - 6; y += 2) {
-    rows.push({ y, soil: soilRow(y) });
-  }
-
-  let soil = Math.floor(height * 0.82);
-
-  for (let i = 0; i < rows.length; i++) {
-    const window = rows.slice(i, i + 8);
-    const rest = rows.slice(i);
-
-    if (window.length < 8) {
-      break;
-    }
-
-    const windowScore = window.filter((row) => row.soil).length / window.length;
-    const restScore = rest.filter((row) => row.soil).length / rest.length;
-
-    if (windowScore >= 0.75 && restScore >= 0.85) {
-      // Start the hang a little early so the dirt sits under the next row.
-      soil = Math.max(0, rows[i].y - 16);
-      break;
+      sets.push(pool.length > 0 ? pool : null);
+    } catch (error) {
+      console.error(error);
+      sets.push(null);
     }
   }
 
-  if (soil <= top + 20) {
-    soil = Math.floor(height * 0.82);
-  }
-
-  return { image: source, top, soil };
+  patternImages = sets;
 }
 
 function patternIndexFor(label) {
@@ -1743,16 +1668,15 @@ function shiftContour(contour, dx, dy) {
 // The soil strip continues into the next row, which is painted
 // afterwards and covers it. The outline clips the rim.
 function drawBiomePicture(ctx, picture, x, y, cellWidth, cellHeight) {
-  const image = picture.image;
-  const sourceHeight = image.height - picture.top;
+  const sourceHeight = picture.height - picture.top;
   const cover = Math.max(1, picture.soil - picture.top);
   const destHeight = cellHeight * sourceHeight / cover;
 
   ctx.drawImage(
-    image,
-    0,
-    picture.top,
-    image.width,
+    picture.image,
+    picture.x,
+    picture.y + picture.top,
+    picture.width,
     sourceHeight,
     x,
     y,
