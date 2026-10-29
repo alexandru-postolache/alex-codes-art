@@ -24,8 +24,7 @@
   The Color folder chooses the base color and the scheme.
   The Tiles folder can fill each region with a biome.
   One tile of that biome fills one square. Rows paint from
-  the top downward, so the soil strip stays visible on the
-  bottom row.
+  the top downward, and the soil strip stays inside the shape.
 
   The Beats folder plays the partition with Strudel.
   Each region is a minor-scale triad. The shape can be a
@@ -1708,36 +1707,15 @@ function shiftContour(contour, dx, dy) {
 }
 
 // Rows are painted from the top down. Each tile hangs its soil
-// strip over the next row, and the next row covers it. The
-// bottom row has nothing after it, so its soil stays visible.
+// strip over the next row, and that row covers it. Anything
+// past the outline, including the bottom strip, is clipped away.
 function paintBiomeTiles(ctx, grid, originX, originY, cellSize, regions) {
   const piece = cellSize * gridSize;
   const tileSize = Math.max(1, cellSize * biomeFactor(params.patternScale));
   const columns = Math.max(1, Math.ceil(piece / tileSize - 1e-4));
   const rows = columns;
-  let soilExtent = tileSize;
-
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < columns; col++) {
-      const x = col * tileSize;
-      const y = row * tileSize;
-
-      if (x >= piece || y >= piece) {
-        continue;
-      }
-
-      const gx = constrain(Math.floor((x + tileSize / 2) / cellSize), 0, gridSize - 1);
-      const gy = constrain(Math.floor((y + tileSize / 2) / cellSize), 0, gridSize - 1);
-      const sheet = biomeSheet(grid[gy * gridSize + gx]);
-
-      if (sheet) {
-        soilExtent = Math.max(soilExtent, tileSize * sheet.soilRatio);
-      }
-    }
-  }
-
   const viewWidth = Math.ceil(piece + tileSize);
-  const viewHeight = Math.ceil(piece + soilExtent + 2);
+  const viewHeight = Math.ceil(piece);
   biomeLayer = scratchCanvas(biomeLayer, viewWidth, viewHeight);
   biomeMask = scratchCanvas(biomeMask, viewWidth, viewHeight);
 
@@ -1771,10 +1749,6 @@ function paintBiomeTiles(ctx, grid, originX, originY, cellSize, regions) {
 
       layer.drawImage(ground, x, y, tileSize + 0.75, tileSize + 0.75);
       layer.drawImage(soil, x, y + tileSize, tileSize + 0.75, soilHeight + 0.75);
-
-      if (y + tileSize >= piece - 0.5) {
-        mask.fillRect(x, y + tileSize, tileSize + 0.75, soilHeight + 0.75);
-      }
     }
   }
 
@@ -2243,19 +2217,6 @@ function paintCell(ctx, place, index, fill, patternLabel) {
   ctx.clip();
   ctx.drawImage(ground, left, top, tileSize, tileSize);
   ctx.restore();
-
-  if (y < gridSize - 1) {
-    return;
-  }
-
-  const soil = sheet.soils[column];
-  ctx.drawImage(
-    soil,
-    left,
-    top + tileSize,
-    tileSize,
-    tileSize * sheet.soilRatio
-  );
 }
 
 function paintAnimationTree(ctx, place, step) {
