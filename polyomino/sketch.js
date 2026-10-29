@@ -23,10 +23,9 @@
   Each region is filled from a palette built by ColorGenerator.
   The Color folder chooses the base color and the scheme.
   The Tiles folder can fill each region with a biome.
-  Each region keeps one biome set. Squares inside it pick
-  a tile from that set. One tile fills one square. Rows
-  paint from the top downward, and the soil strip stays
-  inside the shape.
+  Each region keeps one biome set. Each grid cell is
+  covered by one whole picture from that set. The soil
+  strip hangs into the row below, and that row covers it.
 
   The Beats folder plays the partition with Strudel.
   Each region is a minor-scale triad. The shape can be a
@@ -93,10 +92,11 @@ const params = {
   increaseBrightness: true,
 
   // Biome folders in tiles/biomes. Each region keeps one set.
+  // A whole picture covers each grid cell, and the row below
+  // covers that picture's soil strip.
   // Off when the page opens, so regions start as flat color.
   useTiles: false,
   patternCount: 9,
-  patternScale: 1,
 
   strokeWidth: 2.2,
   // Measured relative to one grid cell.
@@ -155,8 +155,7 @@ const readout = {
 const CUT_COLOR = "#c4552a";
 
 // Each folder is one biome set. A region keeps a single set,
-// and every square picks a tile from the sheets in that folder.
-// One source tile is drawn on one square.
+// and each grid cell is covered by one whole picture from it.
 const BIOME_SIZES = ["Big01", "Big02", "Big03", "Mid01", "Mid02", "Mid03", "Small01", "Small02", "Small03"];
 const BIOME_SIZES_FULL = ["Big01", "Big02", "Big03", "Full", "Mid01", "Mid02", "Mid03", "Small01", "Small02", "Small03"];
 
@@ -165,15 +164,15 @@ function biomeFiles(folder, stem, names) {
 }
 
 const BIOME_SETS = [
-  { files: biomeFiles("Grass", "Grass", BIOME_SIZES), left: 10, top: 314, tile: 296, columns: 3, rows: 3, soilTop: 1202, soilBottom: 1512 },
-  { files: biomeFiles("Field", "GrassField", BIOME_SIZES_FULL), left: 10, top: 248, tile: 296, columns: 3, rows: 3, soilTop: 1136, soilBottom: 1512 },
-  { files: biomeFiles("Forest", "GrassForest", BIOME_SIZES_FULL), left: 10, top: 250, tile: 296, columns: 3, rows: 2, soilTop: 1180, soilBottom: 1512 },
-  { files: biomeFiles("Ground", "GrassGround", BIOME_SIZES_FULL), left: 10, top: 313, tile: 296, columns: 3, rows: 3, soilTop: 1201, soilBottom: 1512 },
-  { files: biomeFiles("House", "GrassHouse", BIOME_SIZES), left: 10, top: 318, tile: 296, columns: 3, rows: 3, soilTop: 1206, soilBottom: 1512 },
-  { files: biomeFiles("Stone", "GrassStone", BIOME_SIZES_FULL), left: 12, top: 192, tile: 296, columns: 3, rows: 3, soilTop: 1080, soilBottom: 1512 },
-  { files: biomeFiles("Tree", "GrassTree", BIOME_SIZES_FULL), left: 10, top: 318, tile: 290, columns: 3, rows: 3, soilTop: 1188, soilBottom: 1512 },
-  { files: biomeFiles("Village", "GrassVillage", BIOME_SIZES), left: 10, top: 220, tile: 296, columns: 3, rows: 3, soilTop: 1108, soilBottom: 1512 },
-  { files: biomeFiles("Water", "GrassWater", BIOME_SIZES_FULL), left: 14, top: 380, tile: 296, columns: 3, rows: 3, soilTop: 1268, soilBottom: 1512 }
+  biomeFiles("Grass", "Grass", BIOME_SIZES),
+  biomeFiles("Field", "GrassField", BIOME_SIZES_FULL),
+  biomeFiles("Forest", "GrassForest", BIOME_SIZES_FULL),
+  biomeFiles("Ground", "GrassGround", BIOME_SIZES_FULL),
+  biomeFiles("House", "GrassHouse", BIOME_SIZES),
+  biomeFiles("Stone", "GrassStone", BIOME_SIZES_FULL),
+  biomeFiles("Tree", "GrassTree", BIOME_SIZES_FULL),
+  biomeFiles("Village", "GrassVillage", BIOME_SIZES),
+  biomeFiles("Water", "GrassWater", BIOME_SIZES_FULL)
 ];
 
 let biomeLayer = null;
@@ -459,7 +458,6 @@ const DRAWING_KEYS = new Set([
   "increaseBrightness",
   "useTiles",
   "patternCount",
-  "patternScale",
   "strokeWidth",
   "regionInset",
   "cornerRadius",
@@ -763,13 +761,6 @@ function setupPane() {
     min: 1,
     max: BIOME_SETS.length,
     step: 1
-  });
-
-  tileInputs.scale = tileFolder.addInput(params, "patternScale", {
-    label: "scale",
-    min: -1,
-    max: 2.5,
-    step: 0.05
   });
 
   updateTileVisibility();
@@ -1242,10 +1233,6 @@ function updateTileVisibility() {
   if (tileInputs.count) {
     tileInputs.count.hidden = hidden;
   }
-
-  if (tileInputs.scale) {
-    tileInputs.scale.hidden = hidden;
-  }
 }
 
 function updatePaneVisibility() {
@@ -1558,110 +1545,119 @@ function ensureBiomes() {
 async function loadBiomes() {
   const sets = [];
 
-  for (const set of BIOME_SETS) {
-    const images = await Promise.all(set.files.map(async (file) => {
+  for (const files of BIOME_SETS) {
+    const images = await Promise.all(files.map(async (file) => {
       try {
-        return await loadImage(`tiles/${file}`);
+        const image = await loadImage(`tiles/${file}`);
+        const source = image && (image.canvas || image.elt);
+
+        if (!source || !source.width || !source.height) {
+          return null;
+        }
+
+        return measurePicture(source);
       } catch (error) {
         console.error(error);
         return null;
       }
     }));
 
-    const pool = [];
-    let soilRatio = 0;
-
-    for (let index = 0; index < images.length; index++) {
-      const sliced = sliceBiome(images[index], set);
-      images[index] = null;
-
-      if (!sliced) {
-        continue;
-      }
-
-      soilRatio = sliced.soilRatio;
-      pool.push(...sliced.pool);
-    }
-
-    sets.push(pool.length > 0 ? { pool, soilRatio } : null);
+    const pool = images.filter(Boolean);
+    sets.push(pool.length > 0 ? pool : null);
   }
 
   patternImages = sets;
 }
 
-function sliceTile(source, x, y, width, height) {
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, width);
-  canvas.height = Math.max(1, height);
-  canvas.getContext("2d").drawImage(
-    source,
-    x,
-    y,
-    width,
-    height,
-    0,
-    0,
-    canvas.width,
-    canvas.height
-  );
-  return canvas;
-}
+// The scene runs from the first opaque row to the soil strip.
+// Everything above that strip is what covers the grid cell.
+function measurePicture(source) {
+  const width = source.width;
+  const height = source.height;
+  const data = source.getContext("2d").getImageData(0, 0, width, height).data;
+  const x0 = Math.floor(width * 0.25);
+  const x1 = Math.floor(width * 0.75);
 
-// Each ground cell keeps the soil strip from the same column.
-function sliceBiome(image, spec) {
-  const source = image && (image.canvas || image.elt);
+  function rowAlpha(y) {
+    let total = 0;
+    let count = 0;
 
-  if (!source || !source.width || !source.height) {
-    return null;
+    for (let x = x0; x < x1; x += 14) {
+      total += data[(y * width + x) * 4 + 3];
+      count += 1;
+    }
+
+    return total / count;
   }
 
-  const soilTop = Math.min(spec.soilTop, source.height - 1);
-  const soilBottom = Math.min(spec.soilBottom, source.height);
-  const soilHeight = Math.max(1, soilBottom - soilTop);
-  const soils = [];
+  function soilRow(y) {
+    let soil = 0;
+    let opaque = 0;
 
-  for (let col = 0; col < spec.columns; col++) {
-    soils.push(sliceTile(
-      source,
-      spec.left + col * spec.tile,
-      soilTop,
-      spec.tile,
-      soilHeight
-    ));
+    for (let x = x0; x < x1; x += 10) {
+      const index = (y * width + x) * 4;
+      const red = data[index];
+      const green = data[index + 1];
+      const blue = data[index + 2];
+      const alpha = data[index + 3];
+
+      if (alpha < 150) {
+        continue;
+      }
+
+      opaque += 1;
+
+      if (
+        red > 105 &&
+        blue < 105 &&
+        red > green + 18 &&
+        green < 165 &&
+        !(red > 200 && green > 150)
+      ) {
+        soil += 1;
+      }
+    }
+
+    return opaque > 8 && soil / opaque > 0.85;
   }
 
-  const pool = [];
+  let top = 0;
 
-  for (let row = 0; row < spec.rows; row++) {
-    for (let col = 0; col < spec.columns; col++) {
-      pool.push({
-        ground: sliceTile(
-          source,
-          spec.left + col * spec.tile,
-          spec.top + row * spec.tile,
-          spec.tile,
-          spec.tile
-        ),
-        soil: soils[col]
-      });
+  while (top < height - 1 && rowAlpha(top) < 240) {
+    top += 1;
+  }
+
+  const rows = [];
+
+  for (let y = Math.floor(height * 0.75); y < height - 6; y += 2) {
+    rows.push({ y, soil: soilRow(y) });
+  }
+
+  let soil = Math.floor(height * 0.82);
+
+  for (let i = 0; i < rows.length; i++) {
+    const window = rows.slice(i, i + 8);
+    const rest = rows.slice(i);
+
+    if (window.length < 8) {
+      break;
+    }
+
+    const windowScore = window.filter((row) => row.soil).length / window.length;
+    const restScore = rest.filter((row) => row.soil).length / rest.length;
+
+    if (windowScore >= 0.75 && restScore >= 0.85) {
+      // Start the hang a little early so the dirt sits under the next row.
+      soil = Math.max(0, rows[i].y - 16);
+      break;
     }
   }
 
-  return {
-    pool,
-    soilRatio: soilHeight / spec.tile
-  };
-}
-
-// 1 draws one tile on one square. 0 is half of that, and -1 is a quarter.
-function biomeFactor(scale) {
-  const value = Number(scale);
-
-  if (!Number.isFinite(value)) {
-    return 1;
+  if (soil <= top + 20) {
+    soil = Math.floor(height * 0.82);
   }
 
-  return Math.pow(2, value - 1);
+  return { image: source, top, soil };
 }
 
 function patternIndexFor(label) {
@@ -1682,13 +1678,13 @@ function patternIndexFor(label) {
 }
 
 function biomeSheet(label) {
-  const sheet = patternImages[patternIndexFor(label)];
+  const pool = patternImages[patternIndexFor(label)];
 
-  if (!sheet || !sheet.pool || sheet.pool.length === 0) {
+  if (!pool || pool.length === 0) {
     return null;
   }
 
-  return sheet;
+  return pool;
 }
 
 // The same seed, region, and square keep the same tile.
@@ -1743,46 +1739,53 @@ function shiftContour(contour, dx, dy) {
   }));
 }
 
-// Rows are painted from the top down. Each tile hangs its soil
-// strip over the next row, and that row covers it. Anything
-// past the outline, including the bottom strip, is clipped away.
+// Stretch the whole picture so the scene covers the cell.
+// The soil strip continues into the next row, which is painted
+// afterwards and covers it. The outline clips the rim.
+function drawBiomePicture(ctx, picture, x, y, cellWidth, cellHeight) {
+  const image = picture.image;
+  const sourceHeight = image.height - picture.top;
+  const cover = Math.max(1, picture.soil - picture.top);
+  const destHeight = cellHeight * sourceHeight / cover;
+
+  ctx.drawImage(
+    image,
+    0,
+    picture.top,
+    image.width,
+    sourceHeight,
+    x,
+    y,
+    cellWidth,
+    destHeight
+  );
+}
+
 function paintBiomeTiles(ctx, grid, originX, originY, cellSize, regions) {
-  const piece = cellSize * gridSize;
-  const tileSize = Math.max(1, cellSize * biomeFactor(params.patternScale));
-  const columns = Math.max(1, Math.ceil(piece / tileSize - 1e-4));
-  const rows = columns;
-  const viewWidth = Math.ceil(piece + tileSize);
-  const viewHeight = Math.ceil(piece);
-  biomeLayer = scratchCanvas(biomeLayer, viewWidth, viewHeight);
-  biomeMask = scratchCanvas(biomeMask, viewWidth, viewHeight);
+  const piece = Math.ceil(cellSize * gridSize);
+  biomeLayer = scratchCanvas(biomeLayer, piece, piece);
+  biomeMask = scratchCanvas(biomeMask, piece, piece);
 
   const layer = biomeLayer.getContext("2d");
   const mask = biomeMask.getContext("2d");
   layer.imageSmoothingEnabled = true;
   mask.fillStyle = "#ffffff";
 
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < columns; col++) {
-      const x = col * tileSize;
-      const y = row * tileSize;
+  for (let gy = 0; gy < gridSize; gy++) {
+    for (let gx = 0; gx < gridSize; gx++) {
+      const pool = biomeSheet(grid[gy * gridSize + gx]);
 
-      if (x >= piece || y >= piece) {
+      if (!pool) {
         continue;
       }
 
-      const gx = constrain(Math.floor((x + tileSize / 2) / cellSize), 0, gridSize - 1);
-      const gy = constrain(Math.floor((y + tileSize / 2) / cellSize), 0, gridSize - 1);
-      const sheet = biomeSheet(grid[gy * gridSize + gx]);
+      const picture = tilePick(pool, grid[gy * gridSize + gx], gx, gy);
+      const x = Math.round(gx * cellSize);
+      const y = Math.round(gy * cellSize);
+      const right = Math.round((gx + 1) * cellSize);
+      const bottom = Math.round((gy + 1) * cellSize);
 
-      if (!sheet) {
-        continue;
-      }
-
-      const picked = tilePick(sheet.pool, grid[gy * gridSize + gx], col, row);
-      const soilHeight = tileSize * sheet.soilRatio;
-
-      layer.drawImage(picked.ground, x, y, tileSize + 0.75, tileSize + 0.75);
-      layer.drawImage(picked.soil, x, y + tileSize, tileSize + 0.75, soilHeight + 0.75);
+      drawBiomePicture(layer, picture, x, y, right - x, bottom - y);
     }
   }
 
@@ -2217,9 +2220,27 @@ function grownCells(step) {
 function paintCell(ctx, place, index, fill, patternLabel) {
   const x = index % gridSize;
   const y = floor(index / gridSize);
+  const cellLeft = place.originX + x * place.cell;
+  const cellTop = place.originY + y * place.cell;
+
+  if (patternLabel != null && params.useTiles) {
+    const pool = biomeSheet(patternLabel);
+
+    if (pool) {
+      const picture = tilePick(pool, patternLabel, x, y);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(place.originX, place.originY, place.size, place.size);
+      ctx.clip();
+      drawBiomePicture(ctx, picture, cellLeft, cellTop, place.cell, place.cell);
+      ctx.restore();
+      return;
+    }
+  }
+
   const gap = place.cell * 0.1;
-  const left = place.originX + x * place.cell + gap / 2;
-  const top = place.originY + y * place.cell + gap / 2;
+  const left = cellLeft + gap / 2;
+  const top = cellTop + gap / 2;
   const side = place.cell - gap;
 
   ctx.beginPath();
@@ -2229,26 +2250,6 @@ function paintCell(ctx, place, index, fill, patternLabel) {
   ctx.roundRect(left, top, side, side, place.cell * 0.08);
   ctx.fill();
   ctx.stroke();
-
-  if (patternLabel == null || !params.useTiles) {
-    return;
-  }
-
-  const sheet = biomeSheet(patternLabel);
-
-  if (!sheet) {
-    return;
-  }
-
-  const tileSize = Math.max(1, place.cell * biomeFactor(params.patternScale));
-  const picked = tilePick(sheet.pool, patternLabel, x, y);
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.roundRect(left, top, side, side, place.cell * 0.08);
-  ctx.clip();
-  ctx.drawImage(picked.ground, left, top, tileSize, tileSize);
-  ctx.restore();
 }
 
 function paintAnimationTree(ctx, place, step) {
