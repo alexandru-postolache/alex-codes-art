@@ -13,8 +13,10 @@
   The bar never has more than 8 steps, so a larger grid is played
   in eighth notes. The kit can be one of several drum machines.
   The bass plays each region's root, two octaves down, and holds
-  it for as many cells as the region has. One pass through the
-  regions lasts as long as one pass through the melody.
+  it for as many cells as the region has. A region larger than
+  4 cells is several notes of that root, each at most 4 cells.
+  One pass through the regions lasts as long as one pass through
+  the melody.
   Sawtooth is the fallback bass. A lowpass keeps that synth low.
   The other basses are instruments, including bass guitars.
 */
@@ -49,6 +51,9 @@ export const SHAPE_RATE = 2;
 
 // The bass sits this many octaves under the region's root.
 const BASS_OCTAVES = 2;
+
+// One bass note lasts at most this many cells.
+const BASS_HOLD = 4;
 
 const BASS_GAIN = "0.8";
 
@@ -124,7 +129,7 @@ export function buildBeat(score) {
     `// The shape plays ${shapeName} chords where the region changes, two rows per cycle.`,
     "// A sheet holds each piece until that melody finishes.",
     "// Region size is an Euclidean density of at most 8 steps.",
-    `// The bass is each region's root on ${treeName}, held for the region's size.`,
+    `// The bass is each region's root on ${treeName}, held for the region's size in notes of at most ${BASS_HOLD} cells.`,
     `setcps(${cps})`
   ];
 
@@ -561,16 +566,30 @@ function bassLine(labels, rootMidi) {
 
   return [...groups.keys()]
     .sort((left, right) => left - right)
-    .map((label) => {
+    .flatMap((label) => {
       const cells = groups.get(label);
+      const note = bassNote(noteForRegion(label, rootMidi));
 
-      return {
+      return bassWeights(cells.length).map((weight) => ({
         label,
         cells,
-        note: bassNote(noteForRegion(label, rootMidi)),
-        weight: cells.length
-      };
+        note,
+        weight
+      }));
     });
+}
+
+function bassWeights(count) {
+  const weights = [];
+  let left = count;
+
+  while (left > 0) {
+    const weight = Math.min(BASS_HOLD, left);
+    weights.push(weight);
+    left -= weight;
+  }
+
+  return weights;
 }
 
 function sectionCode(partition, score) {

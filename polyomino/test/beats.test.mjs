@@ -156,7 +156,7 @@ test("the pattern is valid script and holds each piece for its whole melody", ()
   assert.doesNotMatch(code, /euclid\(\d+, 16\)/);
   assert.doesNotMatch(code, /s\(`</);
   assert.match(code, /\.s\("sawtooth"\)\.attack\(0\.02\)\.release\(0\.2\)\.lpf\(800\)\.gain\(0\.8\)\.slow\(8\)/);
-  assert.match(code, /note\("c2@5 d2@2 d#2@6 f2@3"\)/);
+  assert.match(code, /note\("c2@4 c2@1 d2@2 d#2@4 d#2@2 f2@3"\)/);
   assert.match(code, /note\("c2@4 d2@4 d#2@1"\)\.s\("sawtooth"\).+\.slow\(4\.5\)/);
   assert.doesNotMatch(code, /\.s\("bass"\)/);
   assert.doesNotMatch(code, /triangle|sine/);
@@ -326,7 +326,7 @@ test("the bass light sits on the sounding region", () => {
   const later = playingAt(heard, 4);
   assert.equal(later.tree.label, 2);
   assert.deepEqual(later.tree.cells, [5, 6, 8, 9, 12, 13]);
-  assert.ok(Math.abs(later.tree.progress - (0.5 / 3)) < 1e-9);
+  assert.ok(Math.abs(later.tree.progress - 0.25) < 1e-9);
 });
 
 test("a bass note is the region root held for the region's size", () => {
@@ -336,8 +336,26 @@ test("a bass note is the region root held for the region's size", () => {
     partitions: [{ labels, tree: null, cuts: null }]
   });
 
-  assert.match(code, /note\("c2@5 d2@2 d#2@6 f2@3"\)/);
+  assert.match(code, /note\("c2@4 c2@1 d2@2 d#2@4 d#2@2 f2@3"\)/);
   assert.match(code, /\.gain\(0\.8\)\.slow\(8\)/);
+  assert.match(code, /notes of at most 4 cells/);
+
+  const weights = code
+    .match(/note\("([^"]+)"\)/)[1]
+    .split(" ")
+    .map((event) => Number(event.split("@")[1]));
+
+  assert.ok(weights.every((weight) => weight >= 1 && weight <= 4));
+  assert.equal(weights.reduce((sum, weight) => sum + weight, 0), 16);
+
+  const solid = buildBeat({
+    ...score,
+    gridSize: 3,
+    layers: { shape: false, sizes: false, tree: true },
+    partitions: [{ labels: new Array(9).fill(0), tree: null, cuts: null }]
+  });
+
+  assert.match(solid, /note\("c2@4 c2@4 c2@1"\)/);
 
   const sheet = buildBeat({
     ...score,
