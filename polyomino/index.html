@@ -9,11 +9,20 @@
     <script src="https://cdn.jsdelivr.net/npm/tweakpane@3.1.4/dist/tweakpane.min.js"></script>
     <script src="p5.colorGenerator.js"></script>
     <link rel="stylesheet" type="text/css" href="style.css">
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+      }
+    </script>
   </head>
   <body>
     <main id="sketch"></main>
     <div id="controls"></div>
     <script type="module" src="player.mjs"></script>
+    <script type="module" src="view3d.mjs"></script>
     <script src="sketch.js"></script>
   </body>
 </html>
