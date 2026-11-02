@@ -33,6 +33,7 @@ let viewWidth = 0;
 let viewHeight = 0;
 let frameId = 0;
 let fitting = false;
+let stage = null;
 
 const view = {
   get available() {
@@ -89,6 +90,7 @@ const view = {
     const refit = options && options.refit;
 
     scene.background = new THREE.Color(model.background || "#eeeae1");
+    stage = model.stage || null;
     rebuildPieces(model.pieces || []);
 
     if (entering) {
@@ -194,7 +196,10 @@ function rebuildPieces(models) {
 
   for (const model of models) {
     const piece = new THREE.Group();
+    const scale = model.scale > 0 ? model.scale : 1;
+
     piece.position.set(model.x || 0, 0, model.z || 0);
+    piece.scale.setScalar(scale);
 
     for (const region of model.regions || []) {
       const mesh = regionMesh(region);
@@ -294,8 +299,25 @@ function resetFrustum() {
   camera.updateProjectionMatrix();
 }
 
+function sceneBounds() {
+  if (!stage) {
+    return new THREE.Box3().setFromObject(pieces);
+  }
+
+  const piecesBox = new THREE.Box3().setFromObject(pieces);
+  const height = piecesBox.isEmpty() ? 0 : Math.max(0, piecesBox.max.y);
+  const box = new THREE.Box3();
+
+  box.set(
+    new THREE.Vector3(-stage.width / 2, 0, -stage.height / 2),
+    new THREE.Vector3(stage.width / 2, height, stage.height / 2)
+  );
+
+  return box;
+}
+
 function fitCamera(direction) {
-  const box = new THREE.Box3().setFromObject(pieces);
+  const box = sceneBounds();
 
   if (box.isEmpty()) {
     return;
