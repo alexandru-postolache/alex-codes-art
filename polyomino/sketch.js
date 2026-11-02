@@ -22,6 +22,7 @@
 
   Each region is filled from a palette built by ColorGenerator.
   The Color folder chooses the base color and the scheme.
+  Fill can be turned off, which leaves the outline.
   The Beats folder plays the partition with Strudel.
   Each region is a minor-scale triad. The shape can be a
   piano, harp, marimba, vibes, organ, or a synth, and each
@@ -85,6 +86,9 @@ const params = {
   harmonyDegree: 30,
   increaseSaturation: false,
   increaseBrightness: true,
+
+  // Region color. Off leaves the outline on the background.
+  fillColor: true,
 
   strokeWidth: 2.2,
   // Measured relative to one grid cell.
@@ -415,6 +419,7 @@ const DRAWING_KEYS = new Set([
   "harmonyDegree",
   "increaseSaturation",
   "increaseBrightness",
+  "fillColor",
   "strokeWidth",
   "regionInset",
   "cornerRadius",
@@ -472,7 +477,7 @@ function setupPane() {
   });
 
   generationFolder = pane.addFolder({
-    title: "Generation"
+    title: "Piece"
   });
 
   generationFolder.addInput(params, "gridSize", {
@@ -496,15 +501,13 @@ function setupPane() {
     step: 1
   });
 
-  const regionFolder = generationFolder.addFolder({
-    title: "Regions"
-  });
+  generationFolder.addBlade({ view: "separator" });
 
-  regionFolder.addInput(params, "anyCount", {
+  generationFolder.addInput(params, "anyCount", {
     label: "any count"
   });
 
-  regionInput = regionFolder.addInput(
+  regionInput = generationFolder.addInput(
     params,
     "regionCount",
     {
@@ -523,6 +526,8 @@ function setupPane() {
     label: "allow equals"
   });
 
+  generationFolder.addBlade({ view: "separator" });
+
   seedInput = generationFolder.addInput(
     params,
     "seed",
@@ -539,6 +544,15 @@ function setupPane() {
   }).on("click", () => {
     randomizePartition();
   });
+
+  summaryMonitor = pane.addMonitor(
+    readout,
+    "summary",
+    {
+      label: "sizes",
+      interval: 0
+    }
+  );
 
   playbackFolder = pane.addFolder({
     title: "Playback"
@@ -564,7 +578,7 @@ function setupPane() {
   });
 
   layoutFolder = pane.addFolder({
-    title: "Layout"
+    title: "Sheet"
   });
 
   columnsInput = layoutFolder.addInput(params, "columns", {
@@ -599,9 +613,15 @@ function setupPane() {
     title: "Drawing"
   });
 
+  drawingFolder.addInput(params, "fillColor", {
+    label: "fill"
+  });
+
   drawingFolder.addInput(params, "backgroundColor", {
     label: "background"
   });
+
+  drawingFolder.addBlade({ view: "separator" });
 
   drawingFolder.addInput(params, "outlineColor", {
     label: "outline"
@@ -628,6 +648,8 @@ function setupPane() {
     step: 1
   });
 
+  drawingFolder.addBlade({ view: "separator" });
+
   scaleInput = drawingFolder.addInput(
     params,
     "shapeScale",
@@ -639,7 +661,7 @@ function setupPane() {
     }
   );
 
-  const colorFolder = pane.addFolder({
+  const colorFolder = drawingFolder.addFolder({
     title: "Color"
   });
 
@@ -647,7 +669,7 @@ function setupPane() {
     label: "base"
   });
 
-  colorFolder.addInput(params, "colorScheme", {
+  colorInputs.scheme = colorFolder.addInput(params, "colorScheme", {
     label: "scheme",
     options: {
       "Solid": "solid",
@@ -714,35 +736,6 @@ function setupPane() {
 
   beatPlayInput.disabled = true;
 
-  beatsFolder.addInput(params, "beatShape", {
-    label: "shape"
-  });
-
-  shapeSoundInput = beatsFolder.addInput(params, "beatShapeSound", {
-    label: "shape sound",
-    options: soundOptions(PolyominoBeats.SHAPE_SOUNDS)
-  });
-
-  beatsFolder.addInput(params, "beatSizes", {
-    label: "sizes"
-  });
-
-  drumKitInput = beatsFolder.addInput(params, "beatDrumKit", {
-    label: "kit",
-    options: soundOptions(PolyominoBeats.DRUM_KITS)
-  });
-
-  beatsFolder.addInput(params, "beatTree", {
-    label: "bass"
-  });
-
-  treeSoundInput = beatsFolder.addInput(params, "beatTreeSound", {
-    label: "bass sound",
-    options: soundOptions(PolyominoBeats.TREE_SOUNDS)
-  });
-
-  updateBeatSoundVisibility();
-
   beatsFolder.addInput(params, "beatTempo", {
     label: "tempo",
     min: 0.25,
@@ -761,6 +754,43 @@ function setupPane() {
     label: "audio",
     interval: 0
   });
+
+  beatsFolder.addBlade({ view: "separator" });
+
+  beatsFolder.addInput(params, "beatShape", {
+    label: "shape"
+  });
+
+  shapeSoundInput = beatsFolder.addInput(params, "beatShapeSound", {
+    label: "shape sound",
+    options: soundOptions(PolyominoBeats.SHAPE_SOUNDS)
+  });
+
+  beatsFolder.addBlade({ view: "separator" });
+
+  beatsFolder.addInput(params, "beatSizes", {
+    label: "sizes"
+  });
+
+  drumKitInput = beatsFolder.addInput(params, "beatDrumKit", {
+    label: "kit",
+    options: soundOptions(PolyominoBeats.DRUM_KITS)
+  });
+
+  beatsFolder.addBlade({ view: "separator" });
+
+  beatsFolder.addInput(params, "beatTree", {
+    label: "bass"
+  });
+
+  treeSoundInput = beatsFolder.addInput(params, "beatTreeSound", {
+    label: "bass sound",
+    options: soundOptions(PolyominoBeats.TREE_SOUNDS)
+  });
+
+  updateBeatSoundVisibility();
+
+  beatsFolder.addBlade({ view: "separator" });
 
   beatsFolder.addButton({
     title: "Copy pattern"
@@ -786,15 +816,6 @@ function setupPane() {
   beatCodeView.id = "beat-code";
   beatPanel.appendChild(beatCodeView);
   container.appendChild(beatPanel);
-
-  summaryMonitor = pane.addMonitor(
-    readout,
-    "summary",
-    {
-      label: "sizes",
-      interval: 0
-    }
-  );
 
   pane.addButton({
     title: "Save PNG"
@@ -832,7 +853,7 @@ function setupPane() {
       return;
     }
 
-    if (presetKey === "colorScheme") {
+    if (presetKey === "colorScheme" || presetKey === "fillColor") {
       updateColorVisibility();
     }
 
@@ -915,22 +936,30 @@ function updateRegionCountAvailability() {
 
 function updateColorVisibility() {
   const scheme = params.colorScheme;
+  const filled = params.fillColor;
   const usesCount =
-    scheme === "shades" ||
-    scheme === "tints" ||
-    scheme === "monochromatic";
+    filled &&
+    (scheme === "shades" ||
+      scheme === "tints" ||
+      scheme === "monochromatic");
 
   if (!colorInputs.paletteSize) {
     return;
   }
 
+  if (colorInputs.scheme) {
+    colorInputs.scheme.hidden = !filled;
+  }
+
   colorInputs.paletteSize.hidden = !usesCount;
-  colorInputs.shadeLimit.hidden = scheme !== "shades";
-  colorInputs.tintLimit.hidden = scheme !== "tints";
+  colorInputs.shadeLimit.hidden = !filled || scheme !== "shades";
+  colorInputs.tintLimit.hidden = !filled || scheme !== "tints";
   colorInputs.harmonyDegree.hidden =
-    scheme !== "analogous" && scheme !== "split";
-  colorInputs.increaseSaturation.hidden = scheme !== "monochromatic";
-  colorInputs.increaseBrightness.hidden = scheme !== "monochromatic";
+    !filled || (scheme !== "analogous" && scheme !== "split");
+  colorInputs.increaseSaturation.hidden =
+    !filled || scheme !== "monochromatic";
+  colorInputs.increaseBrightness.hidden =
+    !filled || scheme !== "monochromatic";
 }
 
 function watchBeatPlayer() {
@@ -1805,7 +1834,7 @@ function paintAnimationCells(ctx, place, step) {
   for (let index = 0; index < gridSize * gridSize; index++) {
     let fill = "rgba(41, 41, 50, 0.04)";
 
-    if (regions) {
+    if (regions && params.fillColor) {
       fill = withAlpha(regionFill(animation.grid[index]), wash);
     } else if (visited && visited[index]) {
       fill = "rgba(41, 41, 50, 0.09)";
@@ -2474,8 +2503,10 @@ function drawPartition(
       );
     }
 
-    target.fillStyle = regionFill(item.region);
-    target.fill("evenodd");
+    if (params.fillColor) {
+      target.fillStyle = regionFill(item.region);
+      target.fill("evenodd");
+    }
 
     target.restore();
     cursor += item.pixelContours.length;
