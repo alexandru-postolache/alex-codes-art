@@ -45,6 +45,9 @@ const RANDOM_CANVAS = 700;
 // Tile size at which a fitted sheet matches the frame.
 // Larger values draw a larger piece. Smaller values draw a smaller one.
 const TILE_REFERENCE = 105;
+// Long side of the sheet, in 3D units. The camera frames this page,
+// so margin, tile size, and shape size read the same way as in 2D.
+const VIEW_SPAN = 24;
 
 const MAX_GRID_SIZE = 12;
 
@@ -328,10 +331,14 @@ function syncView3d() {
 }
 
 function viewFootprintKey() {
+  const frame = contentFrame();
+
   return [
     gridSize,
     partitions.length,
-    usesSheet() ? sheetColumns() : 1
+    usesSheet() ? sheetColumns() : 1,
+    Math.round(frame.width),
+    Math.round(frame.height)
   ].join(":");
 }
 
@@ -354,31 +361,66 @@ function viewModelKey() {
     params.increaseSaturation,
     params.increaseBrightness,
     params.outlineColor,
-    cssColor(params.backgroundColor)
+    cssColor(params.backgroundColor),
+    params.tileSize,
+    params.pageMargin,
+    params.shapeSize
   ].join(";");
 }
 
 function viewModel() {
-  const columns = max(1, usesSheet() ? sheetColumns() : 1);
+  const frame = contentFrame();
+  const sheet = usesSheet();
+  const columns = max(1, sheet ? sheetColumns() : 1);
   const rows = max(1, ceil(partitions.length / columns));
+  const placement = sheet ? sheetPlacement(frame) : null;
   const pitch = gridSize + gridSize * 0.42;
   const radius = cornerRadiusInCells();
   const area = gridSize * gridSize;
   const pieces = [];
+  // The page is a fixed stage. Sheet sliders move and scale pieces
+  // inside it, the same way they do on the flat canvas.
+  const page = Math.max(frame.width, frame.height, 1);
+  const world = sheet ? VIEW_SPAN / page : 1;
 
   for (let index = 0; index < partitions.length; index++) {
     const column = index % columns;
     const row = floor(index / columns);
+    let x = (column - (columns - 1) / 2) * pitch;
+    let z = (row - (rows - 1) / 2) * pitch;
+    let scale = 1;
+
+    if (placement) {
+      const centerX =
+        placement.originX +
+        column * placement.tile +
+        placement.tile / 2;
+      const centerY =
+        placement.originY +
+        row * placement.tile +
+        placement.tile / 2;
+
+      x = (centerX - frame.x - frame.width / 2) * world;
+      z = (centerY - frame.y - frame.height / 2) * world;
+      scale = placement.shape / gridSize * world;
+    }
 
     pieces.push({
-      x: (column - (columns - 1) / 2) * pitch,
-      z: (row - (rows - 1) / 2) * pitch,
+      x,
+      z,
+      scale,
       regions: regionSolids(partitions[index], radius, area)
     });
   }
 
   return {
     background: cssColor(params.backgroundColor),
+    stage: placement
+      ? {
+        width: frame.width * world,
+        height: frame.height * world
+      }
+      : null,
     pieces
   };
 }
