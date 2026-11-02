@@ -23,21 +23,6 @@
   Each region is filled from a palette built by ColorGenerator.
   The Color folder chooses the base color and the scheme.
   Fill can be turned off, which leaves the outline.
-  The 3D option draws the same pieces with Three.js.
-  It opens on an isometric camera. Drag to rotate it,
-  and use the wheel to zoom.
-  The Beats folder plays the partition with Strudel.
-  Each region is a minor-scale triad. The shape can be a
-  piano, harp, marimba, vibes, organ, or a synth, and each
-  row takes half a bar. A sheet holds a piece until that
-  melody finishes. Region sizes are Euclidean drum densities
-  of at most 8 steps. The kit can be a TR-909, Linn, MPC-60,
-  DMX, or R-8.   The bass plays each region's root and holds
-  it for the size of that region, in notes of at most 4 cells:
-  saw, organ pedal, organ,
-  folk harp, a bass guitar, or a softer synth.
-  While the sound plays, a light follows the chords, a region
-  softens on each drum, and the bass region stays lit.
 */
 
 const RANDOM_CANVAS = 700;
@@ -45,17 +30,11 @@ const RANDOM_CANVAS = 700;
 // Tile size at which a fitted sheet matches the frame.
 // Larger values draw a larger piece. Smaller values draw a smaller one.
 const TILE_REFERENCE = 105;
-// Long side of the sheet, in 3D units. The camera frames this page,
-// so margin, tile size, and shape size read the same way as in 2D.
-const VIEW_SPAN = 24;
 
 const MAX_GRID_SIZE = 12;
 
 const params = {
   mode: "RANDOM_ONE",
-
-  // Isometric Three.js view of the same pieces.
-  view3d: false,
 
   // Used only in RANDOM_ONE mode.
   gridSize: 5,
@@ -110,19 +89,7 @@ const params = {
   shapeScale: 0.72,
 
   // Steps per second while the animated mode is playing.
-  playbackSpeed: 16,
-
-  // Strudel playback. Play starts on a click, then follows
-  // the partition as it changes.
-  beatPlay: false,
-  beatShape: true,
-  beatShapeSound: "piano",
-  beatSizes: true,
-  beatDrumKit: "LinnDrum",
-  beatTree: true,
-  beatTreeSound: "bass3",
-  beatTempo: 0.8,
-  beatLevel: 0.8
+  playbackSpeed: 16
 };
 
 // Active grid size. ALL_3X3 always uses 3.
@@ -156,21 +123,6 @@ const readout = {
 
 const CUT_COLOR = "#c4552a";
 
-let beatPlayInput;
-let shapeSoundInput;
-let treeSoundInput;
-let drumKitInput;
-let beatStatusMonitor;
-let beatCodeView;
-let beatTimer = 0;
-let beatToken = 0;
-let lastPlayedCode = "";
-let beatAudible = false;
-
-const beatReadout = {
-  status: "loading samples"
-};
-
 async function setup() {
   const canvas = createCanvas(
     windowWidth,
@@ -183,7 +135,6 @@ async function setup() {
 
   setupPane();
   rebuild(true);
-  watchBeatPlayer();
 }
 
 function draw() {
@@ -191,10 +142,6 @@ function draw() {
     cssColor(params.backgroundColor);
 
   background(cssColor(params.backgroundColor));
-
-  if (syncView3d()) {
-    return;
-  }
 
   if (params.mode === "ANIMATE") {
     paintAnimation();
@@ -210,7 +157,6 @@ function draw() {
 
 function paintPartitions(target, style) {
   const frame = contentFrame();
-  const music = currentMusic();
 
   if (usesSheet()) {
     const placement = sheetPlacement(frame);
@@ -237,8 +183,7 @@ function paintPartitions(target, style) {
         placement.shape,
         style,
         target,
-        placement.pixelScale,
-        music && music.index === i ? music : null
+        placement.pixelScale
       );
     }
 
@@ -255,8 +200,7 @@ function paintPartitions(target, style) {
     shape,
     style,
     target,
-    inkScale(shape),
-    music && music.index === 0 ? music : null
+    inkScale(shape)
   );
 }
 
@@ -271,270 +215,6 @@ function contentFrame() {
     width: max(1, width - reserved),
     height: max(1, height)
   };
-}
-
-let viewKey = "";
-let viewFootprint = "";
-let viewWasOn = false;
-
-function syncView3d() {
-  const view = window.PolyominoView;
-  const flatCanvas = document.querySelector("#sketch canvas");
-
-  if (!params.view3d || !view) {
-    if (view) {
-      view.setVisible(false);
-    }
-
-    if (flatCanvas) {
-      flatCanvas.style.visibility = "visible";
-    }
-
-    viewWasOn = false;
-    return false;
-  }
-
-  if (flatCanvas) {
-    flatCanvas.style.visibility = "hidden";
-  }
-
-  const frame = contentFrame();
-  const entering = !viewWasOn;
-  const footprint = viewFootprintKey();
-  const key = viewModelKey();
-
-  view.setVisible(true);
-
-  if (!view.available) {
-    if (flatCanvas) {
-      flatCanvas.style.visibility = "visible";
-    }
-
-    return false;
-  }
-
-  viewWasOn = true;
-  view.resize(frame.width, frame.height);
-
-  if (key === viewKey && !entering) {
-    return true;
-  }
-
-  const refit = footprint !== viewFootprint;
-  viewKey = key;
-  viewFootprint = footprint;
-  view.show(viewModel(), {
-    entering,
-    refit
-  });
-  return true;
-}
-
-function viewFootprintKey() {
-  const frame = contentFrame();
-
-  return [
-    gridSize,
-    partitions.length,
-    usesSheet() ? sheetColumns() : 1,
-    Math.round(frame.width),
-    Math.round(frame.height)
-  ].join(":");
-}
-
-function viewModelKey() {
-  const grids = partitions.map((grid) => Array.from(grid).join(","));
-
-  return [
-    grids.join("|"),
-    viewFootprintKey(),
-    params.fillColor,
-    params.regionInset,
-    params.cornerRadius,
-    params.shapeScale,
-    params.baseColor,
-    params.colorScheme,
-    params.paletteSize,
-    params.shadeLimit,
-    params.tintLimit,
-    params.harmonyDegree,
-    params.increaseSaturation,
-    params.increaseBrightness,
-    params.outlineColor,
-    cssColor(params.backgroundColor),
-    params.tileSize,
-    params.pageMargin,
-    params.shapeSize
-  ].join(";");
-}
-
-function viewModel() {
-  const frame = contentFrame();
-  const sheet = usesSheet();
-  const columns = max(1, sheet ? sheetColumns() : 1);
-  const rows = max(1, ceil(partitions.length / columns));
-  const placement = sheet ? sheetPlacement(frame) : null;
-  const pitch = gridSize + gridSize * 0.42;
-  const radius = cornerRadiusInCells();
-  const area = gridSize * gridSize;
-  const pieces = [];
-  // The page is a fixed stage. Sheet sliders move and scale pieces
-  // inside it, the same way they do on the flat canvas.
-  const page = Math.max(frame.width, frame.height, 1);
-  const world = sheet ? VIEW_SPAN / page : 1;
-
-  for (let index = 0; index < partitions.length; index++) {
-    const column = index % columns;
-    const row = floor(index / columns);
-    let x = (column - (columns - 1) / 2) * pitch;
-    let z = (row - (rows - 1) / 2) * pitch;
-    let scale = 1;
-
-    if (placement) {
-      const centerX =
-        placement.originX +
-        column * placement.tile +
-        placement.tile / 2;
-      const centerY =
-        placement.originY +
-        row * placement.tile +
-        placement.tile / 2;
-
-      x = (centerX - frame.x - frame.width / 2) * world;
-      z = (centerY - frame.y - frame.height / 2) * world;
-      scale = placement.shape / gridSize * world;
-    }
-
-    pieces.push({
-      x,
-      z,
-      scale,
-      regions: regionSolids(partitions[index], radius, area)
-    });
-  }
-
-  return {
-    background: cssColor(params.backgroundColor),
-    stage: placement
-      ? {
-        width: frame.width * world,
-        height: frame.height * world
-      }
-      : null,
-    pieces
-  };
-}
-
-function cornerRadiusInCells() {
-  const reference = RANDOM_CANVAS * params.shapeScale;
-
-  if (reference <= 0) {
-    return 0;
-  }
-
-  return params.cornerRadius * gridSize / reference;
-}
-
-function regionSolids(grid, radius, area) {
-  const solids = [];
-
-  for (const region of getRegionLabels(grid)) {
-    const contours = traceAllContours(getBoundaryEdges(grid, region));
-    const loops = [];
-
-    for (const contour of contours) {
-      let points = simplifyContour(contour);
-
-      if (points.length < 4) {
-        continue;
-      }
-
-      points = offsetPolygon(points, params.regionInset);
-      const samples = sampleRoundedLoop(points, radius);
-
-      if (samples.length >= 3) {
-        loops.push(samples.map((point) => ({
-          x: point.x - gridSize / 2,
-          y: point.y - gridSize / 2
-        })));
-      }
-    }
-
-    if (loops.length === 0) {
-      continue;
-    }
-
-    loops.sort((left, right) =>
-      Math.abs(loopArea(right)) - Math.abs(loopArea(left))
-    );
-
-    let count = 0;
-
-    for (let index = 0; index < grid.length; index++) {
-      if (grid[index] === region) {
-        count += 1;
-      }
-    }
-
-    solids.push({
-      color: params.fillColor
-        ? regionFill(region)
-        : cssColor(params.outlineColor),
-      height: 0.24 + (count / area) * 1.5,
-      outer: loops[0],
-      holes: loops.slice(1)
-    });
-  }
-
-  return solids;
-}
-
-function sampleRoundedLoop(points, radius) {
-  const radii = edgeLimitedRadii(points, radius);
-  const corners = [];
-
-  for (let index = 0; index < points.length; index++) {
-    const previous = points[(index - 1 + points.length) % points.length];
-    const current = points[index];
-    const next = points[(index + 1) % points.length];
-    const cornerRadius = radii[index] || 0;
-
-    corners.push({
-      corner: current,
-      before: moveToward(current, previous, cornerRadius),
-      after: moveToward(current, next, cornerRadius)
-    });
-  }
-
-  const samples = [];
-  const steps = 6;
-
-  for (const item of corners) {
-    samples.push(item.before);
-
-    for (let step = 1; step <= steps; step++) {
-      const t = step / steps;
-      const u = 1 - t;
-
-      samples.push({
-        x: u * u * item.before.x + 2 * u * t * item.corner.x + t * t * item.after.x,
-        y: u * u * item.before.y + 2 * u * t * item.corner.y + t * t * item.after.y
-      });
-    }
-  }
-
-  return samples;
-}
-
-function loopArea(points) {
-  let sum = 0;
-
-  for (let index = 0; index < points.length; index++) {
-    const next = points[(index + 1) % points.length];
-    sum += points[index].x * next.y - next.x * points[index].y;
-  }
-
-  return sum / 2;
 }
 
 // Fit the tile block to the open area and center it.
@@ -687,11 +367,6 @@ function partitionFileName() {
 // The window canvas keeps a blank column under the controls.
 // The file is the open area, where the pieces are already centered.
 function partitionImage() {
-  if (params.view3d && window.PolyominoView) {
-    PolyominoView.render();
-    return PolyominoView.canvas();
-  }
-
   const frame = contentFrame();
   const density = pixelDensity();
   const source = drawingContext.canvas;
@@ -780,19 +455,6 @@ const STRUCTURAL_KEYS = new Set([
   "seed"
 ]);
 
-const BEAT_KEYS = new Set([
-  "beatPlay",
-  "beatShape",
-  "beatShapeSound",
-  "beatSizes",
-  "beatDrumKit",
-  "beatTree",
-  "beatTreeSound",
-  "beatTempo",
-  "beatLevel",
-  "baseColor",
-  "seed"
-]);
 
 function setupPane() {
   const container =
@@ -810,10 +472,6 @@ function setupPane() {
       "Animate": "ANIMATE",
       "All 3×3": "ALL_3X3"
     }
-  });
-
-  pane.addInput(params, "view3d", {
-    label: "3D"
   });
 
   generationFolder = pane.addFolder({
@@ -1066,97 +724,6 @@ function setupPane() {
 
   updateColorVisibility();
 
-  const beatsFolder = pane.addFolder({
-    title: "Beats"
-  });
-
-  beatPlayInput = beatsFolder.addInput(params, "beatPlay", {
-    label: "play"
-  });
-
-  beatPlayInput.disabled = true;
-
-  beatsFolder.addInput(params, "beatTempo", {
-    label: "tempo",
-    min: 0.25,
-    max: 2,
-    step: 0.05
-  });
-
-  beatsFolder.addInput(params, "beatLevel", {
-    label: "level",
-    min: 0,
-    max: 1,
-    step: 0.05
-  });
-
-  beatStatusMonitor = beatsFolder.addMonitor(beatReadout, "status", {
-    label: "audio",
-    interval: 0
-  });
-
-  beatsFolder.addBlade({ view: "separator" });
-
-  beatsFolder.addInput(params, "beatShape", {
-    label: "shape"
-  });
-
-  shapeSoundInput = beatsFolder.addInput(params, "beatShapeSound", {
-    label: "shape sound",
-    options: soundOptions(PolyominoBeats.SHAPE_SOUNDS)
-  });
-
-  beatsFolder.addBlade({ view: "separator" });
-
-  beatsFolder.addInput(params, "beatSizes", {
-    label: "sizes"
-  });
-
-  drumKitInput = beatsFolder.addInput(params, "beatDrumKit", {
-    label: "kit",
-    options: soundOptions(PolyominoBeats.DRUM_KITS)
-  });
-
-  beatsFolder.addBlade({ view: "separator" });
-
-  beatsFolder.addInput(params, "beatTree", {
-    label: "bass"
-  });
-
-  treeSoundInput = beatsFolder.addInput(params, "beatTreeSound", {
-    label: "bass sound",
-    options: soundOptions(PolyominoBeats.TREE_SOUNDS)
-  });
-
-  updateBeatSoundVisibility();
-
-  beatsFolder.addBlade({ view: "separator" });
-
-  beatsFolder.addButton({
-    title: "Copy pattern"
-  }).on("click", () => {
-    copyBeatCode();
-  });
-
-  beatsFolder.addButton({
-    title: "Open in Strudel"
-  }).on("click", () => {
-    openBeatInStrudel();
-  });
-
-  const beatPanel = document.createElement("div");
-  beatPanel.id = "beat-panel";
-
-  const beatLabel = document.createElement("div");
-  beatLabel.id = "beat-label";
-  beatLabel.textContent = "Pattern";
-  beatPanel.appendChild(beatLabel);
-
-  beatCodeView = document.createElement("pre");
-  beatCodeView.id = "beat-code";
-  beatPanel.appendChild(beatCodeView);
-  container.appendChild(beatPanel);
-
   pane.addButton({
     title: "Save PNG"
   }).on("click", () => {
@@ -1175,29 +742,6 @@ function setupPane() {
       return;
     }
 
-    if (presetKey === "view3d") {
-      draw();
-      return;
-    }
-
-    if (
-      presetKey === "beatShape" ||
-      presetKey === "beatTree" ||
-      presetKey === "beatSizes"
-    ) {
-      updateBeatSoundVisibility();
-    }
-
-    if (presetKey === "beatPlay") {
-      if (params.beatPlay) {
-        scheduleBeat();
-      } else {
-        stopBeat();
-      }
-
-      return;
-    }
-
     if (presetKey === "colorScheme" || presetKey === "fillColor") {
       updateColorVisibility();
     }
@@ -1209,7 +753,6 @@ function setupPane() {
       LAYOUT_KEYS.has(presetKey)
     ) {
       draw();
-      syncBeat(presetKey);
       return;
     }
 
@@ -1224,8 +767,6 @@ function setupPane() {
     if (STRUCTURAL_KEYS.has(presetKey)) {
       rebuild(true);
     }
-
-    syncBeat(presetKey);
   });
 }
 
@@ -1249,28 +790,13 @@ function clampRegionCount() {
   }
 }
 
-function soundOptions(sounds) {
-  const options = {};
-
-  for (const sound of sounds) {
-    options[sound.label] = sound.value;
+function syncDrawLoop() {
+  if (params.mode === "ANIMATE" && animation) {
+    loop();
+    return;
   }
 
-  return options;
-}
-
-function updateBeatSoundVisibility() {
-  if (shapeSoundInput) {
-    shapeSoundInput.hidden = !params.beatShape;
-  }
-
-  if (treeSoundInput) {
-    treeSoundInput.hidden = !params.beatTree;
-  }
-
-  if (drumKitInput) {
-    drumKitInput.hidden = !params.beatSizes;
-  }
+  noLoop();
 }
 
 function updateRegionCountAvailability() {
@@ -1306,226 +832,6 @@ function updateColorVisibility() {
   colorInputs.increaseBrightness.hidden =
     !filled || scheme !== "monochromatic";
 }
-
-function watchBeatPlayer() {
-  if (!window.PolyominoPlayer) {
-    setBeatStatus("audio failed to load");
-    return;
-  }
-
-  PolyominoPlayer.ready.then(() => {
-    if (beatPlayInput) {
-      beatPlayInput.disabled = false;
-    }
-
-    if (!params.beatPlay) {
-      setBeatStatus("ready");
-    }
-  }).catch((error) => {
-    console.error(error);
-    setBeatStatus(error.message || "audio failed to load");
-  });
-}
-
-function syncBeat(presetKey) {
-  if (STRUCTURAL_KEYS.has(presetKey)) {
-    return;
-  }
-
-  if (!BEAT_KEYS.has(presetKey)) {
-    return;
-  }
-
-  scheduleBeat();
-}
-
-function beatScore() {
-  return {
-    gridSize,
-    cps: params.beatTempo,
-    gain: params.beatLevel,
-    rootMidi: window.PolyominoBeats
-      ? PolyominoBeats.rootMidiFromColor(params.baseColor)
-      : 48,
-    seed: params.seed,
-    sounds: {
-      shape: params.beatShapeSound,
-      tree: params.beatTreeSound,
-      kit: params.beatDrumKit
-    },
-    layers: {
-      shape: params.beatShape,
-      sizes: params.beatSizes,
-      tree: params.beatTree
-    },
-    partitions: partitions.map((grid) => ({
-      labels: Array.from(grid),
-      tree: grid.tree || null,
-      cuts: grid.cuts || null,
-      start: grid.start
-    }))
-  };
-}
-
-function refreshBeatCode() {
-  if (!window.PolyominoBeats || !beatCodeView) {
-    return "";
-  }
-
-  const patternText = PolyominoBeats.buildBeat(beatScore());
-  beatCodeView.textContent = patternText;
-  return patternText;
-}
-
-function scheduleBeat() {
-  const patternText = refreshBeatCode();
-
-  if (!params.beatPlay || !window.PolyominoPlayer) {
-    return;
-  }
-
-  clearTimeout(beatTimer);
-  const token = ++beatToken;
-
-  beatTimer = setTimeout(() => {
-    startBeat(patternText, token);
-  }, 80);
-}
-
-async function startBeat(patternText, token) {
-  if (!params.beatPlay || token !== beatToken) {
-    return;
-  }
-
-  if (patternText === lastPlayedCode && beatAudible) {
-    setBeatStatus("playing");
-    return;
-  }
-
-  setBeatStatus("loading");
-
-  try {
-    await PolyominoPlayer.ready;
-
-    if (!params.beatPlay || token !== beatToken) {
-      return;
-    }
-
-    const result = await PolyominoPlayer.play(patternText);
-
-    if (!params.beatPlay || token !== beatToken) {
-      PolyominoPlayer.stop();
-      return;
-    }
-
-    lastPlayedCode = patternText;
-    const hits = result && Number.isFinite(result.hits)
-      ? result.hits
-      : null;
-    const audible = !result || result.status !== "suspended";
-    beatAudible = audible;
-
-    if (!audible) {
-      setBeatStatus("click to hear");
-      followBeatClock();
-      return;
-    }
-
-    followBeatClock();
-    setBeatStatus(
-      hits === null
-        ? "playing"
-        : `${hits} hits`
-    );
-  } catch (error) {
-    console.error(error);
-
-    if (token === beatToken) {
-      setBeatStatus(error.message || "audio failed");
-    }
-  }
-}
-
-function stopBeat() {
-  beatToken += 1;
-  lastPlayedCode = "";
-  beatAudible = false;
-  clearTimeout(beatTimer);
-
-  if (window.PolyominoPlayer) {
-    PolyominoPlayer.stop();
-  }
-
-  setBeatStatus("stopped");
-  followBeatClock();
-  redraw();
-}
-
-function followBeatClock() {
-  const animating = params.mode === "ANIMATE" && animation;
-
-  if (animating || (params.beatPlay && beatAudible)) {
-    loop();
-    return;
-  }
-
-  noLoop();
-}
-
-function currentMusic() {
-  if (
-    !params.beatPlay ||
-    !beatAudible ||
-    !window.PolyominoPlayer ||
-    !window.PolyominoBeats
-  ) {
-    return null;
-  }
-
-  const cycle = PolyominoPlayer.cycle();
-
-  if (cycle == null) {
-    return null;
-  }
-
-  return PolyominoBeats.playingAt(beatScore(), cycle);
-}
-
-function setBeatStatus(status) {
-  beatReadout.status = status;
-
-  if (beatStatusMonitor) {
-    beatStatusMonitor.refresh();
-  }
-}
-
-function copyBeatCode() {
-  const patternText = refreshBeatCode();
-
-  if (!patternText || !navigator.clipboard) {
-    return;
-  }
-
-  navigator.clipboard.writeText(patternText).catch((error) => {
-    console.error(error);
-    setBeatStatus("could not copy");
-  });
-}
-
-function openBeatInStrudel() {
-  const patternText = refreshBeatCode();
-  const encoded = encodeURIComponent(btoa(patternText));
-  window.open(`https://strudel.cc/#${encoded}`, "_blank", "noopener");
-}
-
-document.addEventListener("pointerdown", () => {
-  if (!params.beatPlay || beatAudible) {
-    return;
-  }
-
-  lastPlayedCode = "";
-  scheduleBeat();
-}, true);
 
 function updatePaneVisibility() {
   const randomMode = params.mode === "RANDOM_ONE";
@@ -1678,13 +984,7 @@ function rebuild(regenerate) {
   }
 
   fitCanvas();
-  refreshBeatCode();
-
-  if (params.beatPlay) {
-    scheduleBeat();
-  }
-
-  followBeatClock();
+  syncDrawLoop();
 }
 
 function partitionSummary(grids) {
@@ -2758,8 +2058,7 @@ function drawPartition(
   size,
   style,
   ctx,
-  pixelScale,
-  music
+  pixelScale
 ) {
   const regions = getRegionLabels(grid);
 
@@ -2857,17 +2156,6 @@ function drawPartition(
     cursor += item.pixelContours.length;
   }
 
-  if (music) {
-    paintBeatWash(
-      target,
-      regionContours,
-      music,
-      originX,
-      originY,
-      cellSize
-    );
-  }
-
   if (style !== "fill" && lineWidth > 0) {
     cursor = 0;
 
@@ -2886,136 +2174,6 @@ function drawPartition(
   }
 
   target.restore();
-}
-
-const BEAT_LIGHT = "rgba(255, 250, 243, 1)";
-
-function paintBeatWash(ctx, regions, music, originX, originY, cellSize) {
-  const strength = new Map();
-
-  for (const bloom of music.sizes || []) {
-    const previous = strength.get(bloom.label) || 0;
-    strength.set(bloom.label, Math.max(previous, bloom.strength));
-  }
-
-  for (const item of regions) {
-    const lit = strength.get(item.region) || 0;
-
-    if (lit <= 0) {
-      continue;
-    }
-
-    ctx.save();
-    traceRegion(ctx, item);
-    ctx.fillStyle = withAlpha(BEAT_LIGHT, 0.22 * lit);
-    ctx.fill("evenodd");
-    ctx.restore();
-  }
-
-  if (music.tree) {
-    const bassRegion = regions.find((region) =>
-      region.region === music.tree.label
-    );
-
-    if (bassRegion) {
-      const held = 1 - (music.tree.progress || 0) * 0.35;
-
-      ctx.save();
-      traceRegion(ctx, bassRegion);
-      ctx.fillStyle = withAlpha(BEAT_LIGHT, 0.34 * held);
-      ctx.fill("evenodd");
-      ctx.restore();
-    }
-  }
-
-  if (!music.shape) {
-    return;
-  }
-
-  const item = regions.find((region) =>
-    region.region === music.shape.label
-  );
-
-  if (!item) {
-    return;
-  }
-
-  const point = pointAlongCells(
-    music.shape.cells,
-    music.shape.progress,
-    originX,
-    originY,
-    cellSize
-  );
-  const radius = cellSize * 0.95;
-
-  ctx.save();
-  traceRegion(ctx, item);
-  ctx.clip("evenodd");
-
-  const glow = ctx.createRadialGradient(
-    point.x,
-    point.y,
-    cellSize * 0.04,
-    point.x,
-    point.y,
-    radius
-  );
-  const alpha = 0.62 * (1 - music.shape.progress * 0.28);
-
-  glow.addColorStop(0, withAlpha(BEAT_LIGHT, alpha));
-  glow.addColorStop(1, withAlpha(BEAT_LIGHT, 0));
-  ctx.fillStyle = glow;
-  ctx.beginPath();
-  ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function traceRegion(ctx, item) {
-  ctx.beginPath();
-
-  for (let i = 0; i < item.pixelContours.length; i++) {
-    drawRoundedContour(
-      ctx,
-      item.pixelContours[i],
-      item.radii[i],
-      "path"
-    );
-  }
-}
-
-function pointAlongCells(cells, progress, originX, originY, cellSize) {
-  if (!cells || cells.length === 0) {
-    return { x: originX, y: originY };
-  }
-
-  const first = cellPoint(cells[0], originX, originY, cellSize);
-
-  if (cells.length === 1) {
-    return first;
-  }
-
-  const span = (cells.length - 1) * constrain(progress, 0, 1);
-  const index = min(floor(span), cells.length - 2);
-  const start = cellPoint(cells[index], originX, originY, cellSize);
-  const end = cellPoint(cells[index + 1], originX, originY, cellSize);
-  const blend = span - index;
-
-  return {
-    x: lerp(start.x, end.x, blend),
-    y: lerp(start.y, end.y, blend)
-  };
-}
-
-function cellPoint(index, originX, originY, cellSize) {
-  const x = index % gridSize;
-  const y = floor(index / gridSize);
-
-  return {
-    x: originX + (x + 0.5) * cellSize,
-    y: originY + (y + 0.5) * cellSize
-  };
 }
 
 /* =========================================================
