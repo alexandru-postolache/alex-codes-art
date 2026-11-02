@@ -29,8 +29,9 @@
   row takes half a bar. A sheet holds a piece until that
   melody finishes. Region sizes are Euclidean drum densities
   of at most 8 steps. The kit can be a TR-909, Linn, MPC-60,
-  DMX, or R-8. The bass plays each region's root and holds
-  it for the size of that region: saw, organ pedal, organ,
+  DMX, or R-8.   The bass plays each region's root and holds
+  it for the size of that region, in notes of at most 4 cells:
+  saw, organ pedal, organ,
   folk harp, a bass guitar, or a softer synth.
   While the sound plays, a light follows the chords, a region
   softens on each drum, and the bass region stays lit.
@@ -380,18 +381,71 @@ function maximumRegionCount(size) {
 }
 
 function savePartition() {
-  let name = `partition-${gridSize}x${gridSize}`;
+  const image = partitionImage();
+  const link = document.createElement("a");
 
+  link.download = `${partitionFileName()}.png`;
+  link.href = image.toDataURL("image/png");
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+function partitionFileName() {
   if (params.mode === "ANIMATE") {
-    name = `partition-steps-${gridSize}x${gridSize}`;
-  } else if (params.mode === "ALL_3X3") {
-    name = "partitions-3x3";
-  } else if (params.columnCount * params.rowCount > 1) {
-    name =
-      `partitions-${params.columnCount}x${params.rowCount}`;
+    return `partition-steps-${gridSize}x${gridSize}`;
   }
 
-  saveCanvas(name, "png");
+  if (params.mode === "ALL_3X3") {
+    return "partitions-3x3";
+  }
+
+  if (params.columnCount * params.rowCount > 1) {
+    return `partitions-${params.columnCount}x${params.rowCount}`;
+  }
+
+  return `partition-${gridSize}x${gridSize}`;
+}
+
+// The window canvas keeps a blank column under the controls.
+// The file is the open area, where the pieces are already centered.
+function partitionImage() {
+  const frame = contentFrame();
+  const density = pixelDensity();
+  const source = drawingContext.canvas;
+  const image = document.createElement("canvas");
+  const originX = Math.round(frame.x * density);
+  const originY = Math.round(frame.y * density);
+  const imageWidth = Math.max(
+    1,
+    Math.min(
+      Math.round(frame.width * density),
+      source.width - originX
+    )
+  );
+  const imageHeight = Math.max(
+    1,
+    Math.min(
+      Math.round(frame.height * density),
+      source.height - originY
+    )
+  );
+
+  image.width = imageWidth;
+  image.height = imageHeight;
+  image.getContext("2d").drawImage(
+    source,
+    originX,
+    originY,
+    imageWidth,
+    imageHeight,
+    0,
+    0,
+    imageWidth,
+    imageHeight
+  );
+
+  return image;
 }
 
 function randomizePartition() {
