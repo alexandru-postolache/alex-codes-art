@@ -48,7 +48,10 @@ const view = {
       return;
     }
 
-    renderer.domElement.hidden = !visible;
+    const element = renderer.domElement;
+
+    element.hidden = !visible;
+    element.style.display = visible ? "block" : "none";
 
     if (visible) {
       startLoop();
@@ -72,15 +75,9 @@ const view = {
 
     viewWidth = nextWidth;
     viewHeight = nextHeight;
-
-    const aspect = nextWidth / nextHeight;
-    camera.left = -FRUSTUM * aspect;
-    camera.right = FRUSTUM * aspect;
-    camera.top = FRUSTUM;
-    camera.bottom = -FRUSTUM;
-    camera.updateProjectionMatrix();
+    resetFrustum();
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(nextWidth, nextHeight, false);
+    renderer.setSize(nextWidth, nextHeight, true);
   },
 
   show(model, options) {
@@ -284,6 +281,19 @@ function signedArea(points) {
   return sum;
 }
 
+function resetFrustum() {
+  const aspect = viewWidth > 0 && viewHeight > 0
+    ? viewWidth / viewHeight
+    : 1;
+
+  camera.zoom = 1;
+  camera.left = -FRUSTUM * aspect;
+  camera.right = FRUSTUM * aspect;
+  camera.top = FRUSTUM;
+  camera.bottom = -FRUSTUM;
+  camera.updateProjectionMatrix();
+}
+
 function fitCamera(direction) {
   const box = new THREE.Box3().setFromObject(pieces);
 
@@ -292,31 +302,40 @@ function fitCamera(direction) {
   }
 
   const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
-  const span = Math.max(
-    0.5,
-    Math.hypot(size.x, size.z) * 0.78 + size.y * 0.62
-  );
-  const vertical = camera.top - camera.bottom;
-  const horizontal = camera.right - camera.left;
-  const zoom = Math.min(vertical, horizontal) / span;
   const offset = direction.clone();
 
   if (offset.lengthSq() < 0.0001) {
     offset.copy(ISOMETRIC);
   }
 
-  offset.normalize().multiplyScalar(36);
+  offset.normalize().multiplyScalar(40);
+  resetFrustum();
   fitting = true;
   controls.target.copy(center);
   camera.position.copy(center).add(offset);
+  camera.lookAt(center);
+  camera.updateMatrixWorld(true);
+
+  let maxNdc = 0.001;
+  const min = box.min;
+  const max = box.max;
+
+  for (const x of [min.x, max.x]) {
+    for (const y of [min.y, max.y]) {
+      for (const z of [min.z, max.z]) {
+        const ndc = new THREE.Vector3(x, y, z).project(camera);
+        maxNdc = Math.max(maxNdc, Math.abs(ndc.x), Math.abs(ndc.y));
+      }
+    }
+  }
+
   camera.zoom = THREE.MathUtils.clamp(
-    zoom,
+    0.82 / maxNdc,
     controls.minZoom,
     controls.maxZoom
   );
-  camera.lookAt(center);
   camera.updateProjectionMatrix();
+  camera.lookAt(center);
   controls.update();
   fitting = false;
 }
