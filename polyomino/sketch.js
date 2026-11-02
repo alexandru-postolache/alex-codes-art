@@ -23,6 +23,9 @@
   Each region is filled from a palette built by ColorGenerator.
   The Color folder chooses the base color and the scheme.
   Fill can be turned off, which leaves the outline.
+  The 3D option draws the same pieces with Three.js.
+  It opens on an isometric camera. Drag to rotate it,
+  and use the wheel to zoom.
   The Beats folder plays the partition with Strudel.
   Each region is a minor-scale triad. The shape can be a
   piano, harp, marimba, vibes, organ, or a synth, and each
@@ -47,6 +50,9 @@ const MAX_GRID_SIZE = 12;
 
 const params = {
   mode: "RANDOM_ONE",
+
+  // Isometric Three.js view of the same pieces.
+  view3d: false,
 
   // Used only in RANDOM_ONE mode.
   gridSize: 5,
@@ -183,6 +189,10 @@ function draw() {
 
   background(cssColor(params.backgroundColor));
 
+  if (syncView3d()) {
+    return;
+  }
+
   if (params.mode === "ANIMATE") {
     paintAnimation();
     return;
@@ -258,6 +268,231 @@ function contentFrame() {
     width: max(1, width - reserved),
     height: max(1, height)
   };
+}
+
+let viewKey = "";
+let viewFootprint = "";
+let viewWasOn = false;
+
+function syncView3d() {
+  const view = window.PolyominoView;
+  const flatCanvas = document.querySelector("#sketch canvas");
+
+  if (!params.view3d || !view) {
+    if (view) {
+      view.setVisible(false);
+    }
+
+    if (flatCanvas) {
+      flatCanvas.style.visibility = "visible";
+    }
+
+    viewWasOn = false;
+    return false;
+  }
+
+  if (flatCanvas) {
+    flatCanvas.style.visibility = "hidden";
+  }
+
+  const frame = contentFrame();
+  const entering = !viewWasOn;
+  const footprint = viewFootprintKey();
+  const key = viewModelKey();
+
+  view.setVisible(true);
+
+  if (!view.available) {
+    if (flatCanvas) {
+      flatCanvas.style.visibility = "visible";
+    }
+
+    return false;
+  }
+
+  viewWasOn = true;
+  view.resize(frame.width, frame.height);
+
+  if (key === viewKey && !entering) {
+    return true;
+  }
+
+  const refit = footprint !== viewFootprint;
+  viewKey = key;
+  viewFootprint = footprint;
+  view.show(viewModel(), {
+    entering,
+    refit
+  });
+  return true;
+}
+
+function viewFootprintKey() {
+  return [
+    gridSize,
+    partitions.length,
+    usesSheet() ? sheetColumns() : 1
+  ].join(":");
+}
+
+function viewModelKey() {
+  const grids = partitions.map((grid) => Array.from(grid).join(","));
+
+  return [
+    grids.join("|"),
+    viewFootprintKey(),
+    params.fillColor,
+    params.regionInset,
+    params.cornerRadius,
+    params.shapeScale,
+    params.baseColor,
+    params.colorScheme,
+    params.paletteSize,
+    params.shadeLimit,
+    params.tintLimit,
+    params.harmonyDegree,
+    params.increaseSaturation,
+    params.increaseBrightness,
+    params.outlineColor,
+    cssColor(params.backgroundColor)
+  ].join(";");
+}
+
+function viewModel() {
+  const columns = max(1, usesSheet() ? sheetColumns() : 1);
+  const rows = max(1, ceil(partitions.length / columns));
+  const pitch = gridSize + gridSize * 0.42;
+  const radius = cornerRadiusInCells();
+  const area = gridSize * gridSize;
+  const pieces = [];
+
+  for (let index = 0; index < partitions.length; index++) {
+    const column = index % columns;
+    const row = floor(index / columns);
+
+    pieces.push({
+      x: (column - (columns - 1) / 2) * pitch,
+      z: (row - (rows - 1) / 2) * pitch,
+      regions: regionSolids(partitions[index], radius, area)
+    });
+  }
+
+  return {
+    background: cssColor(params.backgroundColor),
+    pieces
+  };
+}
+
+function cornerRadiusInCells() {
+  const reference = RANDOM_CANVAS * params.shapeScale;
+
+  if (reference <= 0) {
+    return 0;
+  }
+
+  return params.cornerRadius * gridSize / reference;
+}
+
+function regionSolids(grid, radius, area) {
+  const solids = [];
+
+  for (const region of getRegionLabels(grid)) {
+    const contours = traceAllContours(getBoundaryEdges(grid, region));
+    const loops = [];
+
+    for (const contour of contours) {
+      let points = simplifyContour(contour);
+
+      if (points.length < 4) {
+        continue;
+      }
+
+      points = offsetPolygon(points, params.regionInset);
+      const samples = sampleRoundedLoop(points, radius);
+
+      if (samples.length >= 3) {
+        loops.push(samples.map((point) => ({
+          x: point.x - gridSize / 2,
+          y: point.y - gridSize / 2
+        })));
+      }
+    }
+
+    if (loops.length === 0) {
+      continue;
+    }
+
+    loops.sort((left, right) =>
+      Math.abs(loopArea(right)) - Math.abs(loopArea(left))
+    );
+
+    let count = 0;
+
+    for (let index = 0; index < grid.length; index++) {
+      if (grid[index] === region) {
+        count += 1;
+      }
+    }
+
+    solids.push({
+      color: params.fillColor
+        ? regionFill(region)
+        : cssColor(params.outlineColor),
+      height: 0.24 + (count / area) * 1.5,
+      outer: loops[0],
+      holes: loops.slice(1)
+    });
+  }
+
+  return solids;
+}
+
+function sampleRoundedLoop(points, radius) {
+  const radii = edgeLimitedRadii(points, radius);
+  const corners = [];
+
+  for (let index = 0; index < points.length; index++) {
+    const previous = points[(index - 1 + points.length) % points.length];
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    const cornerRadius = radii[index] || 0;
+
+    corners.push({
+      corner: current,
+      before: moveToward(current, previous, cornerRadius),
+      after: moveToward(current, next, cornerRadius)
+    });
+  }
+
+  const samples = [];
+  const steps = 6;
+
+  for (const item of corners) {
+    samples.push(item.before);
+
+    for (let step = 1; step <= steps; step++) {
+      const t = step / steps;
+      const u = 1 - t;
+
+      samples.push({
+        x: u * u * item.before.x + 2 * u * t * item.corner.x + t * t * item.after.x,
+        y: u * u * item.before.y + 2 * u * t * item.corner.y + t * t * item.after.y
+      });
+    }
+  }
+
+  return samples;
+}
+
+function loopArea(points) {
+  let sum = 0;
+
+  for (let index = 0; index < points.length; index++) {
+    const next = points[(index + 1) % points.length];
+    sum += points[index].x * next.y - next.x * points[index].y;
+  }
+
+  return sum / 2;
 }
 
 // Fit the tile block to the open area and center it.
@@ -410,6 +645,11 @@ function partitionFileName() {
 // The window canvas keeps a blank column under the controls.
 // The file is the open area, where the pieces are already centered.
 function partitionImage() {
+  if (params.view3d && window.PolyominoView) {
+    PolyominoView.render();
+    return PolyominoView.canvas();
+  }
+
   const frame = contentFrame();
   const density = pixelDensity();
   const source = drawingContext.canvas;
@@ -528,6 +768,10 @@ function setupPane() {
       "Animate": "ANIMATE",
       "All 3×3": "ALL_3X3"
     }
+  });
+
+  pane.addInput(params, "view3d", {
+    label: "3D"
   });
 
   generationFolder = pane.addFolder({
@@ -886,6 +1130,11 @@ function setupPane() {
 
     if (presetKey === "playbackSpeed") {
       syncAnimationSpeed();
+      return;
+    }
+
+    if (presetKey === "view3d") {
+      draw();
       return;
     }
 
