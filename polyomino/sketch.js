@@ -22,12 +22,6 @@
 
   Each region is filled from a palette built by ColorGenerator.
   The Color folder chooses the base color and the scheme.
-  The Tiles folder can fill each region with a biome.
-  Each region keeps one biome set. The pictures for a
-  set live in one atlas. Each grid cell is covered by
-  one whole picture from that atlas. The soil strip
-  hangs into the row below, and that row covers it.
-
   The Beats folder plays the partition with Strudel.
   Each region is a minor-scale triad. The shape can be a
   piano, harp, marimba, vibes, organ, or a synth, and each
@@ -92,13 +86,6 @@ const params = {
   increaseSaturation: false,
   increaseBrightness: true,
 
-  // One atlas per biome folder. Each region keeps one set.
-  // A whole picture covers each grid cell, and the row below
-  // covers that picture's soil strip.
-  // Off when the page opens, so regions start as flat color.
-  useTiles: false,
-  patternCount: 9,
-
   strokeWidth: 2.2,
   // Measured relative to one grid cell.
   regionInset: 0.095,
@@ -155,26 +142,6 @@ const readout = {
 
 const CUT_COLOR = "#c4552a";
 
-// Each name is one biome atlas. A region keeps a single set.
-const BIOME_ATLASES = [
-  "Grass",
-  "Field",
-  "Forest",
-  "Ground",
-  "House",
-  "Stone",
-  "Tree",
-  "Village",
-  "Water"
-];
-
-let biomeLayer = null;
-let biomeMask = null;
-
-let patternImages = [];
-let biomeReady = null;
-let tileInputs = {};
-
 let beatPlayInput;
 let shapeSoundInput;
 let treeSoundInput;
@@ -203,7 +170,6 @@ async function setup() {
   setupPane();
   rebuild(true);
   watchBeatPlayer();
-  ensureBiomes();
 }
 
 function draw() {
@@ -449,8 +415,6 @@ const DRAWING_KEYS = new Set([
   "harmonyDegree",
   "increaseSaturation",
   "increaseBrightness",
-  "useTiles",
-  "patternCount",
   "strokeWidth",
   "regionInset",
   "cornerRadius",
@@ -486,7 +450,6 @@ const BEAT_KEYS = new Set([
   "beatTempo",
   "beatLevel",
   "baseColor",
-  "patternCount",
   "seed"
 ]);
 
@@ -741,23 +704,6 @@ function setupPane() {
 
   updateColorVisibility();
 
-  const tileFolder = pane.addFolder({
-    title: "Tiles"
-  });
-
-  tileFolder.addInput(params, "useTiles", {
-    label: "biomes"
-  });
-
-  tileInputs.count = tileFolder.addInput(params, "patternCount", {
-    label: "sets",
-    min: 1,
-    max: BIOME_ATLASES.length,
-    step: 1
-  });
-
-  updateTileVisibility();
-
   const beatsFolder = pane.addFolder({
     title: "Beats"
   });
@@ -888,18 +834,6 @@ function setupPane() {
 
     if (presetKey === "colorScheme") {
       updateColorVisibility();
-    }
-
-    if (presetKey === "useTiles") {
-      updateTileVisibility();
-
-      if (params.useTiles) {
-        ensureBiomes().then(() => {
-          if (params.useTiles) {
-            draw();
-          }
-        });
-      }
     }
 
     // Drawing and layout values repaint while the pointer is still down.
@@ -1039,7 +973,6 @@ function beatScore() {
     rootMidi: window.PolyominoBeats
       ? PolyominoBeats.rootMidiFromColor(params.baseColor)
       : 48,
-    patternCount: params.patternCount,
     seed: params.seed,
     sounds: {
       shape: params.beatShapeSound,
@@ -1219,14 +1152,6 @@ document.addEventListener("pointerdown", () => {
   lastPlayedCode = "";
   scheduleBeat();
 }, true);
-
-function updateTileVisibility() {
-  const hidden = !params.useTiles;
-
-  if (tileInputs.count) {
-    tileInputs.count.hidden = hidden;
-  }
-}
 
 function updatePaneVisibility() {
   const randomMode = params.mode === "RANDOM_ONE";
@@ -1525,213 +1450,6 @@ function regionFill(label) {
 
   const index = abs(label) % colors.length;
   return colors[index];
-}
-
-function ensureBiomes() {
-  if (!biomeReady) {
-    biomeReady = loadBiomes();
-  }
-
-  return biomeReady;
-}
-
-async function loadBiomes() {
-  let manifest = [];
-
-  try {
-    const response = await fetch("tiles/atlases/index.json");
-    manifest = await response.json();
-  } catch (error) {
-    console.error(error);
-  }
-
-  const byName = new Map(manifest.map((atlas) => [atlas.name, atlas]));
-  const sets = [];
-
-  for (const name of BIOME_ATLASES) {
-    const atlas = byName.get(name);
-
-    if (!atlas) {
-      sets.push(null);
-      continue;
-    }
-
-    try {
-      const image = await loadImage(`tiles/atlases/${atlas.file}`);
-      const source = image && (image.canvas || image.elt);
-
-      if (!source || !source.width || !source.height) {
-        sets.push(null);
-        continue;
-      }
-
-      const pool = atlas.frames.map((frame) => ({
-        image: source,
-        x: frame.x,
-        y: frame.y,
-        width: frame.width,
-        height: frame.height,
-        top: frame.top,
-        soil: frame.soil
-      }));
-
-      sets.push(pool.length > 0 ? pool : null);
-    } catch (error) {
-      console.error(error);
-      sets.push(null);
-    }
-  }
-
-  patternImages = sets;
-}
-
-function patternIndexFor(label) {
-  const total = patternImages.length;
-
-  if (total === 0) {
-    return 0;
-  }
-
-  const used = constrain(
-    round(params.patternCount),
-    1,
-    total
-  );
-  const shift = abs(floor(params.seed)) % used;
-
-  return (abs(label) + shift) % used;
-}
-
-function biomeSheet(label) {
-  const pool = patternImages[patternIndexFor(label)];
-
-  if (!pool || pool.length === 0) {
-    return null;
-  }
-
-  return pool;
-}
-
-// The same seed, region, and square keep the same tile.
-function tilePick(pool, label, col, row) {
-  const mixed = Math.abs(
-    Math.imul(params.seed | 0, 2246822519) ^
-    Math.imul((label | 0) + 1, 3266489917) ^
-    Math.imul(col + 1, 668265263) ^
-    Math.imul(row + 3, 374761393)
-  );
-
-  return pool[mixed % pool.length];
-}
-
-function contourBounds(contours) {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-
-  for (const contour of contours) {
-    for (const point of contour) {
-      minX = min(minX, point.x);
-      minY = min(minY, point.y);
-      maxX = max(maxX, point.x);
-      maxY = max(maxY, point.y);
-    }
-  }
-
-  return { minX, minY, maxX, maxY };
-}
-
-function scratchCanvas(current, width, height) {
-  const canvas = current && current.width === width && current.height === height
-    ? current
-    : document.createElement("canvas");
-
-  if (canvas.width !== width || canvas.height !== height) {
-    canvas.width = width;
-    canvas.height = height;
-  } else {
-    canvas.getContext("2d").clearRect(0, 0, width, height);
-  }
-
-  return canvas;
-}
-
-function shiftContour(contour, dx, dy) {
-  return contour.map((point) => ({
-    x: point.x + dx,
-    y: point.y + dy
-  }));
-}
-
-// Stretch the whole picture so the scene covers the cell.
-// The soil strip continues into the next row, which is painted
-// afterwards and covers it. The outline clips the rim.
-function drawBiomePicture(ctx, picture, x, y, cellWidth, cellHeight) {
-  const sourceHeight = picture.height - picture.top;
-  const cover = Math.max(1, picture.soil - picture.top);
-  const destHeight = cellHeight * sourceHeight / cover;
-
-  ctx.drawImage(
-    picture.image,
-    picture.x,
-    picture.y + picture.top,
-    picture.width,
-    sourceHeight,
-    x,
-    y,
-    cellWidth,
-    destHeight
-  );
-}
-
-function paintBiomeTiles(ctx, grid, originX, originY, cellSize, regions) {
-  const piece = Math.ceil(cellSize * gridSize);
-  biomeLayer = scratchCanvas(biomeLayer, piece, piece);
-  biomeMask = scratchCanvas(biomeMask, piece, piece);
-
-  const layer = biomeLayer.getContext("2d");
-  const mask = biomeMask.getContext("2d");
-  layer.imageSmoothingEnabled = true;
-  mask.fillStyle = "#ffffff";
-
-  for (let gy = 0; gy < gridSize; gy++) {
-    for (let gx = 0; gx < gridSize; gx++) {
-      const pool = biomeSheet(grid[gy * gridSize + gx]);
-
-      if (!pool) {
-        continue;
-      }
-
-      const picture = tilePick(pool, grid[gy * gridSize + gx], gx, gy);
-      const x = Math.round(gx * cellSize);
-      const y = Math.round(gy * cellSize);
-      const right = Math.round((gx + 1) * cellSize);
-      const bottom = Math.round((gy + 1) * cellSize);
-
-      drawBiomePicture(layer, picture, x, y, right - x, bottom - y);
-    }
-  }
-
-  for (const item of regions) {
-    mask.beginPath();
-
-    for (let i = 0; i < item.pixelContours.length; i++) {
-      drawRoundedContour(
-        mask,
-        shiftContour(item.pixelContours[i], -originX, -originY),
-        item.radii[i],
-        "path"
-      );
-    }
-
-    mask.fill("evenodd");
-  }
-
-  layer.globalCompositeOperation = "destination-in";
-  layer.drawImage(biomeMask, 0, 0);
-  layer.globalCompositeOperation = "source-over";
-  ctx.drawImage(biomeLayer, originX, originY);
 }
 
 function withAlpha(css, alpha) {
@@ -2087,21 +1805,13 @@ function paintAnimationCells(ctx, place, step) {
   for (let index = 0; index < gridSize * gridSize; index++) {
     let fill = "rgba(41, 41, 50, 0.04)";
 
-    if (regions && params.useTiles) {
-      fill = regionFill(animation.grid[index]);
-    } else if (regions) {
+    if (regions) {
       fill = withAlpha(regionFill(animation.grid[index]), wash);
     } else if (visited && visited[index]) {
       fill = "rgba(41, 41, 50, 0.09)";
     }
 
-    paintCell(
-      ctx,
-      place,
-      index,
-      fill,
-      regions && params.useTiles ? animation.grid[index] : null
-    );
+    paintCell(ctx, place, index, fill);
   }
 
   let highlight = -1;
@@ -2141,30 +1851,12 @@ function grownCells(step) {
   return visited;
 }
 
-function paintCell(ctx, place, index, fill, patternLabel) {
+function paintCell(ctx, place, index, fill) {
   const x = index % gridSize;
   const y = floor(index / gridSize);
-  const cellLeft = place.originX + x * place.cell;
-  const cellTop = place.originY + y * place.cell;
-
-  if (patternLabel != null && params.useTiles) {
-    const pool = biomeSheet(patternLabel);
-
-    if (pool) {
-      const picture = tilePick(pool, patternLabel, x, y);
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(place.originX, place.originY, place.size, place.size);
-      ctx.clip();
-      drawBiomePicture(ctx, picture, cellLeft, cellTop, place.cell, place.cell);
-      ctx.restore();
-      return;
-    }
-  }
-
   const gap = place.cell * 0.1;
-  const left = cellLeft + gap / 2;
-  const top = cellTop + gap / 2;
+  const left = place.originX + x * place.cell + gap / 2;
+  const top = place.originY + y * place.cell + gap / 2;
   const side = place.cell - gap;
 
   ctx.beginPath();
@@ -2787,17 +2479,6 @@ function drawPartition(
 
     target.restore();
     cursor += item.pixelContours.length;
-  }
-
-  if (params.useTiles) {
-    paintBiomeTiles(
-      target,
-      grid,
-      originX,
-      originY,
-      cellSize,
-      regionContours
-    );
   }
 
   if (music) {

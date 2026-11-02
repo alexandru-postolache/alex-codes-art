@@ -20,7 +20,6 @@ const score = {
   cps: 0.8,
   gain: 0.7,
   rootMidi: 60,
-  patternCount: 8,
   seed: 0,
   layers: { shape: true, sizes: true, tree: true }
 };
@@ -111,7 +110,6 @@ test("every size voice uses the same drum kit", () => {
   const shifted = buildBeat({
     ...score,
     seed: 4,
-    patternCount: 3,
     partitions: [{ labels, tree: null, cuts: null }]
   });
 
