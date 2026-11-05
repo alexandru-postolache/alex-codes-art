@@ -144,13 +144,17 @@ const sketch = (p) => {
         adoptCanvas(graphics.elt, graphics.width, graphics.height, 'Generated sheet', graphics);
       },
       downloadTemplate() {
-        const graphics = makeTemplateGraphics();
+        const graphics = makeTemplateGraphics(true);
         const link = document.createElement('a');
         const shape = params.grid === 'hex' ? `${params.grid}-${params.hexOrientation}` : params.grid;
         link.href = graphics.elt.toDataURL('image/png');
         link.download = `autotile-${shape}-template.png`;
         link.click();
         graphics.remove();
+        const layout = sheetLayout(params.grid);
+        syncStatus(
+          `Saved a ${layout.cols}×${layout.rows} guide. Tiles are numbered 0–${layout.count - 1}, left to right. Borders and numbers are drawn on the sheet.`
+        );
       },
       clearTileset() {
         releaseTileset();
@@ -429,23 +433,58 @@ const sketch = (p) => {
     ctx.closePath();
   }
 
-  function makeTemplateGraphics() {
+  function makeTemplateGraphics(guides = false) {
     const layout = sheetLayout(params.grid);
     const { tileW, tileH } = templateTileSize(params.grid, params.hexOrientation);
     const graphics = p.createGraphics(layout.cols * tileW, layout.rows * tileH);
     graphics.pixelDensity(1);
-    graphics.clear();
+    if (guides) graphics.background('#d8d2c6');
+    else graphics.clear();
     const bits = cornerCount(params.grid);
     for (let row = 0; row < layout.rows; row++) {
       for (let col = 0; col < layout.cols; col++) {
         const mask = params.grid === 'triangle' ? col : row * layout.cols + col;
         const variant = params.grid === 'triangle' && row === 1 ? 'down' : 'up';
+        const x = col * tileW;
+        const y = row * tileH;
+        if (guides) {
+          graphics.noStroke();
+          graphics.fill(params.backgroundColor);
+          graphics.rect(x, y, tileW, tileH);
+        }
         const local = canonicalCorners(params.grid, params.hexOrientation, tileW, tileH, variant);
-        const corners = local.map((pt) => ({ x: pt.x + col * tileW, y: pt.y + row * tileH }));
+        const corners = local.map((pt) => ({ x: pt.x + x, y: pt.y + y }));
+        const ctx = graphics.drawingContext;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, tileW, tileH);
+        ctx.clip();
         drawProcedural(graphics, corners, flagsFromMask(mask, bits));
+        ctx.restore();
+        if (guides) drawTemplateGuide(graphics, x, y, tileW, tileH, mask);
       }
     }
     return graphics;
+  }
+
+  function drawTemplateGuide(graphics, x, y, tileW, tileH, mask) {
+    graphics.noFill();
+    graphics.stroke('#1c1915');
+    graphics.strokeWeight(3);
+    graphics.rect(x + 1.5, y + 1.5, tileW - 3, tileH - 3);
+
+    const label = String(mask);
+    const size = Math.max(14, Math.round(Math.min(tileW, tileH) * 0.2));
+    graphics.textSize(size);
+    graphics.textAlign(graphics.CENTER, graphics.CENTER);
+    const cx = x + tileW / 2;
+    const cy = y + tileH / 2;
+    const labelW = graphics.textWidth(label);
+    graphics.noStroke();
+    graphics.fill(255, 250, 240, 230);
+    graphics.rect(cx - labelW / 2 - 7, cy - size / 2 - 4, labelW + 14, size + 8, 6);
+    graphics.fill('#1c1915');
+    graphics.text(label, cx, cy);
   }
 
   function adoptCanvas(canvas, width, height, label, hold) {
