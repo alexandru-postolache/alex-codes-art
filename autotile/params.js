@@ -2,7 +2,6 @@ export const params = {
   grid: 'square',
   hexOrientation: 'pointy',
   cellSize: 72,
-  drawStyle: 'flat',
   paintMode: 'cells',
   tool: 'paint',
   brushSize: 1,

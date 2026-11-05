@@ -66,10 +66,6 @@ paintFolder.addButton({ title: 'Invert' }).on('click', () => window.autotile?.in
 paintFolder.addButton({ title: 'Undo' }).on('click', () => window.autotile?.undo());
 
 const lookFolder = pane.addFolder({ title: 'Look', expanded: true });
-lookFolder.addBinding(params, 'drawStyle', {
-  label: 'style',
-  options: { Flat: 'flat', Circle: 'circle' },
-});
 lookFolder.addBinding(params, 'terrainColor', { label: 'terrain' });
 lookFolder.addBinding(params, 'backgroundColor', { label: 'background' });
 lookFolder.addBinding(params, 'gridColor', { label: 'grid' });
