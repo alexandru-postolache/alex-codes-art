@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Autotile</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main></main>
+    <input id="tileset-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+    <div id="keyboard-hints" class="keyboard-hints" aria-live="polite">
+      <p class="keyboard-hints__title">Paint</p>
+      <p id="status-readout" class="keyboard-hints__readout">Marching squares</p>
+      <ul class="keyboard-hints__list">
+        <li>Left drag paints, right drag erases</li>
+        <li>Drop a tileset image on the canvas</li>
+        <li><kbd>H</kbd> hide panel</li>
+        <li><kbd>G</kbd> grid lines</li>
+        <li><kbd>X</kbd> paint / erase</li>
+        <li><kbd>[</kbd> <kbd>]</kbd> brush size</li>
+        <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</li>
+        <li><kbd>S</kbd> save PNG</li>
+      </ul>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.11.7/lib/p5.js"></script>
+    <script type="module" src="sketch.js"></script>
+  </body>
+</html>
