@@ -3,7 +3,6 @@ export const params = {
   hexOrientation: 'pointy',
   cellSize: 72,
   paintMode: 'cells',
-  tool: 'paint',
   brushSize: 1,
   terrainColor: '#1d4f91',
   backgroundColor: '#f6f1e7',

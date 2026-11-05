@@ -16,7 +16,7 @@ Open http://localhost:8081/autotile/
 
 ## Paint
 
-Left drag paints. Right drag, Shift, or the Erase tool clears. **Cells** sets every corner of the cells you touch, so a painted cell becomes the full tile and its neighbors become the edge and corner tiles. **Corners** sets the vertices themselves, which is the raw marching-squares field.
+Left drag paints. Right drag erases. Hold Shift to erase with the left button. **Cells** sets every corner of the cells you touch, so a painted cell becomes the full tile and its neighbors become the edge and corner tiles. **Corners** sets the vertices themselves, which is the raw marching-squares field.
 
 The first frame is a noise fill so the autotile is visible immediately. Clear it if you want an empty sheet.
 
@@ -51,7 +51,7 @@ Changing cell type does not throw the sheet away. It is used again when you swit
 
 ## Keys
 
-`H` hides the panel. `G` toggles grid lines. `X` swaps paint and erase. `[` and `]` change the brush. `Ctrl`+`Z` or `Cmd`+`Z` undoes. `S` saves a PNG of the canvas without the hover outline.
+`H` hides the panel. `G` toggles grid lines. `[` and `]` change the brush. `Ctrl`+`Z` or `Cmd`+`Z` undoes. `S` saves a PNG of the canvas without the hover outline.
 
 ## Tests
 

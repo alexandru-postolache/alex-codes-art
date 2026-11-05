@@ -53,9 +53,6 @@ gridFolder.addBinding(params, 'showGrid', { label: 'grid lines' });
 gridFolder.addBinding(params, 'showVertices', { label: 'corners' });
 
 const paintFolder = pane.addFolder({ title: 'Paint', expanded: true });
-paintFolder.addBinding(params, 'tool', {
-  options: { Paint: 'paint', Erase: 'erase' },
-});
 paintFolder.addBinding(params, 'paintMode', {
   label: 'target',
   options: { Cells: 'cells', Corners: 'vertices' },
