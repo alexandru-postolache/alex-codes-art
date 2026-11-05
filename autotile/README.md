@@ -20,7 +20,7 @@ Left drag paints. Right drag, Shift, or the Erase tool clears. **Cells** sets ev
 
 The first frame is a noise fill so the autotile is visible immediately. Clear it if you want an empty sheet.
 
-`Flat` cuts each mixed edge at its midpoint. `Circle` draws a disk on every filled corner, clipped to the cell, in the same spirit as the circle preview in Boris the Brave’s [tileset creator](https://www.boristhebrave.com/permanent/23/03/tileset-creator/?autotile=Corner&cellType=Square&rotation=None&terrainCount=2&overlay=False&skipCornerTiles=False&drawStyle=Circle).
+Filled corners are cut at the midpoint of each mixed edge, in the same spirit as Boris the Brave’s [tileset creator](https://www.boristhebrave.com/permanent/23/03/tileset-creator/?autotile=Corner&cellType=Square&rotation=None&terrainCount=2&overlay=False&skipCornerTiles=False).
 
 ## Tileset sheets
 

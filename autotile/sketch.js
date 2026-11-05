@@ -323,35 +323,8 @@ const sketch = (p) => {
     if (!flags.some(Boolean)) return;
     g.noStroke();
     g.fill(params.terrainColor);
-    if (params.drawStyle === 'circle') {
-      drawCircles(g, corners, flags);
-      return;
-    }
     const polys = solidPolygons(corners, flags);
     for (let i = 0; i < polys.length; i++) drawPoly(g, polys[i]);
-  }
-
-  function drawCircles(g, corners, flags) {
-    if (flags.every(Boolean)) {
-      drawPoly(g, corners);
-      return;
-    }
-    const ctx = g.drawingContext;
-    ctx.save();
-    tracePath(ctx, corners);
-    ctx.clip();
-    const n = corners.length;
-    for (let i = 0; i < n; i++) {
-      if (!flags[i]) continue;
-      const curr = corners[i];
-      const prev = corners[(i + n - 1) % n];
-      const next = corners[(i + 1) % n];
-      const radius = Math.min(Math.hypot(curr.x - prev.x, curr.y - prev.y), Math.hypot(curr.x - next.x, curr.y - next.y)) / 2;
-      ctx.beginPath();
-      ctx.arc(curr.x, curr.y, Math.max(0.5, radius), 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
   }
 
   function drawSprite(g, cell, mask, sheet) {
