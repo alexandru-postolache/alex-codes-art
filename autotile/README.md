@@ -45,7 +45,7 @@ up          down
 
 Hexagon, 8×8, 64 tiles. Pointy grids start at the top corner. Flat grids start at the right corner. Then clockwise.
 
-**Download template** exports the current grid, style, and color as a sheet with transparent empty corners. **Use generated sheet** paints with that sheet so you can check the indices before replacing it with your own.
+**Download template** saves one cell per mask, in a numbered grid: 4×4 for squares, 8×2 for triangles, and 8×8 for hexes. Empty cells are the background color, and each cell has a border and its index. **Use generated sheet** paints with the same masks and no numbers or borders.
 
 Changing cell type does not throw the sheet away. It is used again when you switch back. Crisp pixels keeps uploaded pixel art from blurring.
 
