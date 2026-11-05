@@ -240,9 +240,12 @@ const sketch = (p) => {
     }
   }
 
+  function erasing() {
+    return p.mouseButton === p.RIGHT || p.keyIsDown(p.SHIFT);
+  }
+
   function paintValue() {
-    const erase = p.mouseButton === p.RIGHT || p.keyIsDown(p.SHIFT) || params.tool === 'erase';
-    return erase ? 0 : 1;
+    return erasing() ? 0 : 1;
   }
 
   function stampAt(x, y, value) {
@@ -401,7 +404,7 @@ const sketch = (p) => {
     if (!pointer.inside || !grid) return;
     if (hover) {
       p.noFill();
-      p.stroke(params.tool === 'erase' ? '#9a3412' : '#e4572e');
+      p.stroke(erasing() ? '#9a3412' : '#e4572e');
       p.strokeWeight(2);
       drawPoly(p, hover.corners);
     }
@@ -570,12 +573,6 @@ const sketch = (p) => {
       params.showGrid = !params.showGrid;
       window.autotileControls?.refresh();
       dirty = true;
-      p.redraw();
-      return;
-    }
-    if (key === 'x') {
-      params.tool = params.tool === 'erase' ? 'paint' : 'erase';
-      window.autotileControls?.refresh();
       p.redraw();
       return;
     }

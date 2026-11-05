@@ -4,7 +4,6 @@ export const params = {
   cellSize: 72,
   drawStyle: 'flat',
   paintMode: 'cells',
-  tool: 'paint',
   brushSize: 1,
   terrainColor: '#1d4f91',
   backgroundColor: '#f6f1e7',
