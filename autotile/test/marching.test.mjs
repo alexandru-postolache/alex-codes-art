@@ -5,9 +5,12 @@ import { buildGrid, keysForPaint, writeTerrain } from '../grid.js';
 import {
   maskFromFlags,
   parseSheet,
+  rotateMask,
   sheetLayout,
   solidPolygons,
   spriteCell,
+  SQUARE_TILES,
+  squarePlacement,
   templateTileSize,
 } from '../marching.js';
 
@@ -120,18 +123,33 @@ test('tileset sheets match the generated template size', () => {
     }
   }
 
-  const square = parseSheet('square', 512, 32);
-  assert.equal(square.mode, 'strip');
-  assert.equal(square.cols, 16);
-  assert.equal(square.tileW, 32);
+  assert.equal(parseSheet('square', 512, 512), null);
+  assert.equal(parseSheet('square', 512, 32), null);
+  assert.equal(parseSheet('square', 128 * 3, 128 * 2), null);
+
+  const six = parseSheet('square', 128 * 6, 128);
+  assert.equal(six.mode, 'full');
+  assert.equal(six.cols, 6);
+  assert.equal(six.rows, 1);
+  for (let mask = 0; mask < 16; mask++) {
+    const place = squarePlacement(mask);
+    assert.equal(rotateMask(SQUARE_TILES[place.index], place.turns), mask);
+    assert.deepEqual(spriteCell(six, 'square', mask), {
+      col: place.index,
+      row: 0,
+      flipY: false,
+      turns: place.turns,
+    });
+  }
+  assert.deepEqual(SQUARE_TILES, [0, 1, 3, 5, 7, 15]);
 
   const upOnly = templateTileSize('triangle', 'pointy');
   const flip = parseSheet('triangle', upOnly.tileW * 8, upOnly.tileH, 'pointy');
   assert.equal(flip.mode, 'flip-down');
-  assert.deepEqual(spriteCell(flip, 'triangle', 3, 'down'), { col: 3, row: 0, flipY: true });
-  assert.deepEqual(spriteCell(flip, 'triangle', 3, 'up'), { col: 3, row: 0, flipY: false });
+  assert.deepEqual(spriteCell(flip, 'triangle', 3, 'down'), { col: 3, row: 0, flipY: true, turns: 0 });
+  assert.deepEqual(spriteCell(flip, 'triangle', 3, 'up'), { col: 3, row: 0, flipY: false, turns: 0 });
 
   const full = parseSheet('triangle', upOnly.tileW * 8, upOnly.tileH * 2, 'pointy');
-  assert.deepEqual(spriteCell(full, 'triangle', 5, 'down'), { col: 5, row: 1, flipY: false });
+  assert.deepEqual(spriteCell(full, 'triangle', 5, 'down'), { col: 5, row: 1, flipY: false, turns: 0 });
   assert.equal(parseSheet('hex', 100, 40, 'pointy'), null);
 });
