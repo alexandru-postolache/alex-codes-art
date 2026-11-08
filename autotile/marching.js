@@ -21,15 +21,41 @@ export function cornerCount(type) {
 }
 
 /**
+ * Square sheet, left to right. Each later mask is this tile turned clockwise by 90°.
+ * 0 empty, 1 top-left corner, 3 top edge, 5 opposite corners, 7 three corners, 15 full.
+ */
+export const SQUARE_TILES = [0, 1, 3, 5, 7, 15];
+
+/** Move each set corner clockwise by `turns` steps. */
+export function rotateMask(mask, turns, bits = 4) {
+  const k = ((turns % bits) + bits) % bits;
+  let out = 0;
+  for (let i = 0; i < bits; i++) {
+    if ((mask & (1 << i)) !== 0) out |= 1 << ((i + k) % bits);
+  }
+  return out;
+}
+
+/** Which of the six square tiles to draw, and how many clockwise quarter-turns to apply. */
+export function squarePlacement(mask) {
+  for (let index = 0; index < SQUARE_TILES.length; index++) {
+    for (let turns = 0; turns < 4; turns++) {
+      if (rotateMask(SQUARE_TILES[index], turns) === mask) return { index, turns };
+    }
+  }
+  return { index: 0, turns: 0 };
+}
+
+/**
  * Sheet layout for an uploaded tileset.
- * Square: 4×4, bit 0 = top-left, then clockwise.
+ * Square: 6×1. The painter rotates these six tiles to cover all 16 corner masks.
  * Triangle: 8×2, row 0 points up, row 1 points down. Bit 0 is the apex, then clockwise.
  * Hex: 8×8. Bit 0 is the top corner (pointy) or the right corner (flat), then clockwise.
  */
 export function sheetLayout(type) {
   if (type === 'triangle') return { cols: 8, rows: 2, count: 16, masks: 8 };
   if (type === 'hex') return { cols: 8, rows: 8, count: 64, masks: 64 };
-  return { cols: 4, rows: 4, count: 16, masks: 16 };
+  return { cols: 6, rows: 1, count: 6, masks: 6 };
 }
 
 export function layoutHelp(type) {
@@ -39,7 +65,7 @@ export function layoutHelp(type) {
   if (type === 'hex') {
     return 'Use an 8×8 sheet, 64 tiles. Bit 0 is the top corner (pointy) or the right corner (flat), then clockwise.';
   }
-  return 'Use a 4×4 sheet, 16 tiles. Bit 0 is the top-left corner, then clockwise.';
+  return 'Use one row of 6 square tiles. They rotate by 90°: empty, top-left corner, top edge, opposite corners, three corners, full.';
 }
 
 export function templateTileSize(type, orientation) {
@@ -155,7 +181,7 @@ export function parseSheet(type, width, height, orientation = 'pointy') {
   if (divides(width, masks) && height >= 2) {
     const tileW = width / masks;
     const tileAspect = height / tileW;
-    if (type === 'square' || aspectClose(tileAspect, expected)) {
+    if (aspectClose(tileAspect, expected)) {
       return {
         cols: masks,
         rows: 1,
@@ -173,15 +199,25 @@ export function parseSheet(type, width, height, orientation = 'pointy') {
 
 export function spriteCell(parsed, type, mask, variant) {
   if (type === 'triangle' && parsed.mode === 'flip-down') {
-    return { col: mask, row: 0, flipY: variant === 'down' };
+    return { col: mask, row: 0, flipY: variant === 'down', turns: 0 };
   }
   if (type === 'triangle') {
-    return { col: mask, row: variant === 'down' ? 1 : 0, flipY: false };
+    return { col: mask, row: variant === 'down' ? 1 : 0, flipY: false, turns: 0 };
+  }
+  if (type === 'square') {
+    const place = squarePlacement(mask);
+    return {
+      col: place.index % parsed.cols,
+      row: Math.floor(place.index / parsed.cols),
+      flipY: false,
+      turns: place.turns,
+    };
   }
   return {
     col: mask % parsed.cols,
     row: Math.floor(mask / parsed.cols),
     flipY: false,
+    turns: 0,
   };
 }
 

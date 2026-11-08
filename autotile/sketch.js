@@ -10,6 +10,7 @@ import {
   sheetLayout,
   solidPolygons,
   spriteCell,
+  SQUARE_TILES,
   templateTileSize,
 } from './marching.js';
 import { params } from './params.js';
@@ -152,8 +153,11 @@ const sketch = (p) => {
         link.click();
         graphics.remove();
         const layout = sheetLayout(params.grid);
+        const squareNote = params.grid === 'square'
+          ? ' Tiles 0–5 are empty, corner, edge, opposite corners, three corners, and full. The painter rotates them.'
+          : '';
         syncStatus(
-          `Saved a ${layout.cols}×${layout.rows} guide. Tiles are numbered 0–${layout.count - 1}, left to right. Borders and numbers are drawn on the sheet.`
+          `Saved a ${layout.cols}×${layout.rows} guide. Tiles are numbered 0–${layout.count - 1}, left to right.${squareNote} Borders and numbers are drawn on the sheet.`
         );
       },
       clearTileset() {
@@ -324,8 +328,11 @@ const sketch = (p) => {
 
   function drawProcedural(g, corners, flags) {
     if (!flags.some(Boolean)) return;
+    const color = g.color(params.terrainColor).toString();
     g.noStroke();
-    g.fill(params.terrainColor);
+    g.fill(color);
+    // Clipping the context restores its fill, and p5 will skip a repeated fill() after that.
+    g.drawingContext.fillStyle = color;
     const polys = solidPolygons(corners, flags);
     for (let i = 0; i < polys.length; i++) drawPoly(g, polys[i]);
   }
@@ -342,7 +349,11 @@ const sketch = (p) => {
     ctx.imageSmoothingEnabled = !params.crispPixels;
     tracePath(ctx, cell.corners);
     ctx.clip();
-    if (loc.flipY) {
+    if (loc.turns) {
+      ctx.translate(box.x + box.w / 2, box.y + box.h / 2);
+      ctx.rotate((loc.turns * Math.PI) / 2);
+      ctx.drawImage(sheet.canvas, sx, sy, sw, sh, -box.w / 2, -box.h / 2, box.w, box.h);
+    } else if (loc.flipY) {
       ctx.translate(box.x, box.y + box.h);
       ctx.scale(box.w / sw, -(box.h / sh));
       ctx.drawImage(sheet.canvas, sx, sy, sw, sh, 0, 0, sw, sh);
@@ -419,7 +430,8 @@ const sketch = (p) => {
     const bits = cornerCount(params.grid);
     for (let row = 0; row < layout.rows; row++) {
       for (let col = 0; col < layout.cols; col++) {
-        const mask = params.grid === 'triangle' ? col : row * layout.cols + col;
+        const slot = row * layout.cols + col;
+        const mask = params.grid === 'square' ? SQUARE_TILES[slot] : params.grid === 'triangle' ? col : slot;
         const variant = params.grid === 'triangle' && row === 1 ? 'down' : 'up';
         const x = col * tileW;
         const y = row * tileH;
@@ -437,7 +449,7 @@ const sketch = (p) => {
         ctx.clip();
         drawProcedural(graphics, corners, flagsFromMask(mask, bits));
         ctx.restore();
-        if (guides) drawTemplateGuide(graphics, x, y, tileW, tileH, mask);
+        if (guides) drawTemplateGuide(graphics, x, y, tileW, tileH, params.grid === 'square' ? slot : mask);
       }
     }
     return graphics;
