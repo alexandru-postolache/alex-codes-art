@@ -20,7 +20,7 @@ Left drag paints. Right drag erases. Hold Shift to erase with the left button. *
 
 The first frame is a noise fill so the autotile is visible immediately. Clear it if you want an empty sheet.
 
-Filled corners meet at the midpoint of each mixed edge. **Fill** paints the shape; turn it off to draw only the border. **Internal lines** keeps the border between neighboring tiles; turn it off to stroke only the outer contour. **Edges** are straight or rounded. The same choice is used for one-color tiles and for the generated template.
+Filled corners meet at the midpoint of each mixed edge. **Fill** paints the shape; turn it off to draw only the border. **Internal lines** keeps the border between neighboring tiles; turn it off to stroke only the outer contour. **Edges** are straight or rounded. Rounded fill is still one shape: the same region as the straight fill, with the corners rounded off. The same choice is used for one-color tiles and for the generated template.
 
 ## Tileset sheets
 

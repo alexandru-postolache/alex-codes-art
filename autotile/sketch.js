@@ -319,17 +319,18 @@ const sketch = (p) => {
     const sheet = activeTileset();
     const cells = grid.cells;
     const mergeOutline = !sheet && !params.filled && !params.internalLines;
+    const mergeFill = !sheet && params.filled && params.edges === 'rounded';
     const outlinePolys = [];
     for (let i = 0; i < cells.length; i++) {
       const cell = cells[i];
       const flags = flagsFor(cell);
       if (sheet) drawSprite(g, cell, maskFromFlags(flags), sheet);
-      else if (mergeOutline) {
+      else if (mergeOutline || mergeFill) {
         const polys = solidPolygons(cell.corners, flags);
         for (let j = 0; j < polys.length; j++) outlinePolys.push(polys[j]);
       } else drawProcedural(g, cell.corners, flags);
     }
-    if (mergeOutline) drawExternalOutline(g, outlinePolys);
+    if (mergeOutline || mergeFill) drawMergedShape(g, outlinePolys, mergeFill);
     if (params.showGrid) drawGrid(g);
     if (params.showVertices) drawVertices(g);
   }
@@ -355,19 +356,21 @@ const sketch = (p) => {
     ctx.restore();
   }
 
-  function drawExternalOutline(g, polys) {
+  function drawMergedShape(g, polys, fill) {
     const paths = externalContours(polys, params.edges === 'rounded');
     if (!paths.length || !grid.cells.length) return;
     const ctx = g.drawingContext;
+    const color = g.color(params.terrainColor).toString();
     ctx.save();
-    ctx.strokeStyle = g.color(params.terrainColor).toString();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.lineWidth = outlineWeight(grid.cells[0].corners);
-    for (let i = 0; i < paths.length; i++) {
-      traceCommands(ctx, paths[i]);
-      ctx.stroke();
-    }
+    ctx.beginPath();
+    for (let i = 0; i < paths.length; i++) traceCommands(ctx, paths[i], false);
+    if (fill) ctx.fill('evenodd');
+    else ctx.stroke();
     ctx.restore();
   }
 
@@ -381,8 +384,8 @@ const sketch = (p) => {
     return Math.max(1.5, min * 0.07);
   }
 
-  function traceCommands(ctx, commands) {
-    ctx.beginPath();
+  function traceCommands(ctx, commands, begin = true) {
+    if (begin) ctx.beginPath();
     for (let i = 0; i < commands.length; i++) {
       const cmd = commands[i];
       if (cmd.op === 'M') ctx.moveTo(cmd.x, cmd.y);
