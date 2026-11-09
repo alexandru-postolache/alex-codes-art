@@ -64,6 +64,7 @@ paintFolder.addButton({ title: 'Undo' }).on('click', () => window.autotile?.undo
 
 const lookFolder = pane.addFolder({ title: 'Look', expanded: true });
 lookFolder.addBinding(params, 'filled', { label: 'fill' });
+lookFolder.addBinding(params, 'internalLines', { label: 'internal lines' });
 lookFolder.addBinding(params, 'edges', {
   label: 'edges',
   options: { Straight: 'straight', Rounded: 'rounded' },

@@ -7,6 +7,7 @@ import {
   parseSheet,
   rotateMask,
   sheetLayout,
+  externalContours,
   solidPolygons,
   spriteCell,
   terrainPaths,
@@ -81,6 +82,45 @@ test('rounded tiles curve every corner and stay inside the straight shape', () =
   assert.equal(corner[0].filter((cmd) => cmd.op === 'Q').length, 3);
   const opposite = terrainPaths(corners, [true, false, true, false], true);
   assert.equal(opposite.length, 2);
+});
+
+test('external contours drop the borders shared by neighboring tiles', () => {
+  const left = [
+    { x: 0, y: 0 },
+    { x: 40, y: 0 },
+    { x: 40, y: 40 },
+    { x: 0, y: 40 },
+  ];
+  const right = [
+    { x: 40, y: 0 },
+    { x: 80, y: 0 },
+    { x: 80, y: 40 },
+    { x: 40, y: 40 },
+  ];
+  const merged = externalContours([left, right], false);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].length, 6);
+  const vertical = merged[0].filter((cmd, i, all) => {
+    const prev = all[(i + all.length - 1) % all.length];
+    return cmd.x === 40 && prev.x === 40;
+  });
+  assert.equal(vertical.length, 0);
+
+  const grid = buildGrid('square', 200, 200, 40);
+  const terrain = new Map();
+  const origin = grid.cells.find((cell) => cell.corners[0].x === 40 && cell.corners[0].y === 40);
+  writeTerrain(terrain, keysForPaint(grid, origin.center.x, origin.center.y, 'cells', 1), 1);
+  const polys = [];
+  for (const cell of grid.cells) {
+    const solid = solidPolygons(cell.corners, flagsOf(cell, terrain));
+    for (let i = 0; i < solid.length; i++) polys.push(solid[i]);
+  }
+  const outline = externalContours(polys, false);
+  assert.equal(outline.length, 1);
+  assert.equal(outline[0].length, 8);
+  const curved = externalContours(polys, true);
+  assert.equal(curved.length, 1);
+  assert.ok(curved[0].some((cmd) => cmd.op === 'Q'));
 });
 
 test('painting one square sets that cell full and the neighbor to the shared edge', () => {

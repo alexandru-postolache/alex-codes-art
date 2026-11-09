@@ -7,7 +7,9 @@ import {
   layoutHelp,
   maskFromFlags,
   parseSheet,
+  externalContours,
   sheetLayout,
+  solidPolygons,
   spriteCell,
   terrainPaths,
   SQUARE_TILES,
@@ -316,12 +318,18 @@ const sketch = (p) => {
     g.background(params.backgroundColor);
     const sheet = activeTileset();
     const cells = grid.cells;
+    const mergeOutline = !sheet && !params.filled && !params.internalLines;
+    const outlinePolys = [];
     for (let i = 0; i < cells.length; i++) {
       const cell = cells[i];
       const flags = flagsFor(cell);
       if (sheet) drawSprite(g, cell, maskFromFlags(flags), sheet);
-      else drawProcedural(g, cell.corners, flags);
+      else if (mergeOutline) {
+        const polys = solidPolygons(cell.corners, flags);
+        for (let j = 0; j < polys.length; j++) outlinePolys.push(polys[j]);
+      } else drawProcedural(g, cell.corners, flags);
     }
+    if (mergeOutline) drawExternalOutline(g, outlinePolys);
     if (params.showGrid) drawGrid(g);
     if (params.showVertices) drawVertices(g);
   }
@@ -343,6 +351,22 @@ const sketch = (p) => {
       traceCommands(ctx, paths[i]);
       if (params.filled) ctx.fill();
       else ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawExternalOutline(g, polys) {
+    const paths = externalContours(polys, params.edges === 'rounded');
+    if (!paths.length || !grid.cells.length) return;
+    const ctx = g.drawingContext;
+    ctx.save();
+    ctx.strokeStyle = g.color(params.terrainColor).toString();
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = outlineWeight(grid.cells[0].corners);
+    for (let i = 0; i < paths.length; i++) {
+      traceCommands(ctx, paths[i]);
+      ctx.stroke();
     }
     ctx.restore();
   }

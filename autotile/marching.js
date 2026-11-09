@@ -305,3 +305,75 @@ function roundPolygon(poly) {
   }
   return commands;
 }
+
+function pointKey(p) {
+  return `${Math.round(p.x * 1000)},${Math.round(p.y * 1000)}`;
+}
+
+/**
+ * Outline of the union of several tile polygons.
+ * An edge drawn by two tiles is internal and dropped, so only the border
+ * between terrain and empty space remains. `rounded` curves that contour.
+ */
+export function externalContours(polygons, rounded) {
+  const tally = new Map();
+  const stored = new Map();
+  for (let p = 0; p < polygons.length; p++) {
+    const poly = polygons[p];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      if (Math.hypot(a.x - b.x, a.y - b.y) < 1e-6) continue;
+      const ka = pointKey(a);
+      const kb = pointKey(b);
+      const undirected = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+      tally.set(undirected, (tally.get(undirected) || 0) + 1);
+      if (!stored.has(undirected)) stored.set(undirected, [a, b]);
+    }
+  }
+
+  const segments = [];
+  for (const [key, count] of tally) {
+    if (count === 1) segments.push(stored.get(key));
+  }
+
+  const loops = chainLoops(segments);
+  const paths = [];
+  for (let i = 0; i < loops.length; i++) {
+    paths.push(rounded ? roundPolygon(loops[i]) : linearPath(loops[i]));
+  }
+  return paths;
+}
+
+function chainLoops(segments) {
+  const unused = segments.map((pair) => ({ a: pair[0], b: pair[1], used: false }));
+  const at = new Map();
+  for (let i = 0; i < unused.length; i++) {
+    const seg = unused[i];
+    for (const point of [seg.a, seg.b]) {
+      const key = pointKey(point);
+      if (!at.has(key)) at.set(key, []);
+      at.get(key).push(seg);
+    }
+  }
+
+  const loops = [];
+  for (let i = 0; i < unused.length; i++) {
+    const start = unused[i];
+    if (start.used) continue;
+    start.used = true;
+    const loop = [start.a];
+    let curr = start.b;
+    let guard = 0;
+    while (guard++ <= unused.length) {
+      if (pointKey(curr) === pointKey(start.a)) break;
+      loop.push(curr);
+      const next = (at.get(pointKey(curr)) || []).find((seg) => !seg.used);
+      if (!next) break;
+      next.used = true;
+      curr = pointKey(next.a) === pointKey(curr) ? next.b : next.a;
+    }
+    if (loop.length >= 3) loops.push(loop);
+  }
+  return loops;
+}

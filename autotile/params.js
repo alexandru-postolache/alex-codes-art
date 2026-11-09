@@ -5,6 +5,7 @@ export const params = {
   paintMode: 'cells',
   brushSize: 1,
   filled: true,
+  internalLines: true,
   edges: 'straight',
   terrainColor: '#1d4f91',
   backgroundColor: '#f6f1e7',
