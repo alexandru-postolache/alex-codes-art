@@ -20,7 +20,7 @@ Left drag paints. Right drag erases. Hold Shift to erase with the left button. *
 
 The first frame is a noise fill so the autotile is visible immediately. Clear it if you want an empty sheet.
 
-Filled corners are cut at the midpoint of each mixed edge, in the same spirit as Boris the Brave’s [tileset creator](https://www.boristhebrave.com/permanent/23/03/tileset-creator/?autotile=Corner&cellType=Square&rotation=None&terrainCount=2&overlay=False&skipCornerTiles=False).
+Filled corners meet at the midpoint of each mixed edge. **Fill** paints the shape; turn it off to draw only the border. **Edges** are straight or rounded. The same choice is used for one-color tiles and for the generated template.
 
 ## Tileset sheets
 

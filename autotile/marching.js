@@ -259,3 +259,49 @@ export function solidPolygons(points, flags) {
   }
   return polys;
 }
+
+/**
+ * Closed drawing commands for each solid region.
+ * Rounded corners replace every vertex with a quadratic curve.
+ */
+export function terrainPaths(points, flags, rounded) {
+  const polys = solidPolygons(points, flags);
+  const paths = [];
+  for (let i = 0; i < polys.length; i++) {
+    paths.push(rounded ? roundPolygon(polys[i]) : linearPath(polys[i]));
+  }
+  return paths;
+}
+
+function linearPath(poly) {
+  const commands = [];
+  for (let i = 0; i < poly.length; i++) {
+    commands.push({ op: i === 0 ? 'M' : 'L', x: poly[i].x, y: poly[i].y });
+  }
+  return commands;
+}
+
+function roundPolygon(poly) {
+  const n = poly.length;
+  if (n < 3) return linearPath(poly);
+  const commands = [];
+  for (let i = 0; i < n; i++) {
+    const prev = poly[(i + n - 1) % n];
+    const curr = poly[i];
+    const next = poly[(i + 1) % n];
+    const inLen = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+    const outLen = Math.hypot(next.x - curr.x, next.y - curr.y);
+    if (inLen < 1e-6 || outLen < 1e-6) {
+      commands.push({ op: commands.length === 0 ? 'M' : 'L', x: curr.x, y: curr.y });
+      continue;
+    }
+    const cut = Math.min(inLen, outLen) * 0.5;
+    const ax = curr.x - ((curr.x - prev.x) / inLen) * cut;
+    const ay = curr.y - ((curr.y - prev.y) / inLen) * cut;
+    const bx = curr.x + ((next.x - curr.x) / outLen) * cut;
+    const by = curr.y + ((next.y - curr.y) / outLen) * cut;
+    commands.push({ op: commands.length === 0 ? 'M' : 'L', x: ax, y: ay });
+    commands.push({ op: 'Q', cx: curr.x, cy: curr.y, x: bx, y: by });
+  }
+  return commands;
+}

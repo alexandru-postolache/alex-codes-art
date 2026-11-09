@@ -4,6 +4,8 @@ export const params = {
   cellSize: 72,
   paintMode: 'cells',
   brushSize: 1,
+  filled: true,
+  edges: 'straight',
   terrainColor: '#1d4f91',
   backgroundColor: '#f6f1e7',
   gridColor: '#241c14',

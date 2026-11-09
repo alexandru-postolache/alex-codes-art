@@ -8,8 +8,8 @@ import {
   maskFromFlags,
   parseSheet,
   sheetLayout,
-  solidPolygons,
   spriteCell,
+  terrainPaths,
   SQUARE_TILES,
   templateTileSize,
 } from './marching.js';
@@ -327,14 +327,45 @@ const sketch = (p) => {
   }
 
   function drawProcedural(g, corners, flags) {
-    if (!flags.some(Boolean)) return;
+    const paths = terrainPaths(corners, flags, params.edges === 'rounded');
+    if (!paths.length) return;
     const color = g.color(params.terrainColor).toString();
-    g.noStroke();
-    g.fill(color);
-    // Clipping the context restores its fill, and p5 will skip a repeated fill() after that.
-    g.drawingContext.fillStyle = color;
-    const polys = solidPolygons(corners, flags);
-    for (let i = 0; i < polys.length; i++) drawPoly(g, polys[i]);
+    const ctx = g.drawingContext;
+    ctx.save();
+    tracePath(ctx, corners);
+    ctx.clip();
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = outlineWeight(corners);
+    for (let i = 0; i < paths.length; i++) {
+      traceCommands(ctx, paths[i]);
+      if (params.filled) ctx.fill();
+      else ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function outlineWeight(corners) {
+    let min = Infinity;
+    for (let i = 0; i < corners.length; i++) {
+      const a = corners[i];
+      const b = corners[(i + 1) % corners.length];
+      min = Math.min(min, Math.hypot(b.x - a.x, b.y - a.y));
+    }
+    return Math.max(1.5, min * 0.07);
+  }
+
+  function traceCommands(ctx, commands) {
+    ctx.beginPath();
+    for (let i = 0; i < commands.length; i++) {
+      const cmd = commands[i];
+      if (cmd.op === 'M') ctx.moveTo(cmd.x, cmd.y);
+      else if (cmd.op === 'L') ctx.lineTo(cmd.x, cmd.y);
+      else ctx.quadraticCurveTo(cmd.cx, cmd.cy, cmd.x, cmd.y);
+    }
+    ctx.closePath();
   }
 
   function drawSprite(g, cell, mask, sheet) {

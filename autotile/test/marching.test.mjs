@@ -9,6 +9,7 @@ import {
   sheetLayout,
   solidPolygons,
   spriteCell,
+  terrainPaths,
   SQUARE_TILES,
   squarePlacement,
   templateTileSize,
@@ -41,6 +42,44 @@ test('square marching squares fills corners, edges, and opposite corners', () =>
   assert.equal(pointInPolygon(30, 20, edge[0]), false);
 
   const opposite = solidPolygons(corners, [true, false, true, false]);
+  assert.equal(opposite.length, 2);
+});
+
+test('rounded tiles curve every corner and stay inside the straight shape', () => {
+  const corners = [
+    { x: 0, y: 0 },
+    { x: 40, y: 0 },
+    { x: 40, y: 40 },
+    { x: 0, y: 40 },
+  ];
+  assert.equal(terrainPaths(corners, [false, false, false, false], true).length, 0);
+
+  const straight = terrainPaths(corners, [true, true, true, true], false);
+  assert.equal(straight.length, 1);
+  assert.ok(straight[0].every((cmd) => cmd.op === 'M' || cmd.op === 'L'));
+
+  const rounded = terrainPaths(corners, [true, true, true, true], true)[0];
+  assert.equal(rounded.filter((cmd) => cmd.op === 'Q').length, 4);
+  let x = 0;
+  let y = 0;
+  for (const cmd of rounded) {
+    if (cmd.op === 'M' || cmd.op === 'L') {
+      x = cmd.x;
+      y = cmd.y;
+    } else {
+      const mx = 0.25 * x + 0.5 * cmd.cx + 0.25 * cmd.x;
+      const my = 0.25 * y + 0.5 * cmd.cy + 0.25 * cmd.y;
+      assert.ok(mx >= -0.01 && mx <= 40.01 && my >= -0.01 && my <= 40.01);
+      assert.ok(mx > 0.5 && mx < 39.5 && my > 0.5 && my < 39.5);
+      x = cmd.x;
+      y = cmd.y;
+    }
+  }
+
+  const corner = terrainPaths(corners, [true, false, false, false], true);
+  assert.equal(corner.length, 1);
+  assert.equal(corner[0].filter((cmd) => cmd.op === 'Q').length, 3);
+  const opposite = terrainPaths(corners, [true, false, true, false], true);
   assert.equal(opposite.length, 2);
 });
 
