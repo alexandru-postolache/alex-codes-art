@@ -106,3 +106,344 @@ main {
   opacity: 0;
   visibility: hidden;
 }
+
+body.is-editing-tiles .keyboard-hints,
+body.is-editing-tiles .autotile-pane {
+  visibility: hidden;
+}
+
+.tileset-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(22, 18, 14, 0.62);
+  color: #f6f1e7;
+  font: 13px/1.4 system-ui, -apple-system, sans-serif;
+}
+
+.tileset-editor[hidden] {
+  display: none !important;
+}
+
+.tileset-editor__card {
+  display: flex;
+  flex-direction: column;
+  width: min(1120px, 100%);
+  height: min(780px, 100%);
+  overflow: hidden;
+  border-radius: 12px;
+  background: #241c16;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  outline: none;
+}
+
+.tileset-editor__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 248, 236, 0.08);
+}
+
+.tileset-editor__bar h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.tileset-editor__sub,
+.tileset-editor__status,
+.tileset-editor__message,
+.tileset-editor__note {
+  margin: 0;
+  color: #cbbba6;
+  font-size: 12px;
+}
+
+.tileset-editor__bar-actions,
+.tileset-editor__tool-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tileset-editor button,
+.tileset-editor select {
+  font: inherit;
+  color: inherit;
+  border: 1px solid rgba(255, 248, 236, 0.14);
+  border-radius: 6px;
+  background: #3a3128;
+  cursor: pointer;
+}
+
+.tileset-editor button {
+  padding: 6px 8px;
+}
+
+.tileset-editor button:hover,
+.tileset-editor select:hover {
+  background: #4a3f34;
+}
+
+.tileset-editor button.is-on {
+  background: #1d4f91;
+  border-color: #1d4f91;
+}
+
+.tileset-editor__use {
+  background: #1d4f91;
+  border-color: #1d4f91;
+  font-weight: 650;
+}
+
+.tileset-editor__body {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 232px;
+  flex: 1;
+  min-height: 0;
+}
+
+.tileset-editor__slots,
+.tileset-editor__tools {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+}
+
+.tileset-editor__slots {
+  border-right: 1px solid rgba(255, 248, 236, 0.08);
+}
+
+.tileset-editor__tools {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-left: 1px solid rgba(255, 248, 236, 0.08);
+}
+
+.tileset-editor__pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.tileset-editor__wide {
+  width: 100%;
+}
+
+.tileset-editor__group {
+  margin: 8px 0 4px;
+  color: #cbbba6;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tileset-editor__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tileset-editor__slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px;
+  text-align: left;
+  background: transparent;
+}
+
+.tileset-editor__slot canvas {
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 4px;
+  background: #efe8dc;
+  image-rendering: pixelated;
+}
+
+.tileset-editor__slot.is-selected {
+  background: rgba(228, 87, 46, 0.16);
+  border-color: #e4572e;
+}
+
+.tileset-editor__hex {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 3px;
+}
+
+.tileset-editor__hex .tileset-editor__slot {
+  padding: 1px;
+}
+
+.tileset-editor__hex .tileset-editor__slot canvas {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
+
+.tileset-editor__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.tileset-editor__stage {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  overflow: auto;
+  background: #1a1511;
+}
+
+.tileset-editor__frame {
+  position: relative;
+  flex: none;
+  touch-action: none;
+  background-color: #efe8dc;
+  background-image:
+    linear-gradient(45deg, #d9d0c3 25%, transparent 25%),
+    linear-gradient(-45deg, #d9d0c3 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #d9d0c3 75%),
+    linear-gradient(-45deg, transparent 75%, #d9d0c3 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  cursor: crosshair;
+}
+
+.tileset-editor__frame[data-tool='fill'] {
+  cursor: cell;
+}
+
+.tileset-editor__frame[data-tool='picker'] {
+  cursor: copy;
+}
+
+.tileset-editor__tile,
+.tileset-editor__guide,
+.tileset-editor__grid {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.tileset-editor__tile {
+  image-rendering: pixelated;
+}
+
+.tileset-editor__guide,
+.tileset-editor__grid {
+  pointer-events: none;
+}
+
+.tileset-editor__grid {
+  background-image:
+    linear-gradient(to right, rgba(28, 25, 21, 0.28) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(28, 25, 21, 0.28) 1px, transparent 1px);
+}
+
+.tileset-editor__below {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 8px 12px 0;
+}
+
+.tileset-editor__turns {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+}
+
+.tileset-editor__turns figure,
+.tileset-editor__preview-wrap {
+  margin: 0;
+  text-align: center;
+}
+
+.tileset-editor__turns canvas,
+.tileset-editor__preview {
+  display: block;
+  border-radius: 4px;
+  background: #efe8dc;
+  image-rendering: pixelated;
+}
+
+.tileset-editor__turns canvas {
+  width: 52px;
+  height: 52px;
+}
+
+.tileset-editor__turns figcaption,
+.tileset-editor__preview-wrap figcaption {
+  margin-top: 2px;
+  color: #cbbba6;
+  font-size: 10px;
+}
+
+.tileset-editor__preview {
+  width: 220px;
+  height: 140px;
+}
+
+.tileset-editor__status,
+.tileset-editor__message {
+  padding: 6px 14px 0;
+}
+
+.tileset-editor__message {
+  min-height: 1.2em;
+  padding-bottom: 8px;
+}
+
+.tileset-editor__field,
+.tileset-editor__check {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tileset-editor__field input[type='color'] {
+  width: 42px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.tileset-editor select {
+  padding: 4px 6px;
+}
+
+.tileset-editor__swatches {
+  display: flex;
+  gap: 6px;
+}
+
+.tileset-editor__swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.tileset-editor__tools button[hidden] {
+  display: none;
+}

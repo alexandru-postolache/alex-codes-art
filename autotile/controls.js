@@ -76,6 +76,7 @@ lookFolder.addBinding(params, 'gridAlpha', { label: 'grid alpha', min: 0, max: 1
 lookFolder.addBinding(params, 'showHints', { label: 'hints' });
 
 const tilesetFolder = pane.addFolder({ title: 'Tileset', expanded: true });
+tilesetFolder.addButton({ title: 'Edit tiles' }).on('click', () => window.autotileEditor?.open());
 tilesetBinding = tilesetFolder.addBinding(status, 'tileset', { readonly: true, label: 'sheet' });
 noteBinding = tilesetFolder.addBinding(status, 'note', {
   readonly: true,

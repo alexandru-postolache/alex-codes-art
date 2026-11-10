@@ -47,6 +47,8 @@ up          down
 
 Hexagon, 8×8, 64 tiles. Pointy grids start at the top corner. Flat grids start at the right corner. Then clockwise.
 
+**Edit tiles** opens a pixel editor for that sheet. Draw with the pencil, eraser, fill, and eyedropper. Right drag erases. **Shape behind** paints the marching shape under your pixels, and **Reset sheet to shapes** replaces the whole sheet with it. Square tiles show the four rotations they cover. The small preview places the sheet on a blob so you can see the seams before using it. **Use in autotile** sends the sheet to the painter. **Download PNG** saves it, and dropping that file on the canvas loads it again. **Load image** opens a sheet in the editor. Triangle sheets can copy the up row onto the down row, flipped.
+
 **Download template** saves a numbered guide: 6×1 for squares, 8×2 for triangles, and 8×8 for hexes. Empty cells are the background color, and each cell has a border and its index. **Use generated sheet** paints with those tiles and no numbers or borders. Square tiles are rotated to fit the other corner masks.
 
 Changing cell type does not throw the sheet away. It is used again when you switch back. Crisp pixels keeps uploaded pixel art from blurring.

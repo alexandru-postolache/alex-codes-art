@@ -1,4 +1,5 @@
 import './controls.js';
+import './editor.js';
 import { brushRadius, buildGrid, keysForPaint, pickCell, writeTerrain } from './grid.js';
 import {
   canonicalCorners,
@@ -145,6 +146,15 @@ const sketch = (p) => {
       useTemplate() {
         const graphics = makeTemplateGraphics();
         adoptCanvas(graphics.elt, graphics.width, graphics.height, 'Generated sheet', graphics);
+      },
+      adoptSheet(canvas, label = 'Edited tiles') {
+        return adoptCanvas(canvas, canvas.width, canvas.height, label, null);
+      },
+      currentSheet() {
+        if (!tileset) return null;
+        if (tileset.grid !== params.grid) return null;
+        if (params.grid === 'hex' && tileset.orientation !== params.hexOrientation) return null;
+        return { canvas: tileset.canvas, label: tileset.label };
       },
       downloadTemplate() {
         const graphics = makeTemplateGraphics(true);
@@ -538,7 +548,7 @@ const sketch = (p) => {
     if (!parsed) {
       if (hold?.remove) hold.remove();
       syncStatus(layoutHelp(params.grid));
-      return;
+      return false;
     }
     releaseTileset();
     tileset = {
@@ -554,6 +564,7 @@ const sketch = (p) => {
     dirty = true;
     syncStatus();
     p.redraw();
+    return true;
   }
 
   function loadTilesetFile(file) {
@@ -599,6 +610,7 @@ const sketch = (p) => {
   }
 
   function onKeyDown(event) {
+    if (document.body.classList.contains('is-editing-tiles')) return;
     const tag = event.target?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || event.target?.isContentEditable) return;
     const key = event.key.toLowerCase();
