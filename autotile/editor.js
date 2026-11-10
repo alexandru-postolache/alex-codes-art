@@ -1,7 +1,16 @@
 /** Pixel editor for the sheets the autotile painter accepts. */
 
 import { buildGrid } from './grid.js';
-import { layoutHelp, parseSheet, sheetLayout, spriteCell } from './marching.js';
+import {
+  canonicalCorners,
+  cornerCount,
+  drawSpriteImage,
+  layoutHelp,
+  parseSheet,
+  sheetLayout,
+  templateTileSize,
+  tilePlacement,
+} from './marching.js';
 import { params } from './params.js';
 import {
   EDITOR_PRESETS,
@@ -9,7 +18,7 @@ import {
   floodFill,
   paintShape,
   shapePaths,
-  squareTurnLabel,
+  SQUARE_MASK_LABELS,
   tileSlots,
 } from './tileset.js';
 
@@ -114,7 +123,6 @@ root.innerHTML = `
           <button type="button" data-act="flip-h">Flip horizontal</button>
           <button type="button" data-act="flip-v">Flip vertical</button>
           <button type="button" data-act="rotate">Rotate 90°</button>
-          <button type="button" data-act="mirror-down">Flip up row onto down row</button>
         </div>
         <p class="tileset-editor__note">Left drag draws. Right drag erases. Ctrl+Z undoes.</p>
       </aside>
@@ -253,29 +261,20 @@ function sync() {
 }
 
 function subtitle() {
-  if (params.grid === 'square') return 'Six tiles. The painter turns them in 90° steps.';
-  if (params.grid === 'triangle') return 'Eight up triangles, then eight down triangles.';
-  return `64 hex tiles, ${params.hexOrientation} grid.`;
+  if (params.grid === 'square') return 'Six tiles. Rotation and reflection cover all 16 masks.';
+  if (params.grid === 'triangle') return 'Four tiles. Turns by 120°. Down triangles flip this row.';
+  return `13 hex tiles, ${params.hexOrientation}. Rotation and reflection cover all 64 masks.`;
 }
 
 function buildSlots(sheet) {
   const aside = root.querySelector('.tileset-editor__slots');
   aside.replaceChildren();
   const slots = tileSlots(params.grid);
-  const hex = params.grid === 'hex';
   const host = document.createElement('div');
-  host.className = hex ? 'tileset-editor__hex' : 'tileset-editor__list';
+  host.className = 'tileset-editor__list';
   aside.appendChild(host);
-  let lastRow = -1;
   for (let i = 0; i < slots.length; i++) {
     const slot = slots[i];
-    if (!hex && params.grid === 'triangle' && slot.row !== lastRow) {
-      lastRow = slot.row;
-      const heading = document.createElement('p');
-      heading.className = 'tileset-editor__group';
-      heading.textContent = slot.variant === 'down' ? 'Down' : 'Up';
-      host.appendChild(heading);
-    }
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'tileset-editor__slot';
@@ -286,12 +285,9 @@ function buildSlots(sheet) {
     thumb.width = 48;
     thumb.height = 48;
     thumb.dataset.thumb = String(slot.index);
-    button.appendChild(thumb);
-    if (!hex) {
-      const label = document.createElement('span');
-      label.textContent = slot.name;
-      button.appendChild(label);
-    }
+    const label = document.createElement('span');
+    label.textContent = slot.name;
+    button.append(thumb, label);
     host.appendChild(button);
   }
   paintThumbs(sheet);
@@ -317,7 +313,6 @@ function markSelected(sheet) {
 
 function syncTools(sheet) {
   root.querySelector('[data-act="rotate"]').hidden = params.grid !== 'square';
-  root.querySelector('[data-act="mirror-down"]').hidden = params.grid !== 'triangle';
   const presets = root.querySelectorAll('[data-preset]');
   for (let i = 0; i < presets.length; i++) {
     const px = Number(presets[i].dataset.preset);
@@ -385,41 +380,80 @@ function drawGuide(sheet) {
   }
 }
 
+function tileUses(index) {
+  const bits = cornerCount(params.grid);
+  const variants = params.grid === 'triangle' ? ['up', 'down'] : ['up'];
+  const uses = [];
+  for (let v = 0; v < variants.length; v++) {
+    for (let mask = 0; mask < (1 << bits); mask++) {
+      const place = tilePlacement(params.grid, mask, variants[v], params.hexOrientation);
+      if (place.index !== index) continue;
+      uses.push({ mask, variant: variants[v], ...place });
+    }
+  }
+  return uses;
+}
+
 function drawRotations(sheet) {
   const host = root.querySelector('.tileset-editor__turns');
-  if (params.grid !== 'square') {
-    host.hidden = true;
-    return;
-  }
-  host.hidden = false;
-  if (host.childElementCount !== 4) {
+  const uses = tileUses(sheet.selected);
+  const signature = uses.map((use) => `${use.variant}:${use.mask}`).join('|');
+  if (host.dataset.signature !== signature) {
+    host.dataset.signature = signature;
     host.replaceChildren();
-    for (let turns = 0; turns < 4; turns++) {
+    for (let i = 0; i < uses.length; i++) {
       const fig = document.createElement('figure');
       const canvas = document.createElement('canvas');
-      canvas.width = 64;
-      canvas.height = 64;
       const cap = document.createElement('figcaption');
       fig.append(canvas, cap);
       host.appendChild(fig);
     }
   }
-  const slot = tileSlots('square')[sheet.selected];
+  host.hidden = false;
   const tile = sheet.tiles[sheet.selected];
+  const base = templateTileSize(params.grid, params.hexOrientation);
+  const scale = 40 / Math.max(base.tileW, base.tileH);
+  const w = Math.max(8, Math.round(base.tileW * scale));
+  const h = Math.max(8, Math.round(base.tileH * scale));
   const figures = host.children;
-  for (let turns = 0; turns < 4; turns++) {
-    const canvas = figures[turns].querySelector('canvas');
+  for (let i = 0; i < uses.length; i++) {
+    const use = uses[i];
+    const canvas = figures[i].querySelector('canvas');
+    canvas.width = w;
+    canvas.height = h;
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = params.backgroundColor;
-    ctx.fillRect(0, 0, 64, 64);
-    ctx.save();
-    ctx.translate(32, 32);
-    ctx.rotate((turns * Math.PI) / 2);
-    ctx.drawImage(tile, -32, -32, 64, 64);
-    ctx.restore();
-    figures[turns].querySelector('figcaption').textContent = squareTurnLabel(slot.mask, turns);
+    ctx.fillRect(0, 0, w, h);
+    const corners = canonicalCorners(params.grid, params.hexOrientation, w, h, use.variant);
+    drawSpriteImage(ctx, tile, 0, 0, tile.width, tile.height, {
+      type: params.grid,
+      variant: use.variant,
+      corners,
+      bbox: boxOf(corners),
+    }, use);
+    figures[i].querySelector('figcaption').textContent = useLabel(use);
   }
+}
+
+function boxOf(corners) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < corners.length; i++) {
+    minX = Math.min(minX, corners[i].x);
+    minY = Math.min(minY, corners[i].y);
+    maxX = Math.max(maxX, corners[i].x);
+    maxY = Math.max(maxY, corners[i].y);
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+function useLabel(use) {
+  if (params.grid === 'square') return SQUARE_MASK_LABELS[use.mask] || String(use.mask);
+  if (params.grid === 'triangle') return `${use.variant === 'down' ? 'Down' : 'Up'} ${use.mask}`;
+  return String(use.mask);
 }
 
 function paintThumbs(sheet, index = -1) {
@@ -505,28 +539,12 @@ function compose(sheet) {
 }
 
 function blitSprite(ctx, sheetCanvas, parsed, cell, mask) {
-  const loc = spriteCell(parsed, cell.type, mask, cell.variant);
-  const sx = loc.col * parsed.tileW;
-  const sy = loc.row * parsed.tileH;
-  const box = cell.bbox;
+  const loc = tilePlacement(cell.type, mask, cell.variant, params.hexOrientation);
+  const sx = loc.index * parsed.tileW;
+  const sy = 0;
   ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(cell.corners[0].x, cell.corners[0].y);
-  for (let i = 1; i < cell.corners.length; i++) ctx.lineTo(cell.corners[i].x, cell.corners[i].y);
-  ctx.closePath();
-  ctx.clip();
   ctx.imageSmoothingEnabled = false;
-  if (loc.turns) {
-    ctx.translate(box.x + box.w / 2, box.y + box.h / 2);
-    ctx.rotate((loc.turns * Math.PI) / 2);
-    ctx.drawImage(sheetCanvas, sx, sy, parsed.tileW, parsed.tileH, -box.w / 2, -box.h / 2, box.w, box.h);
-  } else if (loc.flipY) {
-    ctx.translate(box.x, box.y + box.h);
-    ctx.scale(box.w / parsed.tileW, -(box.h / parsed.tileH));
-    ctx.drawImage(sheetCanvas, sx, sy, parsed.tileW, parsed.tileH, 0, 0, parsed.tileW, parsed.tileH);
-  } else {
-    ctx.drawImage(sheetCanvas, sx, sy, parsed.tileW, parsed.tileH, box.x, box.y, box.w, box.h);
-  }
+  drawSpriteImage(ctx, sheetCanvas, sx, sy, parsed.tileW, parsed.tileH, cell, loc);
   ctx.restore();
 }
 
@@ -681,26 +699,6 @@ function rotateTile() {
   ctx.drawImage(copy, -tile.width / 2, -tile.height / 2);
   ctx.restore();
   refreshArt(sheet, sheet.selected);
-}
-
-function mirrorDown() {
-  if (params.grid !== 'triangle') return;
-  const sheet = currentSheet();
-  const slots = tileSlots('triangle');
-  snapshot(sheet, slots.filter((slot) => slot.variant === 'down').map((slot) => slot.index));
-  for (let i = 0; i < slots.length; i++) {
-    if (slots[i].variant !== 'down') continue;
-    const down = sheet.tiles[i];
-    const ctx = tileContext(down);
-    ctx.clearRect(0, 0, down.width, down.height);
-    ctx.save();
-    ctx.translate(0, down.height);
-    ctx.scale(1, -1);
-    ctx.drawImage(sheet.tiles[i - 8], 0, 0);
-    ctx.restore();
-  }
-  refreshArt(sheet);
-  setMessage('Down triangles are the up row, flipped.');
 }
 
 function setPreset(px) {
@@ -917,7 +915,6 @@ function onClick(event) {
   else if (name === 'flip-h') flip('h');
   else if (name === 'flip-v') flip('v');
   else if (name === 'rotate') rotateTile();
-  else if (name === 'mirror-down') mirrorDown();
   else if (name === 'load') fileInput.click();
   else if (name === 'load-current') loadCurrent();
 }
@@ -957,9 +954,7 @@ function downloadSheet() {
 function adoptImage(image, width, height, label) {
   const parsed = parseSheet(params.grid, width, height, params.hexOrientation);
   if (!parsed || parsed.mode !== 'full') {
-    setMessage(parsed?.mode === 'flip-down'
-      ? 'That triangle image is one row. Load an 8×2 sheet so the down tiles have their own pictures.'
-      : layoutHelp(params.grid));
+    setMessage(layoutHelp(params.grid));
     return false;
   }
   const selected = sheets.get(sheetKey())?.selected || 0;

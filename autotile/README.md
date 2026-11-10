@@ -26,7 +26,9 @@ Filled corners meet at the midpoint of each mixed edge. **Fill** paints the shap
 
 Corner bits run clockwise. Bit 0 is the first corner listed below.
 
-Square sheets are one row of 6 tiles. The painter turns a tile clockwise in 90° steps, so these six cover all 16 corner masks. Bit 0 is the top-left:
+Each cell type has one sheet. The painter rotates and reflects those tiles, so you draw only the distinct shapes.
+
+Square sheets are one row of 6 tiles. Bit 0 is the top-left:
 
 ```
 0---1
@@ -34,22 +36,21 @@ Square sheets are one row of 6 tiles. The painter turns a tile clockwise in 90°
 3---2
 ```
 
-The row, left to right: empty, top-left corner, top edge, opposite corners, three corners (all but the bottom-left), and the full cell.
+The row, left to right: empty, top-left corner, top edge, opposite corners, three corners (all but the bottom-left), and the full cell. Turns of 90° and mirrors cover all 16 masks.
 
-Triangle, 8×2. Row 0 points up, row 1 points down. Bit 0 is the apex. A single row of 8 up triangles also works: down triangles use that row flipped.
+Triangle sheets are one row of 4 up triangles: empty, one corner, two corners, and full. Bit 0 is the apex, then clockwise. Turns of 120° cover the other corners. Down triangles flip that row.
 
 ```
-up          down
-    0        2---1
-   / \        \ /
-  2---1        0
+    0
+   / \
+  2---1
 ```
 
-Hexagon, 8×8, 64 tiles. Pointy grids start at the top corner. Flat grids start at the right corner. Then clockwise.
+Hex sheets are one row of 13 tiles. Bit 0 is the top corner on a pointy grid, or the right corner on a flat grid, then clockwise. Rotation and reflection cover all 64 masks.
 
-**Edit tiles** opens a pixel editor for that sheet. Draw with the pencil, eraser, fill, and eyedropper. Right drag erases. **Shape behind** paints the marching shape under your pixels, and **Reset sheet to shapes** replaces the whole sheet with it. Square tiles show the four rotations they cover. The small preview places the sheet on a blob so you can see the seams before using it. **Use in autotile** sends the sheet to the painter. **Download PNG** saves it, and dropping that file on the canvas loads it again. **Load image** opens a sheet in the editor. Triangle sheets can copy the up row onto the down row, flipped.
+**Edit tiles** opens a pixel editor for that same sheet. Draw with the pencil, eraser, fill, and eyedropper. Right drag erases. **Shape behind** paints the marching shape under your pixels, and **Reset sheet to shapes** replaces the whole sheet with it. The strip under the canvas shows every rotation, reflection, and triangle flip of the selected tile. The small preview places the sheet on a blob. **Use in autotile** sends the sheet to the painter. **Download PNG** saves it, and dropping that file on the canvas loads it again. **Load image** opens a sheet in the editor.
 
-**Download template** saves a numbered guide: 6×1 for squares, 8×2 for triangles, and 8×8 for hexes. Empty cells are the background color, and each cell has a border and its index. **Use generated sheet** paints with those tiles and no numbers or borders. Square tiles are rotated to fit the other corner masks.
+**Download template** saves a numbered guide in that same layout: 6×1 for squares, 4×1 for triangles, and 13×1 for hexes. Empty cells are the background color, and each cell has a border and its index. **Use generated sheet** paints with those tiles and no numbers or borders.
 
 Changing cell type does not throw the sheet away. It is used again when you switch back. Crisp pixels keeps uploaded pixel art from blurring.
 

@@ -11,10 +11,11 @@ import {
   externalContours,
   sheetLayout,
   solidPolygons,
-  spriteCell,
+  drawSpriteImage,
   terrainPaths,
-  SQUARE_TILES,
   templateTileSize,
+  tileMasks,
+  tilePlacement,
 } from './marching.js';
 import { params } from './params.js';
 
@@ -165,11 +166,8 @@ const sketch = (p) => {
         link.click();
         graphics.remove();
         const layout = sheetLayout(params.grid);
-        const squareNote = params.grid === 'square'
-          ? ' Tiles 0–5 are empty, corner, edge, opposite corners, three corners, and full. The painter rotates them.'
-          : '';
         syncStatus(
-          `Saved a ${layout.cols}×${layout.rows} guide. Tiles are numbered 0–${layout.count - 1}, left to right.${squareNote} Borders and numbers are drawn on the sheet.`
+          `Saved a ${layout.cols}×${layout.rows} guide. These ${layout.count} tiles rotate and reflect to cover every mask. Borders and numbers are drawn on the sheet.`
         );
       },
       clearTileset() {
@@ -406,28 +404,22 @@ const sketch = (p) => {
   }
 
   function drawSprite(g, cell, mask, sheet) {
-    const loc = spriteCell(sheet.parsed, cell.type, mask, cell.variant);
-    const sx = loc.col * sheet.parsed.tileW;
-    const sy = loc.row * sheet.parsed.tileH;
-    const sw = sheet.parsed.tileW;
-    const sh = sheet.parsed.tileH;
-    const box = cell.bbox;
+    const loc = tilePlacement(cell.type, mask, cell.variant, params.hexOrientation);
+    const col = loc.index % sheet.parsed.cols;
+    const row = Math.floor(loc.index / sheet.parsed.cols);
     const ctx = g.drawingContext;
     ctx.save();
     ctx.imageSmoothingEnabled = !params.crispPixels;
-    tracePath(ctx, cell.corners);
-    ctx.clip();
-    if (loc.turns) {
-      ctx.translate(box.x + box.w / 2, box.y + box.h / 2);
-      ctx.rotate((loc.turns * Math.PI) / 2);
-      ctx.drawImage(sheet.canvas, sx, sy, sw, sh, -box.w / 2, -box.h / 2, box.w, box.h);
-    } else if (loc.flipY) {
-      ctx.translate(box.x, box.y + box.h);
-      ctx.scale(box.w / sw, -(box.h / sh));
-      ctx.drawImage(sheet.canvas, sx, sy, sw, sh, 0, 0, sw, sh);
-    } else {
-      ctx.drawImage(sheet.canvas, sx, sy, sw, sh, box.x, box.y, box.w, box.h);
-    }
+    drawSpriteImage(
+      ctx,
+      sheet.canvas,
+      col * sheet.parsed.tileW,
+      row * sheet.parsed.tileH,
+      sheet.parsed.tileW,
+      sheet.parsed.tileH,
+      cell,
+      loc,
+    );
     ctx.restore();
   }
 
@@ -499,8 +491,8 @@ const sketch = (p) => {
     for (let row = 0; row < layout.rows; row++) {
       for (let col = 0; col < layout.cols; col++) {
         const slot = row * layout.cols + col;
-        const mask = params.grid === 'square' ? SQUARE_TILES[slot] : params.grid === 'triangle' ? col : slot;
-        const variant = params.grid === 'triangle' && row === 1 ? 'down' : 'up';
+        const mask = tileMasks(params.grid)[slot];
+        const variant = 'up';
         const x = col * tileW;
         const y = row * tileH;
         if (guides) {

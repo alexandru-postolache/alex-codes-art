@@ -20,12 +20,6 @@ export function cornerCount(type) {
   return 4;
 }
 
-/**
- * Square sheet, left to right. Each later mask is this tile turned clockwise by 90°.
- * 0 empty, 1 top-left corner, 3 top edge, 5 opposite corners, 7 three corners, 15 full.
- */
-export const SQUARE_TILES = [0, 1, 3, 5, 7, 15];
-
 /** Move each set corner clockwise by `turns` steps. */
 export function rotateMask(mask, turns, bits = 4) {
   const k = ((turns % bits) + bits) % bits;
@@ -36,36 +30,52 @@ export function rotateMask(mask, turns, bits = 4) {
   return out;
 }
 
+const placementCache = new Map();
+
+/**
+ * One sheet per cell type. Each entry is the lowest mask in its rotation
+ * and reflection orbit. The painter turns and mirrors these to cover every mask.
+ * Square: empty, corner, edge, opposite corners, three corners, full.
+ * Triangle: empty, one corner, two corners, full. Down cells flip the up tile.
+ * Hex: the 13 dihedral orbits of a 6-bit mask.
+ */
+export function tileMasks(type) {
+  return placements(type, 'pointy').masks;
+}
+
+/** Square sheet order. Same masks as tileMasks('square'). */
+export const SQUARE_TILES = [0, 1, 3, 5, 7, 15];
+
+/** Which canonical tile and transform draw this mask. */
+export function tilePlacement(type, mask, variant = 'up', orientation = 'pointy') {
+  const table = placements(type, orientation).table;
+  const key = type === 'triangle' && variant === 'down' ? mask + (1 << 3) : mask;
+  return table[key] || { index: 0, turns: 0, reflect: false, flipY: false };
+}
+
 /** Which of the six square tiles to draw, and how many clockwise quarter-turns to apply. */
 export function squarePlacement(mask) {
-  for (let index = 0; index < SQUARE_TILES.length; index++) {
-    for (let turns = 0; turns < 4; turns++) {
-      if (rotateMask(SQUARE_TILES[index], turns) === mask) return { index, turns };
-    }
-  }
-  return { index: 0, turns: 0 };
+  const place = tilePlacement('square', mask, 'up', 'pointy');
+  return { index: place.index, turns: place.turns };
 }
 
 /**
- * Sheet layout for an uploaded tileset.
- * Square: 6×1. The painter rotates these six tiles to cover all 16 corner masks.
- * Triangle: 8×2, row 0 points up, row 1 points down. Bit 0 is the apex, then clockwise.
- * Hex: 8×8. Bit 0 is the top corner (pointy) or the right corner (flat), then clockwise.
+ * Sheet layout for an uploaded tileset. One row, the same tiles the editor saves.
+ * Square 6×1, triangle 4×1, hex 13×1.
  */
 export function sheetLayout(type) {
-  if (type === 'triangle') return { cols: 8, rows: 2, count: 16, masks: 8 };
-  if (type === 'hex') return { cols: 8, rows: 8, count: 64, masks: 64 };
-  return { cols: 6, rows: 1, count: 6, masks: 6 };
+  const count = tileMasks(type).length;
+  return { cols: count, rows: 1, count, masks: count };
 }
 
 export function layoutHelp(type) {
   if (type === 'triangle') {
-    return 'Use an 8×2 sheet (up triangles, then down) or a single row of 8 up triangles. Bit 0 is the apex, then clockwise.';
+    return 'Use one row of 4 up triangles: empty, one corner, two corners, full. They rotate by 120°. Down triangles flip that row.';
   }
   if (type === 'hex') {
-    return 'Use an 8×8 sheet, 64 tiles. Bit 0 is the top corner (pointy) or the right corner (flat), then clockwise.';
+    return 'Use one row of 13 hex tiles. Rotation and reflection cover all 64 masks. Bit 0 is the top corner (pointy) or the right corner (flat), then clockwise.';
   }
-  return 'Use one row of 6 square tiles. They rotate by 90°: empty, top-left corner, top edge, opposite corners, three corners, full.';
+  return 'Use one row of 6 square tiles: empty, corner, edge, opposite corners, three corners, full. Rotation and reflection cover all 16 masks.';
 }
 
 export function templateTileSize(type, orientation) {
@@ -146,79 +156,202 @@ function aspectClose(actual, expected) {
 export function parseSheet(type, width, height, orientation = 'pointy') {
   const layout = sheetLayout(type);
   const expected = expectedTileAspect(type, orientation);
-  const fullFits = divides(width, layout.cols) && divides(height, layout.rows);
-  const fullW = fullFits ? width / layout.cols : 0;
-  const fullH = fullFits ? height / layout.rows : 0;
-  const fullAspect = fullFits ? fullH / fullW : 0;
-  const fullClose = fullFits && aspectClose(fullAspect, expected);
-
-  if (type === 'triangle') {
-    const stripFits = divides(width, 8) && height >= 2;
-    const stripW = stripFits ? width / 8 : 0;
-    const stripAspect = stripFits ? height / stripW : 0;
-    const stripClose = stripFits && aspectClose(stripAspect, expected);
-    if (fullClose && (!stripClose || Math.abs(fullAspect - expected) <= Math.abs(stripAspect - expected))) {
-      return { ...layout, tileW: fullW, tileH: fullH, mode: 'full' };
-    }
-    if (stripClose) {
-      return {
-        cols: 8,
-        rows: 1,
-        count: 8,
-        masks: 8,
-        tileW: stripW,
-        tileH: height,
-        mode: 'flip-down',
-      };
-    }
-  }
-
-  if (fullClose) {
-    return { ...layout, tileW: fullW, tileH: fullH, mode: 'full' };
-  }
-
-  const masks = layout.masks;
-  if (divides(width, masks) && height >= 2) {
-    const tileW = width / masks;
-    const tileAspect = height / tileW;
-    if (aspectClose(tileAspect, expected)) {
-      return {
-        cols: masks,
-        rows: 1,
-        count: masks,
-        masks,
-        tileW,
-        tileH: height,
-        mode: 'strip',
-      };
-    }
-  }
-
-  return null;
+  if (!divides(width, layout.cols) || !divides(height, layout.rows)) return null;
+  const tileW = width / layout.cols;
+  const tileH = height / layout.rows;
+  if (!aspectClose(tileH / tileW, expected)) return null;
+  return { ...layout, tileW, tileH, mode: 'full' };
 }
 
-export function spriteCell(parsed, type, mask, variant) {
-  if (type === 'triangle' && parsed.mode === 'flip-down') {
-    return { col: mask, row: 0, flipY: variant === 'down', turns: 0 };
-  }
-  if (type === 'triangle') {
-    return { col: mask, row: variant === 'down' ? 1 : 0, flipY: false, turns: 0 };
-  }
-  if (type === 'square') {
-    const place = squarePlacement(mask);
-    return {
-      col: place.index % parsed.cols,
-      row: Math.floor(place.index / parsed.cols),
-      flipY: false,
-      turns: place.turns,
-    };
-  }
+export function spriteCell(parsed, type, mask, variant, orientation = 'pointy') {
+  const place = tilePlacement(type, mask, variant, orientation);
   return {
-    col: mask % parsed.cols,
-    row: Math.floor(mask / parsed.cols),
-    flipY: false,
-    turns: 0,
+    col: place.index % parsed.cols,
+    row: Math.floor(place.index / parsed.cols),
+    flipY: place.flipY,
+    reflect: place.reflect,
+    turns: place.turns,
   };
+}
+
+/**
+ * Where to draw a tile image so its corners land on the cell.
+ * The anchor is the source art's centroid. Triangle art is stored pointing up;
+ * a down cell flips it around that centroid.
+ */
+export function spriteDraw(cell, loc) {
+  const n = cell.corners.length;
+  let cx = 0;
+  let cy = 0;
+  for (let i = 0; i < n; i++) {
+    cx += cell.corners[i].x;
+    cy += cell.corners[i].y;
+  }
+  const box = cell.bbox;
+  const anchorY = cell.type === 'triangle' ? (box.h * 2) / 3 : box.h / 2;
+  return {
+    cx: cx / n,
+    cy: cy / n,
+    angle: (loc.turns * 2 * Math.PI) / n,
+    reflect: !!loc.reflect,
+    flipY: !!loc.flipY,
+    x: -box.w / 2,
+    y: -anchorY,
+    w: box.w,
+    h: box.h,
+  };
+}
+
+export function drawSpriteImage(ctx, image, sx, sy, sw, sh, cell, loc) {
+  const draw = spriteDraw(cell, loc);
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cell.corners[0].x, cell.corners[0].y);
+  for (let i = 1; i < cell.corners.length; i++) ctx.lineTo(cell.corners[i].x, cell.corners[i].y);
+  ctx.closePath();
+  ctx.clip();
+  ctx.translate(draw.cx, draw.cy);
+  if (draw.angle) ctx.rotate(draw.angle);
+  if (draw.reflect) ctx.scale(-1, 1);
+  if (draw.flipY) ctx.scale(1, -1);
+  ctx.drawImage(image, sx, sy, sw, sh, draw.x, draw.y, draw.w, draw.h);
+  ctx.restore();
+}
+
+function sampleBox(type, orientation) {
+  if (type === 'triangle') return { w: 2, h: Math.sqrt(3) };
+  if (type === 'hex') {
+    return orientation === 'flat' ? { w: 2, h: Math.sqrt(3) } : { w: Math.sqrt(3), h: 2 };
+  }
+  return { w: 2, h: 2 };
+}
+
+function centroid(points) {
+  let x = 0;
+  let y = 0;
+  for (let i = 0; i < points.length; i++) {
+    x += points[i].x;
+    y += points[i].y;
+  }
+  return { x: x / points.length, y: y / points.length };
+}
+
+function mapPoint(point, fromCenter, toCenter, reflect, flipY, turns, bits) {
+  let x = point.x - fromCenter.x;
+  let y = point.y - fromCenter.y;
+  if (flipY) y = -y;
+  if (reflect) x = -x;
+  const theta = (turns * 2 * Math.PI) / bits;
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+  return {
+    x: toCenter.x + x * cos - y * sin,
+    y: toCenter.y + x * sin + y * cos,
+  };
+}
+
+function cornerPermutation(type, orientation, transform) {
+  const box = sampleBox(type, orientation);
+  const variant = transform.flipY ? 'down' : 'up';
+  const source = canonicalCorners(type, orientation, box.w, box.h, 'up');
+  const target = canonicalCorners(type, orientation, box.w, box.h, variant);
+  const from = centroid(source);
+  const to = centroid(target);
+  const bits = source.length;
+  const perm = new Array(bits);
+  const used = new Array(bits).fill(false);
+  for (let i = 0; i < bits; i++) {
+    const moved = mapPoint(source[i], from, to, transform.reflect, transform.flipY, transform.turns, bits);
+    let best = -1;
+    let bestD = Infinity;
+    for (let j = 0; j < bits; j++) {
+      const d = (moved.x - target[j].x) ** 2 + (moved.y - target[j].y) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = j;
+      }
+    }
+    if (best < 0 || bestD > 1e-6 || used[best]) return null;
+    used[best] = true;
+    perm[i] = best;
+  }
+  return perm;
+}
+
+function applyPerm(mask, perm) {
+  let out = 0;
+  for (let i = 0; i < perm.length; i++) {
+    if ((mask & (1 << i)) !== 0) out |= 1 << perm[i];
+  }
+  return out;
+}
+
+function placements(type, orientation) {
+  const key = `${type}:${type === 'hex' ? orientation : 'pointy'}`;
+  const cached = placementCache.get(key);
+  if (cached) return cached;
+
+  const bits = cornerCount(type);
+  const orient = type === 'hex' ? orientation : 'pointy';
+  const transforms = [];
+  for (const flipY of type === 'triangle' ? [false, true] : [false]) {
+    for (const reflect of [false, true]) {
+      for (let turns = 0; turns < bits; turns++) transforms.push({ flipY, reflect, turns });
+    }
+  }
+  const perms = transforms.map((transform) => ({
+    transform,
+    perm: cornerPermutation(type, orient, transform),
+  })).filter((entry) => entry.perm);
+
+  const total = 1 << bits;
+  const seen = new Array(total).fill(false);
+  const masks = [];
+  for (let mask = 0; mask < total; mask++) {
+    if (seen[mask]) continue;
+    let best = mask;
+    const stack = [mask];
+    seen[mask] = true;
+    while (stack.length) {
+      const current = stack.pop();
+      if (current < best) best = current;
+      for (let i = 0; i < perms.length; i++) {
+        if (perms[i].transform.flipY) continue;
+        const next = applyPerm(current, perms[i].perm);
+        if (!seen[next]) {
+          seen[next] = true;
+          stack.push(next);
+        }
+      }
+    }
+    masks.push(best);
+  }
+  masks.sort((a, b) => a - b);
+
+  const variants = type === 'triangle' ? ['up', 'down'] : ['up'];
+  const table = new Array(type === 'triangle' ? total * 2 : total);
+  for (let v = 0; v < variants.length; v++) {
+    const flipY = variants[v] === 'down';
+    for (let index = 0; index < masks.length; index++) {
+      for (let i = 0; i < perms.length; i++) {
+        const transform = perms[i].transform;
+        if (transform.flipY !== flipY) continue;
+        const produced = applyPerm(masks[index], perms[i].perm);
+        const slot = flipY ? produced + total : produced;
+        if (table[slot]) continue;
+        table[slot] = {
+          index,
+          turns: transform.turns,
+          reflect: transform.reflect,
+          flipY,
+        };
+      }
+    }
+  }
+
+  const value = { masks, table };
+  placementCache.set(key, value);
+  return value;
 }
 
 function midpoint(a, b) {

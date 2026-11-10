@@ -3,6 +3,8 @@ import test from 'node:test';
 import { pointInPolygon } from '../geometry.js';
 import { buildGrid, keysForPaint, writeTerrain } from '../grid.js';
 import {
+  canonicalCorners,
+  cornerCount,
   maskFromFlags,
   parseSheet,
   rotateMask,
@@ -14,6 +16,8 @@ import {
   SQUARE_TILES,
   squarePlacement,
   templateTileSize,
+  tileMasks,
+  tilePlacement,
 } from '../marching.js';
 
 function flagsOf(cell, terrain) {
@@ -213,22 +217,80 @@ test('tileset sheets match the generated template size', () => {
   for (let mask = 0; mask < 16; mask++) {
     const place = squarePlacement(mask);
     assert.equal(rotateMask(SQUARE_TILES[place.index], place.turns), mask);
+    assert.equal(place.reflect, undefined);
     assert.deepEqual(spriteCell(six, 'square', mask), {
       col: place.index,
       row: 0,
       flipY: false,
+      reflect: false,
       turns: place.turns,
     });
   }
   assert.deepEqual(SQUARE_TILES, [0, 1, 3, 5, 7, 15]);
+  assert.deepEqual(tileMasks('square'), SQUARE_TILES);
+  assert.deepEqual(tileMasks('triangle'), [0, 1, 3, 7]);
+  assert.equal(tileMasks('hex').length, 13);
 
-  const upOnly = templateTileSize('triangle', 'pointy');
-  const flip = parseSheet('triangle', upOnly.tileW * 8, upOnly.tileH, 'pointy');
-  assert.equal(flip.mode, 'flip-down');
-  assert.deepEqual(spriteCell(flip, 'triangle', 3, 'down'), { col: 3, row: 0, flipY: true, turns: 0 });
-  assert.deepEqual(spriteCell(flip, 'triangle', 3, 'up'), { col: 3, row: 0, flipY: false, turns: 0 });
-
-  const full = parseSheet('triangle', upOnly.tileW * 8, upOnly.tileH * 2, 'pointy');
-  assert.deepEqual(spriteCell(full, 'triangle', 5, 'down'), { col: 5, row: 1, flipY: false, turns: 0 });
+  const hex = templateTileSize('hex', 'pointy');
+  assert.equal(parseSheet('hex', hex.tileW * 8, hex.tileH * 8, 'pointy'), null);
   assert.equal(parseSheet('hex', 100, 40, 'pointy'), null);
+});
+
+test('rotation and reflection place every mask on a canonical tile', () => {
+  function sampleBox(type, orientation) {
+    if (type === 'triangle') return { w: 2, h: Math.sqrt(3) };
+    if (type === 'hex') return orientation === 'flat' ? { w: 2, h: Math.sqrt(3) } : { w: Math.sqrt(3), h: 2 };
+    return { w: 2, h: 2 };
+  }
+  function centroid(points) {
+    let x = 0;
+    let y = 0;
+    for (let i = 0; i < points.length; i++) {
+      x += points[i].x;
+      y += points[i].y;
+    }
+    return { x: x / points.length, y: y / points.length };
+  }
+
+  for (const type of ['square', 'triangle', 'hex']) {
+    for (const orientation of type === 'hex' ? ['pointy', 'flat'] : ['pointy']) {
+      const bits = cornerCount(type);
+      const variants = type === 'triangle' ? ['up', 'down'] : ['up'];
+      const box = sampleBox(type, orientation);
+      const masks = tileMasks(type);
+      for (const variant of variants) {
+        for (let mask = 0; mask < (1 << bits); mask++) {
+          const place = tilePlacement(type, mask, variant, orientation);
+          assert.ok(place.index >= 0 && place.index < masks.length, `${type} ${mask}`);
+          const source = canonicalCorners(type, orientation, box.w, box.h, 'up');
+          const target = canonicalCorners(type, orientation, box.w, box.h, variant);
+          const from = centroid(source);
+          const to = centroid(target);
+          const canon = masks[place.index];
+          for (let i = 0; i < bits; i++) {
+            let x = source[i].x - from.x;
+            let y = source[i].y - from.y;
+            if (place.flipY) y = -y;
+            if (place.reflect) x = -x;
+            const theta = (place.turns * 2 * Math.PI) / bits;
+            const moved = {
+              x: to.x + x * Math.cos(theta) - y * Math.sin(theta),
+              y: to.y + x * Math.sin(theta) + y * Math.cos(theta),
+            };
+            let best = -1;
+            let bestD = Infinity;
+            for (let j = 0; j < bits; j++) {
+              const d = (moved.x - target[j].x) ** 2 + (moved.y - target[j].y) ** 2;
+              if (d < bestD) {
+                bestD = d;
+                best = j;
+              }
+            }
+            assert.ok(bestD < 1e-8, `${type} ${orientation} ${variant} ${mask} corner ${i}`);
+            assert.equal(((canon >> i) & 1), ((mask >> best) & 1));
+          }
+        }
+      }
+    }
+  }
 });

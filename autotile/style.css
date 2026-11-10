@@ -366,8 +366,13 @@ body.is-editing-tiles .autotile-pane {
 
 .tileset-editor__turns {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  max-width: 460px;
+  max-height: 108px;
   margin: 0;
+  overflow: auto;
 }
 
 .tileset-editor__turns figure,
@@ -385,8 +390,8 @@ body.is-editing-tiles .autotile-pane {
 }
 
 .tileset-editor__turns canvas {
-  width: 52px;
-  height: 52px;
+  width: 40px;
+  height: auto;
 }
 
 .tileset-editor__turns figcaption,

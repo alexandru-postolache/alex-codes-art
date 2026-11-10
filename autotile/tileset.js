@@ -6,21 +6,46 @@ import {
   flagsFromMask,
   rotateMask,
   sheetLayout,
-  SQUARE_TILES,
   templateTileSize,
   terrainPaths,
+  tileMasks,
 } from './marching.js';
 
 const SQUARE_NAMES = ['Empty', 'Corner', 'Edge', 'Opposite', 'Three', 'Full'];
 
 const SQUARE_HINTS = [
-  'No corners. Turning this tile does not change it.',
-  'Top-left corner. The other three corners are this tile turned by 90°.',
-  'Top edge. The other three edges are this tile turned by 90°.',
+  'No corners. Turning or flipping this tile does not change it.',
+  'Top-left corner. Turns by 90° cover the other three corners.',
+  'Top edge. Turns by 90° cover the other three edges.',
   'Top-left and bottom-right. A quarter turn makes the other diagonal.',
-  'Every corner except the bottom-left. Turning it covers the other three-corner tiles.',
-  'The whole cell. Turning this tile does not change it.',
+  'Every corner except the bottom-left. Turns cover the other three-corner tiles.',
+  'The whole cell. Turning or flipping this tile does not change it.',
 ];
+
+const TRIANGLE_NAMES = ['Empty', 'Corner', 'Edge', 'Full'];
+
+const TRIANGLE_HINTS = [
+  'No corners. Down triangles flip this tile.',
+  'Apex filled. Turns by 120° cover the other corners. Down triangles flip this tile.',
+  'Two corners. Turns by 120° cover the other edges. Down triangles flip this tile.',
+  'The whole triangle. Down triangles flip this tile.',
+];
+
+const HEX_NAMES = {
+  0: 'Empty',
+  1: 'Corner',
+  3: 'Edge',
+  5: 'Skip',
+  7: 'Run',
+  9: 'Opposite',
+  11: 'Spur',
+  15: 'Wide',
+  21: 'Alternate',
+  23: 'Branch',
+  27: 'Bridge',
+  31: 'Notch',
+  63: 'Full',
+};
 
 export const SQUARE_MASK_LABELS = {
   0: 'Empty',
@@ -46,47 +71,29 @@ export const EDITOR_PRESETS = [16, 32, 64, 128];
 /** One editable cell for the current grid, in sheet order. */
 export function tileSlots(type) {
   const layout = sheetLayout(type);
-  const slots = [];
-  for (let row = 0; row < layout.rows; row++) {
-    for (let col = 0; col < layout.cols; col++) {
-      const index = slots.length;
-      if (type === 'square') {
-        slots.push({
-          index,
-          col,
-          row,
-          mask: SQUARE_TILES[index],
-          variant: 'up',
-          name: SQUARE_NAMES[index],
-          hint: SQUARE_HINTS[index],
-        });
-      } else if (type === 'triangle') {
-        const down = row === 1;
-        slots.push({
-          index,
-          col,
-          row,
-          mask: col,
-          variant: down ? 'down' : 'up',
-          name: `${down ? 'Down' : 'Up'} ${col}`,
-          hint: down
-            ? `Down triangle, mask ${col}. Bit 0 is the bottom apex, then clockwise.`
-            : `Up triangle, mask ${col}. Bit 0 is the top apex, then clockwise.`,
-        });
-      } else {
-        slots.push({
-          index,
-          col,
-          row,
-          mask: index,
-          variant: 'up',
-          name: String(index),
-          hint: 'Hex mask ' + index + '. Bit 0 is the top corner on a pointy grid, or the right corner on a flat grid, then clockwise.',
-        });
-      }
+  const masks = tileMasks(type);
+  return masks.map((mask, index) => {
+    const slot = {
+      index,
+      col: index % layout.cols,
+      row: Math.floor(index / layout.cols),
+      mask,
+      variant: 'up',
+      name: 'Tile',
+      hint: '',
+    };
+    if (type === 'square') {
+      slot.name = SQUARE_NAMES[index];
+      slot.hint = SQUARE_HINTS[index];
+    } else if (type === 'triangle') {
+      slot.name = TRIANGLE_NAMES[index];
+      slot.hint = TRIANGLE_HINTS[index];
+    } else {
+      slot.name = HEX_NAMES[mask] || String(mask);
+      slot.hint = `${slot.name}. Bit 0 is the top corner on a pointy grid, or the right corner on a flat grid. Rotation and reflection cover the other hexes of this shape.`;
     }
-  }
-  return slots;
+    return slot;
+  });
 }
 
 /**

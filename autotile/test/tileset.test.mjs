@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseSheet, SQUARE_TILES } from '../marching.js';
+import { parseSheet, SQUARE_TILES, tileMasks } from '../marching.js';
 import {
   EDITOR_PRESETS,
   editorTileSize,
@@ -18,17 +18,15 @@ test('editor slots cover the sheet the painter accepts', () => {
   assert.equal(square[1].hint.includes('90°'), true);
 
   const triangle = tileSlots('triangle');
-  assert.equal(triangle.length, 16);
-  assert.equal(triangle[0].variant, 'up');
-  assert.equal(triangle[8].variant, 'down');
-  assert.equal(triangle[8].mask, 0);
-  assert.equal(triangle[15].col, 7);
+  assert.equal(triangle.length, 4);
+  assert.deepEqual(triangle.map((slot) => slot.mask), tileMasks('triangle'));
+  assert.deepEqual(triangle.map((slot) => slot.name), ['Empty', 'Corner', 'Edge', 'Full']);
+  assert.equal(triangle.every((slot) => slot.variant === 'up'), true);
 
   const hex = tileSlots('hex');
-  assert.equal(hex.length, 64);
-  assert.equal(hex[9].col, 1);
-  assert.equal(hex[9].row, 1);
-  assert.equal(hex[9].mask, 9);
+  assert.equal(hex.length, 13);
+  assert.deepEqual(hex.map((slot) => slot.mask), tileMasks('hex'));
+  assert.equal(new Set(hex.map((slot) => slot.name)).size, hex.length);
 });
 
 test('editor tile sizes parse as a full sheet', () => {
@@ -37,8 +35,8 @@ test('editor tile sizes parse as a full sheet', () => {
       for (const px of EDITOR_PRESETS) {
         const size = editorTileSize(type, orientation, px);
         const slots = tileSlots(type);
-        const cols = type === 'square' ? 6 : 8;
-        const rows = slots.length / cols;
+        const cols = slots.length;
+        const rows = 1;
         const parsed = parseSheet(type, size.tileW * cols, size.tileH * rows, orientation);
         assert.ok(parsed, `${type} ${orientation} ${px}`);
         assert.equal(parsed.mode, 'full');
