@@ -1,16 +1,9 @@
 /** Pixel editor for the sheets the autotile painter accepts. */
 
 import { buildGrid } from './grid.js';
-import {
-  canonicalCorners,
-  cornerCount,
-  drawSpriteImage,
-  layoutHelp,
-  parseSheet,
-  sheetLayout,
-  templateTileSize,
-  tilePlacement,
-} from './marching.js';
+import { blobMask } from './blob.js';
+import { canonicalCorners, drawSpriteImage, templateTileSize } from './marching.js';
+import { layoutHelp, parseSheet, placementMasks, placementVariants, sheetLayout, tilePlacement } from './rules.js';
 import { params } from './params.js';
 import {
   EDITOR_PRESETS,
@@ -183,7 +176,8 @@ window.addEventListener('resize', () => {
 });
 
 function sheetKey() {
-  return params.grid === 'hex' ? `hex:${params.hexOrientation}` : params.grid;
+  const grid = params.grid === 'hex' ? `hex:${params.hexOrientation}` : params.grid;
+  return `${params.method}:${grid}`;
 }
 
 function makeTile(w, h) {
@@ -201,7 +195,7 @@ function replaceSheet(tileW, tileH) {
   const sheet = {
     tileW,
     tileH,
-    tiles: tileSlots(params.grid).map(() => makeTile(tileW, tileH)),
+    tiles: tileSlots(params.grid, params.method).map(() => makeTile(tileW, tileH)),
     undo: [],
     redo: [],
     selected: 0,
@@ -217,7 +211,7 @@ function currentSheet() {
   if (!sheets.has(key)) {
     const size = editorTileSize(params.grid, params.hexOrientation, 32);
     const sheet = replaceSheet(size.tileW, size.tileH);
-    const slots = tileSlots(params.grid);
+    const slots = tileSlots(params.grid, params.method);
     for (let i = 0; i < slots.length; i++) stampShape(tileContext(sheet.tiles[i]), slots[i], shapeStyle());
     const firstDrawn = slots.findIndex((slot) => slot.mask !== 0);
     sheet.selected = firstDrawn < 0 ? 0 : firstDrawn;
@@ -261,6 +255,11 @@ function sync() {
 }
 
 function subtitle() {
+  const count = tileSlots(params.grid, params.method).length;
+  if (params.method === 'block') return 'Two tiles, off and on. Every cell is one or the other.';
+  if (params.method === 'blob') {
+    return `${count} blob tiles. Rotation and reflection cover the other neighbor patterns.`;
+  }
   if (params.grid === 'square') return 'Six tiles. Rotation and reflection cover all 16 masks.';
   if (params.grid === 'triangle') return 'Four tiles. Turns by 120°. Down triangles flip this row.';
   return `13 hex tiles, ${params.hexOrientation}. Rotation and reflection cover all 64 masks.`;
@@ -269,7 +268,7 @@ function subtitle() {
 function buildSlots(sheet) {
   const aside = root.querySelector('.tileset-editor__slots');
   aside.replaceChildren();
-  const slots = tileSlots(params.grid);
+  const slots = tileSlots(params.grid, params.method);
   const host = document.createElement('div');
   host.className = 'tileset-editor__list';
   aside.appendChild(host);
@@ -347,8 +346,8 @@ function drawGuide(sheet) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, w, h);
   if (!ui.corners) return;
-  const slot = tileSlots(params.grid)[sheet.selected];
-  const { corners } = shapePaths(params.grid, params.hexOrientation, w, h, slot.mask, slot.variant, false);
+  const slot = tileSlots(params.grid, params.method)[sheet.selected];
+  const { corners } = shapePaths(params.grid, params.hexOrientation, w, h, slot.mask, slot.variant, false, params.method);
   ctx.beginPath();
   ctx.moveTo(corners[0].x, corners[0].y);
   for (let i = 1; i < corners.length; i++) ctx.lineTo(corners[i].x, corners[i].y);
@@ -365,13 +364,14 @@ function drawGuide(sheet) {
   cx /= corners.length;
   cy /= corners.length;
   const radius = Math.max(4, Math.min(w, h) * 0.035);
-  for (let i = 0; i < corners.length; i++) {
-    const on = (slot.mask & (1 << i)) !== 0;
-    const dx = cx - corners[i].x;
-    const dy = cy - corners[i].y;
+  const marks = guideMarks(corners, slot.mask);
+  for (let i = 0; i < marks.length; i++) {
+    const on = marks[i].on;
+    const dx = cx - marks[i].x;
+    const dy = cy - marks[i].y;
     const len = Math.hypot(dx, dy) || 1;
     ctx.beginPath();
-    ctx.arc(corners[i].x + (dx / len) * radius, corners[i].y + (dy / len) * radius, radius * 0.62, 0, Math.PI * 2);
+    ctx.arc(marks[i].x + (dx / len) * radius, marks[i].y + (dy / len) * radius, radius * 0.62, 0, Math.PI * 2);
     ctx.fillStyle = on ? '#e4572e' : 'rgba(255, 250, 240, 0.92)';
     ctx.fill();
     ctx.lineWidth = 1.5;
@@ -380,15 +380,39 @@ function drawGuide(sheet) {
   }
 }
 
+function guideMarks(corners, mask) {
+  if (params.method === 'block') return [];
+  if (params.method !== 'blob') {
+    return corners.map((corner, index) => ({
+      x: corner.x,
+      y: corner.y,
+      on: (mask & (1 << index)) !== 0,
+    }));
+  }
+  const marks = [];
+  const n = corners.length;
+  for (let i = 0; i < n; i++) {
+    const a = corners[i];
+    const b = corners[(i + 1) % n];
+    if (params.grid === 'square') {
+      marks.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, on: (mask & (1 << (2 * i))) !== 0 });
+      marks.push({ x: b.x, y: b.y, on: (mask & (1 << (2 * i + 1))) !== 0 });
+    } else {
+      marks.push({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, on: (mask & (1 << i)) !== 0 });
+    }
+  }
+  return marks;
+}
+
 function tileUses(index) {
-  const bits = cornerCount(params.grid);
-  const variants = params.grid === 'triangle' ? ['up', 'down'] : ['up'];
+  const masks = placementMasks(params.grid, params.method);
+  const variants = placementVariants(params.grid);
   const uses = [];
   for (let v = 0; v < variants.length; v++) {
-    for (let mask = 0; mask < (1 << bits); mask++) {
-      const place = tilePlacement(params.grid, mask, variants[v], params.hexOrientation);
+    for (let i = 0; i < masks.length; i++) {
+      const place = tilePlacement(params.grid, masks[i], variants[v], params.hexOrientation, params.method);
       if (place.index !== index) continue;
-      uses.push({ mask, variant: variants[v], ...place });
+      uses.push({ mask: masks[i], variant: variants[v], ...place });
     }
   }
   return uses;
@@ -451,13 +475,17 @@ function boxOf(corners) {
 }
 
 function useLabel(use) {
-  if (params.grid === 'square') return SQUARE_MASK_LABELS[use.mask] || String(use.mask);
+  if (params.method === 'block') {
+    const side = use.mask ? 'On' : 'Off';
+    return params.grid === 'triangle' && use.variant === 'down' ? `Down ${side}` : side;
+  }
+  if (params.method === 'squares' && params.grid === 'square') return SQUARE_MASK_LABELS[use.mask] || String(use.mask);
   if (params.grid === 'triangle') return `${use.variant === 'down' ? 'Down' : 'Up'} ${use.mask}`;
   return String(use.mask);
 }
 
 function paintThumbs(sheet, index = -1) {
-  const slots = tileSlots(params.grid);
+  const slots = tileSlots(params.grid, params.method);
   for (let i = 0; i < slots.length; i++) {
     if (index !== -1 && i !== index) continue;
     const canvas = root.querySelector(`[data-thumb="${i}"]`);
@@ -493,28 +521,44 @@ function drawPreview(sheet) {
   ctx.fillStyle = params.backgroundColor;
   ctx.fillRect(0, 0, w, h);
   const grid = previewOf();
-  const terrain = new Map();
+  const inside = [];
   for (let i = 0; i < grid.cells.length; i++) {
     const cell = grid.cells[i];
     const dx = (cell.center.x - w / 2) / (w * 0.24);
     const dy = (cell.center.y - h / 2) / (h * 0.3);
     if (dx * dx + dy * dy > 1) continue;
-    for (let c = 0; c < cell.corners.length; c++) terrain.set(cell.corners[c].key, 1);
+    inside.push(cell);
   }
   const composed = compose(sheet);
   const parsed = parsedSheet(sheet);
+  if (params.method === 'squares') {
+    const terrain = new Map();
+    for (let i = 0; i < inside.length; i++) {
+      const corners = inside[i].corners;
+      for (let c = 0; c < corners.length; c++) terrain.set(corners[c].key, 1);
+    }
+    for (let i = 0; i < grid.cells.length; i++) {
+      const cell = grid.cells[i];
+      let mask = 0;
+      for (let c = 0; c < cell.corners.length; c++) {
+        if (terrain.get(cell.corners[c].key)) mask |= 1 << c;
+      }
+      blitSprite(ctx, composed, parsed, cell, mask);
+    }
+    return;
+  }
+  const on = new Set(inside);
   for (let i = 0; i < grid.cells.length; i++) {
     const cell = grid.cells[i];
-    let mask = 0;
-    for (let c = 0; c < cell.corners.length; c++) {
-      if (terrain.get(cell.corners[c].key)) mask |= 1 << c;
-    }
+    const filled = on.has(cell);
+    if (params.method === 'blob' && !filled) continue;
+    const mask = params.method === 'block' ? (filled ? 1 : 0) : blobMask(cell, (other) => on.has(other));
     blitSprite(ctx, composed, parsed, cell, mask);
   }
 }
 
 function parsedSheet(sheet) {
-  const layout = sheetLayout(params.grid);
+  const layout = sheetLayout(params.grid, params.method);
   return {
     cols: layout.cols,
     rows: layout.rows,
@@ -525,13 +569,13 @@ function parsedSheet(sheet) {
 }
 
 function compose(sheet) {
-  const layout = sheetLayout(params.grid);
+  const layout = sheetLayout(params.grid, params.method);
   const canvas = document.createElement('canvas');
   canvas.width = layout.cols * sheet.tileW;
   canvas.height = layout.rows * sheet.tileH;
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
-  const slots = tileSlots(params.grid);
+  const slots = tileSlots(params.grid, params.method);
   for (let i = 0; i < slots.length; i++) {
     ctx.drawImage(sheet.tiles[i], slots[i].col * sheet.tileW, slots[i].row * sheet.tileH);
   }
@@ -539,7 +583,7 @@ function compose(sheet) {
 }
 
 function blitSprite(ctx, sheetCanvas, parsed, cell, mask) {
-  const loc = tilePlacement(cell.type, mask, cell.variant, params.hexOrientation);
+  const loc = tilePlacement(cell.type, mask, cell.variant, params.hexOrientation, params.method);
   const sx = loc.index * parsed.tileW;
   const sy = 0;
   ctx.save();
@@ -549,8 +593,13 @@ function blitSprite(ctx, sheetCanvas, parsed, cell, mask) {
 }
 
 function setHint(sheet) {
-  const slot = tileSlots(params.grid)[sheet.selected];
-  root.querySelector('.tileset-editor__status').textContent = `${slot.name}. ${slot.hint} Orange marks a filled corner.`;
+  const slot = tileSlots(params.grid, params.method)[sheet.selected];
+  const mark = params.method === 'blob'
+    ? 'Orange marks a filled neighbor.'
+    : params.method === 'squares'
+      ? 'Orange marks a filled corner.'
+      : '';
+  root.querySelector('.tileset-editor__status').textContent = `${slot.name}. ${slot.hint} ${mark}`;
 }
 
 function setMessage(text) {
@@ -613,6 +662,7 @@ function shapeStyle() {
     color: params.terrainColor,
     filled: params.filled,
     rounded: params.edges === 'rounded',
+    method: params.method,
   };
 }
 
@@ -622,7 +672,7 @@ function stampShape(ctx, slot, style) {
 
 function shapeBehind() {
   const sheet = currentSheet();
-  const slot = tileSlots(params.grid)[sheet.selected];
+  const slot = tileSlots(params.grid, params.method)[sheet.selected];
   snapshot(sheet, [sheet.selected]);
   stampShape(tileContext(sheet.tiles[sheet.selected]), slot, { ...shapeStyle(), composite: 'destination-over' });
   refreshArt(sheet, sheet.selected);
@@ -631,7 +681,7 @@ function shapeBehind() {
 
 function resetShapes() {
   const sheet = currentSheet();
-  const slots = tileSlots(params.grid);
+  const slots = tileSlots(params.grid, params.method);
   snapshot(sheet, slots.map((slot) => slot.index));
   for (let i = 0; i < slots.length; i++) {
     const ctx = tileContext(sheet.tiles[i]);
@@ -657,7 +707,7 @@ function clearSelected() {
 
 function clearAll() {
   const sheet = currentSheet();
-  const slots = tileSlots(params.grid);
+  const slots = tileSlots(params.grid, params.method);
   snapshot(sheet, slots.map((slot) => slot.index));
   for (let i = 0; i < slots.length; i++) clearTile(i);
   refreshArt(sheet);
@@ -946,22 +996,22 @@ function downloadSheet() {
   const link = document.createElement('a');
   const shape = params.grid === 'hex' ? `${params.grid}-${params.hexOrientation}` : params.grid;
   link.href = canvas.toDataURL('image/png');
-  link.download = `autotile-${shape}-tileset.png`;
+  link.download = `autotile-${params.method}-${shape}-tileset.png`;
   link.click();
   setMessage('Saved a PNG. Drop it on the canvas to use it again.');
 }
 
 function adoptImage(image, width, height, label) {
-  const parsed = parseSheet(params.grid, width, height, params.hexOrientation);
+  const parsed = parseSheet(params.grid, width, height, params.hexOrientation, params.method);
   if (!parsed || parsed.mode !== 'full') {
-    setMessage(layoutHelp(params.grid));
+    setMessage(layoutHelp(params.grid, params.method));
     return false;
   }
   const selected = sheets.get(sheetKey())?.selected || 0;
   const sheet = replaceSheet(parsed.tileW, parsed.tileH);
   sheet.selected = Math.min(selected, sheet.tiles.length - 1);
   for (let i = 0; i < sheet.tiles.length; i++) {
-    const slot = tileSlots(params.grid)[i];
+    const slot = tileSlots(params.grid, params.method)[i];
     tileContext(sheet.tiles[i]).drawImage(
       image,
       slot.col * parsed.tileW,

@@ -1,27 +1,26 @@
 import './controls.js';
 import './editor.js';
-import { brushRadius, buildGrid, keysForPaint, pickCell, writeTerrain } from './grid.js';
+import { blobMask, blobPoints, blockPoints } from './blob.js';
+import { brushRadius, buildGrid, cellKey, cellsInBrush, keysForPaint, pickCell, writeTerrain } from './grid.js';
 import {
   canonicalCorners,
+  commandsForPolygon,
   cornerCount,
-  flagsFromMask,
-  layoutHelp,
-  maskFromFlags,
-  parseSheet,
-  externalContours,
-  sheetLayout,
-  solidPolygons,
   drawSpriteImage,
-  terrainPaths,
+  externalContours,
+  flagsFromMask,
+  maskFromFlags,
+  solidPolygons,
   templateTileSize,
-  tileMasks,
-  tilePlacement,
+  terrainPaths,
 } from './marching.js';
+import { layoutHelp, methodLabel, parseSheet, sheetLayout, tileMasks, tilePlacement } from './rules.js';
 import { params } from './params.js';
 
 const sketch = (p) => {
   let grid = null;
   let terrain = new Map();
+  let filled = new Set();
   let layer = null;
   let dirty = true;
   let tileset = null;
@@ -118,14 +117,14 @@ const sketch = (p) => {
         p.redraw();
       },
       clear() {
-        doc.ops.push({ kind: 'clear' });
-        terrain = new Map();
+        doc.ops.push({ kind: 'clear', method: params.method });
+        clearStore(params.method);
         dirty = true;
         p.redraw();
       },
       invert() {
-        doc.ops.push({ kind: 'invert' });
-        invertTerrain();
+        doc.ops.push({ kind: 'invert', method: params.method });
+        invertStore(params.method);
         dirty = true;
         p.redraw();
       },
@@ -153,6 +152,7 @@ const sketch = (p) => {
       },
       currentSheet() {
         if (!tileset) return null;
+        if ((tileset.method || 'squares') !== params.method) return null;
         if (tileset.grid !== params.grid) return null;
         if (params.grid === 'hex' && tileset.orientation !== params.hexOrientation) return null;
         return { canvas: tileset.canvas, label: tileset.label };
@@ -162,12 +162,12 @@ const sketch = (p) => {
         const link = document.createElement('a');
         const shape = params.grid === 'hex' ? `${params.grid}-${params.hexOrientation}` : params.grid;
         link.href = graphics.elt.toDataURL('image/png');
-        link.download = `autotile-${shape}-template.png`;
+        link.download = `autotile-${params.method}-${shape}-template.png`;
         link.click();
         graphics.remove();
-        const layout = sheetLayout(params.grid);
+        const layout = sheetLayout(params.grid, params.method);
         syncStatus(
-          `Saved a ${layout.cols}×${layout.rows} guide. These ${layout.count} tiles rotate and reflect to cover every mask. Borders and numbers are drawn on the sheet.`
+          `Saved a ${layout.cols}×${layout.rows} ${methodLabel(params.method).toLowerCase()} guide. Borders and numbers are drawn on the sheet.`
         );
       },
       clearTileset() {
@@ -189,6 +189,7 @@ const sketch = (p) => {
   function noiseOp() {
     return {
       kind: 'noise',
+      method: params.method,
       seed: params.noiseSeed | 0,
       scale: params.noiseScale,
       threshold: params.noiseThreshold,
@@ -212,12 +213,13 @@ const sketch = (p) => {
 
   function replay() {
     terrain = new Map();
+    filled = new Set();
     for (let i = 0; i < doc.ops.length; i++) applyOp(doc.ops[i]);
   }
 
   function applyOp(op) {
     if (op.kind === 'clear') {
-      terrain = new Map();
+      clearStore(op.method || 'squares');
       return;
     }
     if (op.kind === 'noise') {
@@ -225,7 +227,7 @@ const sketch = (p) => {
       return;
     }
     if (op.kind === 'invert') {
-      invertTerrain();
+      invertStore(op.method || 'squares');
       return;
     }
     if (op.kind === 'stroke') {
@@ -236,21 +238,47 @@ const sketch = (p) => {
   function applyNoise(op) {
     p.noiseSeed(op.seed);
     p.noiseDetail(4, 0.5);
-    const vertices = grid.vertices;
-    for (let i = 0; i < vertices.length; i++) {
-      const vertex = vertices[i];
-      const sample = p.noise(vertex.x * op.scale, vertex.y * op.scale);
-      if (sample >= op.threshold) terrain.set(vertex.key, 1);
-      else terrain.delete(vertex.key);
+    const method = op.method || 'squares';
+    if (method === 'squares') {
+      const vertices = grid.vertices;
+      for (let i = 0; i < vertices.length; i++) {
+        const vertex = vertices[i];
+        const sample = p.noise(vertex.x * op.scale, vertex.y * op.scale);
+        if (sample >= op.threshold) terrain.set(vertex.key, 1);
+        else terrain.delete(vertex.key);
+      }
+      return;
+    }
+    const cells = grid.cells;
+    for (let i = 0; i < cells.length; i++) {
+      const cell = cells[i];
+      const sample = p.noise(cell.center.x * op.scale, cell.center.y * op.scale);
+      const key = cellKey(cell);
+      if (sample >= op.threshold) filled.add(key);
+      else filled.delete(key);
     }
   }
 
-  function invertTerrain() {
-    const vertices = grid.vertices;
-    for (let i = 0; i < vertices.length; i++) {
-      const key = vertices[i].key;
-      if (terrain.get(key)) terrain.delete(key);
-      else terrain.set(key, 1);
+  function clearStore(method) {
+    if (method === 'squares') terrain = new Map();
+    else filled = new Set();
+  }
+
+  function invertStore(method) {
+    if (method === 'squares') {
+      const vertices = grid.vertices;
+      for (let i = 0; i < vertices.length; i++) {
+        const key = vertices[i].key;
+        if (terrain.get(key)) terrain.delete(key);
+        else terrain.set(key, 1);
+      }
+      return;
+    }
+    const cells = grid.cells;
+    for (let i = 0; i < cells.length; i++) {
+      const key = cellKey(cells[i]);
+      if (filled.has(key)) filled.delete(key);
+      else filled.add(key);
     }
   }
 
@@ -273,6 +301,7 @@ const sketch = (p) => {
       mode: params.paintMode,
       brushSize: params.brushSize,
       radiusPx: brushRadius(grid, params.paintMode, params.brushSize),
+      method: params.method,
     };
     activeStroke.stamps.push(stamp);
     applyStamp(stamp);
@@ -281,8 +310,18 @@ const sketch = (p) => {
   }
 
   function applyStamp(stamp) {
-    const keys = keysForPaint(grid, stamp.x, stamp.y, stamp.mode, stamp.brushSize, stamp.radiusPx);
-    writeTerrain(terrain, keys, stamp.value);
+    const method = stamp.method || 'squares';
+    if (method === 'squares') {
+      const keys = keysForPaint(grid, stamp.x, stamp.y, stamp.mode, stamp.brushSize, stamp.radiusPx);
+      writeTerrain(terrain, keys, stamp.value);
+      return;
+    }
+    const cells = cellsInBrush(grid, stamp.x, stamp.y, stamp.brushSize, stamp.radiusPx);
+    for (let i = 0; i < cells.length; i++) {
+      const key = cellKey(cells[i]);
+      if (stamp.value) filled.add(key);
+      else filled.delete(key);
+    }
   }
 
   function updateHover() {
@@ -291,8 +330,20 @@ const sketch = (p) => {
       setReadout('');
       return;
     }
+    if (params.method === 'block') {
+      setReadout(`${gridLabel()} · ${isFilled(hover) ? 'on' : 'off'}`);
+      return;
+    }
+    if (params.method === 'blob') {
+      if (!isFilled(hover)) {
+        setReadout(`${gridLabel()} · empty`);
+        return;
+      }
+      setReadout(`${gridLabel()} · blob ${blobMask(hover, isFilled)}`);
+      return;
+    }
     const mask = maskFromFlags(flagsFor(hover));
-    const bits = cornerCount(hover.type) ;
+    const bits = cornerCount(hover.type);
     const total = (1 << bits) - 1;
     setReadout(`${gridLabel()} · tile ${mask} of 0–${total}`);
   }
@@ -314,8 +365,13 @@ const sketch = (p) => {
     return flags;
   }
 
+  function isFilled(cell) {
+    return filled.has(cellKey(cell));
+  }
+
   function activeTileset() {
     if (!tileset || !params.useTileset) return null;
+    if ((tileset.method || 'squares') !== params.method) return null;
     if (tileset.grid !== params.grid) return null;
     if (params.grid === 'hex' && tileset.orientation !== params.hexOrientation) return null;
     return tileset;
@@ -331,31 +387,58 @@ const sketch = (p) => {
     const outlinePolys = [];
     for (let i = 0; i < cells.length; i++) {
       const cell = cells[i];
-      const flags = flagsFor(cell);
-      if (sheet) drawSprite(g, cell, maskFromFlags(flags), sheet);
+      const mask = maskFor(cell);
+      if (mask == null) continue;
+      if (sheet) drawSprite(g, cell, mask, sheet);
       else if (mergeOutline || mergeFill) {
-        const polys = solidPolygons(cell.corners, flags);
+        const polys = polygonsFor(cell, mask);
         for (let j = 0; j < polys.length; j++) outlinePolys.push(polys[j]);
-      } else drawProcedural(g, cell.corners, flags);
+      } else drawCellShape(g, cell, mask);
     }
     if (mergeOutline || mergeFill) drawMergedShape(g, outlinePolys, mergeFill);
     if (params.showGrid) drawGrid(g);
     if (params.showVertices) drawVertices(g);
   }
 
-  function drawProcedural(g, corners, flags) {
-    const paths = terrainPaths(corners, flags, params.edges === 'rounded');
+  function maskFor(cell) {
+    if (params.method === 'block') return isFilled(cell) ? 1 : 0;
+    if (params.method === 'blob') return isFilled(cell) ? blobMask(cell, isFilled) : null;
+    return maskFromFlags(flagsFor(cell));
+  }
+
+  function polygonsFor(cell, mask) {
+    if (params.method === 'block') {
+      const points = blockPoints(cell.corners, mask);
+      return points.length ? [points] : [];
+    }
+    if (params.method === 'blob') return [blobPoints(cell.type, cell.corners, mask)];
+    return solidPolygons(cell.corners, flagsFromMask(mask, cell.corners.length));
+  }
+
+  function drawCellShape(g, cell, mask) {
+    const rounded = params.edges === 'rounded';
+    let paths;
+    if (params.method === 'block') {
+      const points = blockPoints(cell.corners, mask);
+      const commands = commandsForPolygon(points, rounded);
+      paths = commands.length ? [commands] : [];
+    } else if (params.method === 'blob') {
+      const commands = commandsForPolygon(blobPoints(cell.type, cell.corners, mask), rounded);
+      paths = commands.length ? [commands] : [];
+    } else {
+      paths = terrainPaths(cell.corners, flagsFromMask(mask, cell.corners.length), rounded);
+    }
     if (!paths.length) return;
     const color = g.color(params.terrainColor).toString();
     const ctx = g.drawingContext;
     ctx.save();
-    tracePath(ctx, corners);
+    tracePath(ctx, cell.corners);
     ctx.clip();
     ctx.fillStyle = color;
     ctx.strokeStyle = color;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    ctx.lineWidth = outlineWeight(corners);
+    ctx.lineWidth = outlineWeight(cell.corners);
     for (let i = 0; i < paths.length; i++) {
       traceCommands(ctx, paths[i]);
       if (params.filled) ctx.fill();
@@ -404,7 +487,7 @@ const sketch = (p) => {
   }
 
   function drawSprite(g, cell, mask, sheet) {
-    const loc = tilePlacement(cell.type, mask, cell.variant, params.hexOrientation);
+    const loc = tilePlacement(cell.type, mask, cell.variant, params.hexOrientation, params.method);
     const col = loc.index % sheet.parsed.cols;
     const row = Math.floor(loc.index / sheet.parsed.cols);
     const ctx = g.drawingContext;
@@ -481,18 +564,17 @@ const sketch = (p) => {
   }
 
   function makeTemplateGraphics(guides = false) {
-    const layout = sheetLayout(params.grid);
+    const layout = sheetLayout(params.grid, params.method);
     const { tileW, tileH } = templateTileSize(params.grid, params.hexOrientation);
     const graphics = p.createGraphics(layout.cols * tileW, layout.rows * tileH);
     graphics.pixelDensity(1);
     if (guides) graphics.background('#d8d2c6');
     else graphics.clear();
-    const bits = cornerCount(params.grid);
+    const masks = tileMasks(params.grid, params.method);
     for (let row = 0; row < layout.rows; row++) {
       for (let col = 0; col < layout.cols; col++) {
         const slot = row * layout.cols + col;
-        const mask = tileMasks(params.grid)[slot];
-        const variant = 'up';
+        const mask = masks[slot];
         const x = col * tileW;
         const y = row * tileH;
         if (guides) {
@@ -500,19 +582,46 @@ const sketch = (p) => {
           graphics.fill(params.backgroundColor);
           graphics.rect(x, y, tileW, tileH);
         }
-        const local = canonicalCorners(params.grid, params.hexOrientation, tileW, tileH, variant);
+        const local = canonicalCorners(params.grid, params.hexOrientation, tileW, tileH, 'up');
         const corners = local.map((pt) => ({ x: pt.x + x, y: pt.y + y }));
         const ctx = graphics.drawingContext;
         ctx.save();
         ctx.beginPath();
         ctx.rect(x, y, tileW, tileH);
         ctx.clip();
-        drawProcedural(graphics, corners, flagsFromMask(mask, bits));
+        drawTemplateShape(graphics, corners, mask);
         ctx.restore();
-        if (guides) drawTemplateGuide(graphics, x, y, tileW, tileH, params.grid === 'square' ? slot : mask);
+        if (guides) drawTemplateGuide(graphics, x, y, tileW, tileH, slot);
       }
     }
     return graphics;
+  }
+
+  function drawTemplateShape(g, corners, mask) {
+    const rounded = false;
+    let paths;
+    if (params.method === 'block') {
+      const commands = commandsForPolygon(blockPoints(corners, mask), rounded);
+      paths = commands.length ? [commands] : [];
+    } else if (params.method === 'blob') {
+      const commands = commandsForPolygon(blobPoints(params.grid, corners, mask), rounded);
+      paths = commands.length ? [commands] : [];
+    } else {
+      paths = terrainPaths(corners, flagsFromMask(mask, corners.length), rounded);
+    }
+    if (!paths.length) return;
+    const color = g.color(params.terrainColor).toString();
+    const ctx = g.drawingContext;
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = outlineWeight(corners);
+    for (let i = 0; i < paths.length; i++) {
+      traceCommands(ctx, paths[i]);
+      if (params.filled) ctx.fill();
+      else ctx.stroke();
+    }
   }
 
   function drawTemplateGuide(graphics, x, y, tileW, tileH, mask) {
@@ -536,10 +645,10 @@ const sketch = (p) => {
   }
 
   function adoptCanvas(canvas, width, height, label, hold) {
-    const parsed = parseSheet(params.grid, width, height, params.hexOrientation);
+    const parsed = parseSheet(params.grid, width, height, params.hexOrientation, params.method);
     if (!parsed) {
       if (hold?.remove) hold.remove();
-      syncStatus(layoutHelp(params.grid));
+      syncStatus(layoutHelp(params.grid, params.method));
       return false;
     }
     releaseTileset();
@@ -549,6 +658,7 @@ const sketch = (p) => {
       hold,
       grid: params.grid,
       orientation: params.hexOrientation,
+      method: params.method,
       label,
     };
     params.useTileset = true;
@@ -588,17 +698,19 @@ const sketch = (p) => {
   function syncStatus(error) {
     const sheet = activeTileset();
     let label = 'One-color tiles';
-    let note = layoutHelp(params.grid);
+    let note = layoutHelp(params.grid, params.method);
     if (error) {
       note = error;
     } else if (tileset && !sheet) {
       label = tileset.label;
-      note = `That sheet is for ${tileset.grid}${tileset.grid === 'hex' ? ` (${tileset.orientation})` : ''}. Showing one-color tiles.`;
+      const rule = methodLabel(tileset.method || 'squares');
+      note = `That sheet is for ${rule.toLowerCase()} ${tileset.grid}${tileset.grid === 'hex' ? ` (${tileset.orientation})` : ''}. Showing one-color tiles.`;
     } else if (sheet) {
       label = `${sheet.label} · ${sheet.parsed.cols}×${sheet.parsed.rows}`;
-      note = `${sheet.parsed.tileW}×${sheet.parsed.tileH} px tiles. ${layoutHelp(params.grid)}`;
+      note = `${sheet.parsed.tileW}×${sheet.parsed.tileH} px tiles. ${layoutHelp(params.grid, params.method)}`;
     }
     window.autotileControls?.setStatus(label, note);
+    if (!hover) setReadout(methodLabel(params.method));
   }
 
   function onKeyDown(event) {

@@ -414,6 +414,12 @@ function linearPath(poly) {
   return commands;
 }
 
+/** Closed path for one polygon. Rounded corners become quadratic curves. */
+export function commandsForPolygon(points, rounded) {
+  if (!points || points.length < 3) return [];
+  return rounded ? roundPolygon(points) : linearPath(points);
+}
+
 function roundPolygon(poly) {
   const n = poly.length;
   if (n < 3) return linearPath(poly);

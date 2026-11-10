@@ -1,5 +1,6 @@
 export const params = {
   grid: 'square',
+  method: 'squares',
   hexOrientation: 'pointy',
   cellSize: 72,
   paintMode: 'cells',

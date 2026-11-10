@@ -298,6 +298,7 @@ function pack(cells, index, meta) {
       }
     }
   }
+  linkNeighbors(cells);
   return {
     ...meta,
     cells,
@@ -305,4 +306,56 @@ function pack(cells, index, meta) {
     index: spatial,
     bucket,
   };
+}
+
+/** Stable id for a cell, from the corner keys it already shares. */
+export function cellKey(cell) {
+  let key = cell.corners[0].key;
+  for (let i = 1; i < cell.corners.length; i++) key += `|${cell.corners[i].key}`;
+  return key;
+}
+
+function linkNeighbors(cells) {
+  const edges = new Map();
+  const corners = new Map();
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i];
+    const n = cell.corners.length;
+    cell.edgeNeighbors = new Array(n).fill(null);
+    cell.cornerNeighbors = new Array(n).fill(null);
+    for (let e = 0; e < n; e++) {
+      const a = cell.corners[e].key;
+      const b = cell.corners[(e + 1) % n].key;
+      const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+      let list = edges.get(key);
+      if (!list) edges.set(key, (list = []));
+      list.push({ cell, edge: e });
+    }
+    if (cell.type !== 'square') continue;
+    for (let c = 0; c < n; c++) {
+      const key = cell.corners[c].key;
+      let list = corners.get(key);
+      if (!list) corners.set(key, (list = []));
+      list.push(cell);
+    }
+  }
+  for (const list of edges.values()) {
+    if (list.length !== 2) continue;
+    list[0].cell.edgeNeighbors[list[0].edge] = list[1].cell;
+    list[1].cell.edgeNeighbors[list[1].edge] = list[0].cell;
+  }
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i];
+    if (cell.type !== 'square') continue;
+    for (let c = 0; c < 4; c++) {
+      const list = corners.get(cell.corners[c].key);
+      const incoming = cell.edgeNeighbors[(c + 3) % 4];
+      const outgoing = cell.edgeNeighbors[c];
+      for (let k = 0; k < list.length; k++) {
+        const other = list[k];
+        if (other === cell || other === incoming || other === outgoing) continue;
+        cell.cornerNeighbors[c] = other;
+      }
+    }
+  }
 }

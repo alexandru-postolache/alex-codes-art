@@ -1,15 +1,15 @@
 /** Slot layout, pixel size, and drawing helpers for the tileset editor. */
 
+import { blobCommands, blockCommands } from './blob.js';
 import {
   canonicalCorners,
   cornerCount,
   flagsFromMask,
   rotateMask,
-  sheetLayout,
   templateTileSize,
   terrainPaths,
-  tileMasks,
 } from './marching.js';
+import { sheetLayout, slotInfo, tileMasks } from './rules.js';
 
 const SQUARE_NAMES = ['Empty', 'Corner', 'Edge', 'Opposite', 'Three', 'Full'];
 
@@ -68,10 +68,24 @@ export const SQUARE_MASK_LABELS = {
 
 export const EDITOR_PRESETS = [16, 32, 64, 128];
 
-/** One editable cell for the current grid, in sheet order. */
-export function tileSlots(type) {
-  const layout = sheetLayout(type);
-  const masks = tileMasks(type);
+/** One editable cell for the current grid and rule, in sheet order. */
+export function tileSlots(type, method = 'squares') {
+  const layout = sheetLayout(type, method);
+  const masks = tileMasks(type, method);
+  if (method !== 'squares') {
+    return masks.map((mask, index) => {
+      const info = slotInfo(type, method, mask);
+      return {
+        index,
+        col: index % layout.cols,
+        row: Math.floor(index / layout.cols),
+        mask,
+        variant: 'up',
+        name: info.name,
+        hint: info.hint,
+      };
+    });
+  }
   return masks.map((mask, index) => {
     const slot = {
       index,
@@ -114,18 +128,19 @@ export function squareTurnLabel(mask, turns) {
   return SQUARE_MASK_LABELS[rotateMask(mask, turns, 4)] || String(mask);
 }
 
-/** Closed paths for the one-color autotile shape of a single slot. */
-export function shapePaths(type, orientation, w, h, mask, variant, rounded) {
+/** Closed paths for the one-color shape of a single slot. */
+export function shapePaths(type, orientation, w, h, mask, variant, rounded, method = 'squares') {
   const corners = canonicalCorners(type, orientation, w, h, variant);
-  const flags = flagsFromMask(mask, cornerCount(type));
-  return {
-    corners,
-    paths: terrainPaths(corners, flags, rounded),
-  };
+  let paths;
+  if (method === 'block') paths = blockCommands(corners, mask, rounded);
+  else if (method === 'blob') paths = blobCommands(type, corners, mask, rounded);
+  else paths = terrainPaths(corners, flagsFromMask(mask, cornerCount(type)), rounded);
+  return { corners, paths };
 }
 
 export function paintShape(ctx, type, orientation, w, h, mask, variant, style) {
-  const { corners, paths } = shapePaths(type, orientation, w, h, mask, variant, style.rounded);
+  const method = style.method || 'squares';
+  const { corners, paths } = shapePaths(type, orientation, w, h, mask, variant, style.rounded, method);
   if (!paths.length) return;
   const scratch = ctx.canvas.ownerDocument.createElement('canvas');
   scratch.width = w;

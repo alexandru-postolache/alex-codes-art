@@ -8,6 +8,8 @@ const status = {
 
 let pane = null;
 let hexBinding = null;
+let vertexBinding = null;
+let paintModeBinding = null;
 let tilesetBinding = null;
 let noteBinding = null;
 let snapshot = { ...params };
@@ -22,6 +24,9 @@ function structuralChange() {
 
 function syncVisibility() {
   if (hexBinding) hexBinding.hidden = params.grid !== 'hex';
+  if (vertexBinding) vertexBinding.hidden = params.method !== 'squares';
+  if (paintModeBinding) paintModeBinding.hidden = params.method !== 'squares';
+  if (params.method !== 'squares' && params.paintMode === 'vertices') params.paintMode = 'cells';
 }
 
 function emit() {
@@ -40,6 +45,10 @@ pane = new Pane({ title: 'Autotile', expanded: true });
 pane.element.classList.add('autotile-pane');
 
 const gridFolder = pane.addFolder({ title: 'Grid', expanded: true });
+gridFolder.addBinding(params, 'method', {
+  label: 'rule',
+  options: { 'Marching squares': 'squares', Blob: 'blob', Block: 'block' },
+});
 gridFolder.addBinding(params, 'grid', {
   label: 'cell',
   options: { Square: 'square', Hexagon: 'hex', Triangle: 'triangle' },
@@ -50,10 +59,10 @@ hexBinding = gridFolder.addBinding(params, 'hexOrientation', {
 });
 gridFolder.addBinding(params, 'cellSize', { label: 'size', min: 18, max: 180, step: 2 });
 gridFolder.addBinding(params, 'showGrid', { label: 'grid lines' });
-gridFolder.addBinding(params, 'showVertices', { label: 'corners' });
+vertexBinding = gridFolder.addBinding(params, 'showVertices', { label: 'corners' });
 
 const paintFolder = pane.addFolder({ title: 'Paint', expanded: true });
-paintFolder.addBinding(params, 'paintMode', {
+paintModeBinding = paintFolder.addBinding(params, 'paintMode', {
   label: 'target',
   options: { Cells: 'cells', Corners: 'vertices' },
 });
