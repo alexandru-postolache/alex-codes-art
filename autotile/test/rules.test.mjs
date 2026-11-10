@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { blobMask, normalizeBlob, squareBlobPoints } from '../blob.js';
+import { blobMask, blockMark, normalizeBlob, squareBlobPoints } from '../blob.js';
 import { pointInPolygon } from '../geometry.js';
 import { buildGrid } from '../grid.js';
 import { canonicalCorners } from '../marching.js';
 import {
+  blockTurn,
   layoutHelp,
   parseSheet,
   placementMasks,
@@ -66,6 +67,24 @@ test('filled edge and diagonal neighbors build the square blob mask', () => {
   const on = new Set([cell, north, east, northEast]);
   assert.equal(blobMask(cell, (other) => on.has(other)), 1 | 2 | 4);
   assert.equal(blobMask(cell, () => false), 0);
+});
+
+test('a block turn points the wedge at the next clockwise edge', () => {
+  const corners = [
+    { x: 0, y: 0 },
+    { x: 40, y: 0 },
+    { x: 40, y: 40 },
+    { x: 0, y: 40 },
+  ];
+  const tip = (turns) => blockMark(corners, turns, false)[1];
+  assert.ok(tip(0).y < 20);
+  assert.ok(tip(1).x > 20);
+  assert.ok(tip(2).y > 20);
+  assert.ok(tip(3).x < 20);
+  assert.equal(blockTurn('square', 4), 0);
+  assert.equal(blockTurn('square', -1), 3);
+  assert.equal(blockTurn('hex', 6), 0);
+  assert.equal(blockTurn('triangle', 3), 0);
 });
 
 test('a shared blob edge is covered from both cells', () => {

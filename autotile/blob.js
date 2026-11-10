@@ -86,6 +86,40 @@ export function blockPoints(corners, mask) {
   return corners.map((pt) => ({ x: pt.x, y: pt.y }));
 }
 
+/**
+ * A wedge on the on-tile, pointing at edge 0 before it is turned.
+ * `turns` is clockwise steps. `flipY` matches a down triangle.
+ */
+export function blockMark(corners, turns, flipY) {
+  const n = corners.length;
+  const center = centroid(corners);
+  const mid = midpoint(corners[0], corners[1 % n]);
+  const wedge = [
+    mix(center, corners[0], 0.2),
+    mix(center, mid, 0.82),
+    mix(center, corners[1 % n], 0.2),
+  ];
+  return wedge.map((point) => turnPoint(point, center, turns, flipY, n));
+}
+
+function midpoint(a, b) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+function turnPoint(point, center, turns, flipY, steps) {
+  let x = point.x - center.x;
+  let y = point.y - center.y;
+  if (flipY) y = -y;
+  const k = ((turns % steps) + steps) % steps;
+  const theta = (k * 2 * Math.PI) / steps;
+  const cos = Math.cos(theta);
+  const sin = Math.sin(theta);
+  return {
+    x: center.x + x * cos - y * sin,
+    y: center.y + x * sin + y * cos,
+  };
+}
+
 export function blobCommands(type, corners, mask, rounded) {
   const points = blobPoints(type, corners, mask);
   const commands = commandsForPolygon(points, rounded);

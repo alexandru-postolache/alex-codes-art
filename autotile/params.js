@@ -5,6 +5,7 @@ export const params = {
   cellSize: 72,
   paintMode: 'cells',
   brushSize: 1,
+  blockTurns: 0,
   filled: true,
   internalLines: true,
   edges: 'straight',

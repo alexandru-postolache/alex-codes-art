@@ -256,7 +256,7 @@ function sync() {
 
 function subtitle() {
   const count = tileSlots(params.grid, params.method).length;
-  if (params.method === 'block') return 'Two tiles, off and on. Every cell is one or the other.';
+  if (params.method === 'block') return 'Two tiles, off and on. The turn control rotates the on tile as you paint.';
   if (params.method === 'blob') {
     return `${count} blob tiles. Rotation and reflection cover the other neighbor patterns.`;
   }

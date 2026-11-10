@@ -15,6 +15,17 @@ export const METHODS = ['squares', 'blob', 'block'];
 
 const placementCache = new Map();
 
+export function blockSteps(type) {
+  if (type === 'hex') return 6;
+  if (type === 'triangle') return 3;
+  return 4;
+}
+
+export function blockTurn(type, turns) {
+  const steps = blockSteps(type);
+  return ((turns % steps) + steps) % steps;
+}
+
 export function methodLabel(method) {
   if (method === 'blob') return 'Blob';
   if (method === 'block') return 'Block';
@@ -46,7 +57,7 @@ export function tilePlacement(type, mask, variant = 'up', orientation = 'pointy'
 export function layoutHelp(type, method = 'squares') {
   if (method === 'squares') return squaresHelp(type);
   if (method === 'block') {
-    return 'Use one row of 2 tiles: off, then on. A cell shows one or the other. Down triangles flip the on tile.';
+    return 'Use one row of 2 tiles: off, then on. Turn sets how the on tile is rotated when you paint. Down triangles also flip.';
   }
   const count = tileMasks(type, 'blob').length;
   if (type === 'square') {

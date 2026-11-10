@@ -1,5 +1,6 @@
 import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js';
 import { params } from './params.js';
+import { blockTurn } from './rules.js';
 
 const status = {
   tileset: 'One-color tiles',
@@ -10,6 +11,7 @@ let pane = null;
 let hexBinding = null;
 let vertexBinding = null;
 let paintModeBinding = null;
+let turnBinding = null;
 let tilesetBinding = null;
 let noteBinding = null;
 let snapshot = { ...params };
@@ -27,6 +29,17 @@ function syncVisibility() {
   if (vertexBinding) vertexBinding.hidden = params.method !== 'squares';
   if (paintModeBinding) paintModeBinding.hidden = params.method !== 'squares';
   if (params.method !== 'squares' && params.paintMode === 'vertices') params.paintMode = 'cells';
+  if (turnBinding) {
+    turnBinding.hidden = params.method !== 'block';
+    const steps = params.grid === 'hex' ? 6 : params.grid === 'triangle' ? 3 : 4;
+    const slider = turnBinding.controller?.valueController?.sliderC_;
+    if (slider?.props?.set) slider.props.set('max', steps - 1);
+    const turned = blockTurn(params.grid, params.blockTurns | 0);
+    if (turned !== params.blockTurns) {
+      params.blockTurns = turned;
+      turnBinding.refresh();
+    }
+  }
 }
 
 function emit() {
@@ -67,6 +80,12 @@ paintModeBinding = paintFolder.addBinding(params, 'paintMode', {
   options: { Cells: 'cells', Corners: 'vertices' },
 });
 paintFolder.addBinding(params, 'brushSize', { label: 'brush', min: 1, max: 12, step: 1 });
+turnBinding = paintFolder.addBinding(params, 'blockTurns', {
+  label: 'turn',
+  min: 0,
+  max: 3,
+  step: 1,
+});
 paintFolder.addButton({ title: 'Clear' }).on('click', () => window.autotile?.clear());
 paintFolder.addButton({ title: 'Invert' }).on('click', () => window.autotile?.invert());
 paintFolder.addButton({ title: 'Undo' }).on('click', () => window.autotile?.undo());
@@ -138,8 +157,8 @@ window.autotileControls = {
     noteBinding.refresh();
   },
   refresh() {
-    pane.refresh();
     syncVisibility();
+    pane.refresh();
     setHintVisible(params.showHints);
   },
 };

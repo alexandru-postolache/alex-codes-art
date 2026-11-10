@@ -20,7 +20,7 @@ Open http://localhost:8081/autotile/
 
 Left drag paints. Right drag erases. Hold Shift to erase with the left button. **Rule** picks marching squares, blob, or block. Each rule keeps its own paint, so switching rules does not throw the others away.
 
-With marching squares, **Cells** sets every corner of the cells you touch, and **Corners** sets the vertices themselves. Blob and block paint whole cells. A blob tile is the pattern of filled neighbors. A block tile is only on or off.
+With marching squares, **Cells** sets every corner of the cells you touch, and **Corners** sets the vertices themselves. Blob and block paint whole cells. A blob tile is the pattern of filled neighbors. A block tile is on or off, and **Turn** rotates the on tile. `R` steps that turn forward. Shift+`R` steps it back. Squares turn by 90°, triangles by 120°, and hexes by 60°. Painting a cell again stores the new turn.
 
 The first frame is a noise fill so the autotile is visible immediately. Clear it if you want an empty sheet.
 
