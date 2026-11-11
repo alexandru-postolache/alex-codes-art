@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { blobMask, blockMark, normalizeBlob, squareBlobPoints } from '../blob.js';
 import { pointInPolygon } from '../geometry.js';
-import { buildGrid } from '../grid.js';
+import { buildGrid, cellKey } from '../grid.js';
 import { canonicalCorners } from '../marching.js';
 import {
+  blockNoiseTurn,
   blockTurn,
   layoutHelp,
   parseSheet,
@@ -67,6 +68,17 @@ test('filled edge and diagonal neighbors build the square blob mask', () => {
   const on = new Set([cell, north, east, northEast]);
   assert.equal(blobMask(cell, (other) => on.has(other)), 1 | 2 | 4);
   assert.equal(blobMask(cell, () => false), 0);
+});
+
+test('noise fill gives neighboring block cells different turns', () => {
+  const grid = buildGrid('square', 900, 600, 72, null);
+  const seen = new Set(grid.cells.map((cell) => blockNoiseTurn(cell.type, 11, cellKey(cell))));
+  assert.equal(seen.size, 4);
+  const hex = buildGrid('hex', 900, 600, 72, 'pointy');
+  const hexTurns = new Set(hex.cells.map((cell) => blockNoiseTurn(cell.type, 11, cellKey(cell))));
+  assert.equal(hexTurns.size, 6);
+  assert.equal(blockNoiseTurn('hex', 11, '2,0|3,1'), blockNoiseTurn('hex', 11, '2,0|3,1'));
+  assert.notEqual(blockNoiseTurn('hex', 11, '2,0|3,1'), blockNoiseTurn('hex', 12, '2,0|3,1'));
 });
 
 test('a block turn points the wedge at the next clockwise edge', () => {

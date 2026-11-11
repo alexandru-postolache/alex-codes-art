@@ -14,7 +14,7 @@ import {
   templateTileSize,
   terrainPaths,
 } from './marching.js';
-import { blockTurn, layoutHelp, methodLabel, parseSheet, sheetLayout, tileMasks, tilePlacement } from './rules.js';
+import { blockNoiseTurn, blockTurn, layoutHelp, methodLabel, parseSheet, sheetLayout, tileMasks, tilePlacement } from './rules.js';
 import { params } from './params.js';
 
 const sketch = (p) => {
@@ -257,8 +257,13 @@ const sketch = (p) => {
       const cell = cells[i];
       const sample = p.noise(cell.center.x * op.scale, cell.center.y * op.scale);
       const key = cellKey(cell);
-      if (sample >= op.threshold) filled.add(key);
-      else filled.delete(key);
+      if (sample >= op.threshold) {
+        filled.add(key);
+        if (method === 'block') blockTurns.set(key, blockNoiseTurn(cell.type, op.seed, key));
+      } else {
+        filled.delete(key);
+        if (method === 'block') blockTurns.delete(key);
+      }
     }
   }
 
@@ -412,7 +417,6 @@ const sketch = (p) => {
       } else drawCellShape(g, cell, mask);
     }
     if (mergeOutline || mergeFill) drawMergedShape(g, outlinePolys, mergeFill);
-    if (params.method === 'block' && !sheet) drawBlockMarks(g);
     if (params.showGrid) drawGrid(g);
     if (params.showVertices) drawVertices(g);
   }
@@ -649,37 +653,6 @@ const sketch = (p) => {
       if (params.filled) ctx.fill();
       else ctx.stroke();
     }
-    if (params.method === 'block' && mask) {
-      traceCommands(ctx, commandsForPolygon(blockMark(corners, 0, false), false));
-      ctx.fillStyle = shade(params.terrainColor, 0.55);
-      ctx.fill();
-    }
-  }
-
-  function drawBlockMarks(g) {
-    const ctx = g.drawingContext;
-    const color = shade(params.terrainColor, params.filled ? 0.55 : 1);
-    const cells = grid.cells;
-    for (let i = 0; i < cells.length; i++) {
-      const cell = cells[i];
-      if (!isFilled(cell)) continue;
-      const points = blockMark(cell.corners, blockTurns.get(cellKey(cell)) || 0, cell.variant === 'down');
-      ctx.save();
-      ctx.fillStyle = color;
-      ctx.strokeStyle = color;
-      ctx.lineJoin = 'round';
-      ctx.lineWidth = outlineWeight(cell.corners);
-      traceCommands(ctx, commandsForPolygon(points, false));
-      if (params.filled) ctx.fill();
-      else ctx.stroke();
-      ctx.restore();
-    }
-  }
-
-  function shade(hex, factor) {
-    const value = parseInt(String(hex).replace('#', ''), 16);
-    const channel = (shift) => Math.max(0, Math.min(255, Math.round(((value >> shift) & 255) * factor)));
-    return `rgb(${channel(16)}, ${channel(8)}, ${channel(0)})`;
   }
 
   function drawTemplateGuide(graphics, x, y, tileW, tileH, mask) {

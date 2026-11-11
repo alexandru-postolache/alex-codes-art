@@ -26,6 +26,23 @@ export function blockTurn(type, turns) {
   return ((turns % steps) + steps) % steps;
 }
 
+function mixHash(n) {
+  let x = n | 0;
+  x = Math.imul(x ^ (x >>> 16), 0x7feb352d);
+  x = Math.imul(x ^ (x >>> 15), 0x846ca68b);
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
+export function blockNoiseTurn(type, seed, key) {
+  let hash = mixHash((seed | 0) ^ 0x9e3779b9);
+  const parts = String(key).split(/[,|]/);
+  for (let i = 0; i < parts.length; i++) {
+    const value = Number(parts[i]);
+    hash = mixHash(hash ^ (Number.isFinite(value) ? Math.round(value) : i + 1));
+  }
+  return blockTurn(type, hash);
+}
+
 export function methodLabel(method) {
   if (method === 'blob') return 'Blob';
   if (method === 'block') return 'Block';
