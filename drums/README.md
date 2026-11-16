@@ -1,6 +1,6 @@
 # Handline
 
-A browser drum desk: practice the 40 PAS rudiments against a clock, learn a set of grooves, generate fills from a sticking, and see how a sticking sits on the kit as a groove or a fill.
+A browser drum desk: practice the 40 PAS rudiments against a clock, learn a set of grooves, generate fills from a sticking, record a song and practice it back, and see how a sticking sits on the kit as a groove or a fill.
 
 Lessons scroll toward a hit line, Melodics-style, on a horizontal highway. Right hand is cyan, left hand is pink, kick is gold. Each rudiment can be played as 8th notes or as 16th notes. A rudiment written in triplets or sextuplets also keeps that grid. At the end you get a timing score and a star rating.
 
@@ -35,6 +35,14 @@ The playhead sits in from the left. Notes keep scrolling past it, so you can see
 Grooves loop the same phrase on the highway, the way a fill does. The set runs from easy to hard, and each groove is there for one skill: the backbeat, a constant kick, the offbeat hat, even 16ths, a kick that moves, the shuffle, half time, ghost notes, playing one limb at a time, and a two-bar phrase. **Practice this** loads that groove.
 
 The step sequencer is one bar of hi-hat, snare, and kick, in 8ths or 16ths. Click a cell to add that voice. Switching to 16ths keeps an 8th hit on the first of the two slots. Switching back to 8ths keeps a step if either 16th in the pair was on. **Play** loops what you wrote. A snare on beat 2 or 4 is accented.
+
+## Songs
+
+**New song**, optionally **Add audio**, then **Record**. The click counts in four beats, and the backing track starts on the downbeat. MIDI, the keyboard, and the pads all write the take. **Stop** saves it in this browser.
+
+**Play** hears the take. **Practice** puts it on the highway and scores it with the same perfect, early, late, and miss colors as a lesson. The tempo slider can slow the practice; the backing track stays lined up. Recorded hits do not claim a hand. The kick is still marked K.
+
+**Export** downloads the song as JSON, audio included. **Import** brings that file back. A backing track that does not fit in local storage is kept beside the notes in this browser.
 
 ## Fills
 

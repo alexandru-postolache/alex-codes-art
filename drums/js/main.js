@@ -32,6 +32,24 @@ import {
   timingSentence,
 } from "./score.js";
 import {
+  arrangementFromSong,
+  audioDelete,
+  audioGet,
+  audioPut,
+  audioRate,
+  clampBpm,
+  exportSong,
+  formatClock,
+  hitBeat,
+  importSong,
+  loadLibrary,
+  newSongId,
+  phraseBeatsFor,
+  recordHit,
+  saveLibrary,
+  songFileName,
+} from "./songs.js";
+import {
   GRIDS,
   STICKINGS,
   arrangementsFor,
@@ -52,10 +70,12 @@ const els = {
   train: $("#train"),
   fills: $("#fills"),
   grooves: $("#grooves"),
+  songs: $("#songs"),
   stick: $("#stick"),
   tabTrain: $("#tab-train"),
   tabFills: $("#tab-fills"),
   tabGrooves: $("#tab-grooves"),
+  tabSongs: $("#tab-songs"),
   tabStick: $("#tab-stick"),
   kit: $("#kit-panel"),
   kitOpen: $("#kit-open"),
@@ -88,6 +108,29 @@ const els = {
   results: $("#results"),
   live: $("#live-judge"),
   pads: $("#pads"),
+  legendSong: $("#legend-song"),
+  songList: $("#song-list"),
+  songName: $("#song-name"),
+  songBpm: $("#song-bpm"),
+  songBpmRead: $("#song-bpm-read"),
+  songAudio: $("#song-audio"),
+  songAudioPick: $("#song-audio-pick"),
+  songAudioClear: $("#song-audio-clear"),
+  songAudioName: $("#song-audio-name"),
+  songError: $("#song-error"),
+  songClock: $("#song-clock"),
+  songLive: $("#song-live"),
+  songRecord: $("#song-record"),
+  songStop: $("#song-stop"),
+  songPlay: $("#song-play"),
+  songPractice: $("#song-practice"),
+  songExport: $("#song-export"),
+  songDelete: $("#song-delete"),
+  songPads: $("#song-pads"),
+  songNote: $("#song-note"),
+  songNew: $("#song-new"),
+  songImport: $("#song-import"),
+  songImportFile: $("#song-import-file"),
   stickList: $("#stick-list"),
   stickInput: $("#stick-input"),
   gridChips: $("#grid-chips"),
@@ -130,10 +173,25 @@ const state = {
   grooveLevel: "all",
   seqResolution: "8",
   seqGrid: emptyGrid("8"),
+  songs: [],
+  songId: null,
+  songName: "Song 1",
+  songBpm: 80,
+  songAudio: null,
+  songAudioCleared: true,
+  songRec: null,
+  songRecId: 0,
+  songError: "",
+  songNote: "",
+  deleteArmed: false,
+  songArming: false,
+  backing: null,
 };
 
 let sessionId = 0;
 let timer = 0;
+let songTimer = 0;
+let songsOpened = false;
 const shown = new Map();
 const fillShown = new Map();
 
@@ -157,18 +215,26 @@ function running() {
 }
 
 function setMode(mode) {
+  if (state.mode === "songs" && mode !== "songs" && state.songRec) stopRecording();
   state.mode = mode;
   els.train.hidden = mode !== "train";
   els.fills.hidden = mode !== "fills";
   els.grooves.hidden = mode !== "grooves";
+  els.songs.hidden = mode !== "songs";
   els.stick.hidden = mode !== "stick";
   els.tabTrain.setAttribute("aria-selected", String(mode === "train"));
   els.tabFills.setAttribute("aria-selected", String(mode === "fills"));
   els.tabGrooves.setAttribute("aria-selected", String(mode === "grooves"));
+  els.tabSongs.setAttribute("aria-selected", String(mode === "songs"));
   els.tabStick.setAttribute("aria-selected", String(mode === "stick"));
   if (mode === "stick") renderStick();
   if (mode === "fills") renderFills();
   if (mode === "grooves") renderGrooves();
+  if (mode === "songs") {
+    if (!songsOpened && !state.songId && state.songs[0]) selectSong(state.songs[0].id);
+    else renderSongs();
+    songsOpened = true;
+  }
 }
 
 function stickingHTML(text) {
@@ -207,16 +273,23 @@ function renderBanner() {
     els.banner.innerHTML = "";
     return;
   }
+  const back = state.custom.source === "song" ? "Back to songs" : "Back to rudiments";
   els.banner.hidden = false;
-  els.banner.innerHTML = `<span>Practicing ${state.custom.name}. ${state.custom.timing}.</span><button type="button" id="clear-custom">Back to rudiments</button>`;
+  els.banner.innerHTML = `<span>Practicing ${escapeHTML(state.custom.name)}. ${escapeHTML(state.custom.timing)}.</span><button type="button" id="clear-custom">${back}</button>`;
   $("#clear-custom").addEventListener("click", () => {
+    const source = state.custom?.source || null;
+    audio.stopBuffer();
+    state.backing = null;
     state.custom = null;
+    if (running()) stopLesson();
     const rudiment = findRudiment(state.rudimentId);
     state.bpm = rudiment.defaultBpm;
     els.bpm.value = String(state.bpm);
+    state.bars = 4;
     if (state.phase === "results") closeResults();
-    previewNotes();
+    else previewNotes();
     renderTrain();
+    if (source === "song") setMode("songs");
   });
 }
 
@@ -230,8 +303,13 @@ function renderTrain() {
   els.sticking.innerHTML = custom ? "" : stickingHTML(rudiment.sticking);
   els.about.textContent = custom ? custom.detail : rudiment.about;
   els.bpmRead.textContent = String(state.bpm);
-  els.gridRead.textContent = `${gridLabel(stepsPerBeat())} · ${state.bars} bars`;
+  const barLabel = `${state.bars} ${state.bars === 1 ? "bar" : "bars"}`;
+  els.gridRead.textContent = custom?.song
+    ? `${barLabel} · recorded at ${custom.recordedBpm}`
+    : `${gridLabel(stepsPerBeat())} · ${barLabel}`;
+  els.legendSong.hidden = !custom?.song;
   renderSubdivision(rudiment, custom);
+  els.bars.hidden = Boolean(custom?.song);
   els.bars.querySelectorAll("button").forEach((button) => {
     button.setAttribute("aria-pressed", String(Number(button.dataset.bars) === state.bars));
   });
@@ -258,12 +336,26 @@ function renderSubdivision(rudiment, custom) {
   `).join("");
 }
 
-function renderPads() {
-  els.pads.innerHTML = PADS.map((pad) => `
+function padMarkup() {
+  return PADS.map((pad) => `
     <button type="button" class="pad" data-pad="${pad.id}">
       <b>${pad.label}</b><span>${pad.key}${pad.id === "kick" ? " · Space" : ""}</span>
     </button>
   `).join("");
+}
+
+function renderPads() {
+  els.pads.innerHTML = padMarkup();
+  els.songPads.innerHTML = padMarkup();
+}
+
+function flashPad(root, element) {
+  const pad = root?.querySelector(`[data-pad="${element}"]`);
+  if (!pad) return null;
+  pad.style.setProperty("--flash", "#f3eee6");
+  pad.classList.add("lit");
+  window.setTimeout(() => pad.classList.remove("lit"), 90);
+  return pad;
 }
 
 function renderKit() {
@@ -342,10 +434,10 @@ function renderResults() {
         <div><b>${counts.good}</b><span>Good</span></div>
         <div><b>${counts.miss}</b><span>Missed</span></div>
       </div>
-      <div class="hands">
+      ${summary.hands.R.total || summary.hands.L.total ? `<div class="hands">
         ${handLine("Right", summary.hands.R)}
         ${handLine("Left", summary.hands.L)}
-      </div>
+      </div>` : ""}
       <div class="ticks">${state.chart.map((note) => `<i class="${note.result || ""}"></i>`).join("")}</div>
       <p class="quiet">${graces ? "Grace notes count at half weight. " : ""}Perfect is within 30 ms, great within 55, good within 90.</p>
       <div class="result-actions">
@@ -404,9 +496,11 @@ function announceMisses() {
 }
 
 function runLesson(preview) {
+  if (state.songRec) stopRecording();
   sessionId += 1;
   const id = sessionId;
   window.clearTimeout(timer);
+  audio.stopBuffer();
   state.summary = null;
   renderResults();
   audio.resume().then(() => {
@@ -417,6 +511,9 @@ function runLesson(preview) {
     state.chart = schedule(lessonNotes(state.bars), state.downbeat, state.bpm, stepsPerBeat());
     state.phase = "countin";
     state.scoring = !preview;
+    if (state.backing && state.custom?.recordedBpm) {
+      audio.playBuffer(state.backing, state.downbeat, audioRate(state.custom.recordedBpm, state.bpm));
+    }
     let beat = -4;
     let nextBeat = state.downbeat - 4 * beatDur;
     let guide = 0;
@@ -459,6 +556,7 @@ function finish(id, preview) {
   if (id !== sessionId) return;
   sessionId += 1;
   window.clearTimeout(timer);
+  audio.stopBuffer();
   state.scoring = false;
   if (preview) {
     state.phase = "idle";
@@ -476,6 +574,7 @@ function finish(id, preview) {
 function stopLesson() {
   sessionId += 1;
   window.clearTimeout(timer);
+  audio.stopBuffer();
   state.scoring = false;
   state.phase = "idle";
   state.summary = null;
@@ -488,12 +587,9 @@ function onStrike(element, velocity = 100) {
   audio.resume();
   const now = audio.currentTime();
   audio.drum(now, element, velocity);
-  const pad = els.pads.querySelector(`[data-pad="${element}"]`);
-  if (pad) {
-    pad.style.setProperty("--flash", "#f3eee6");
-    pad.classList.add("lit");
-    window.setTimeout(() => pad.classList.remove("lit"), 90);
-  }
+  const pad = flashPad(els.pads, element);
+  flashPad(els.songPads, element);
+  captureRecording(element, velocity, now);
   if (!state.scoring) return;
   const hit = registerHit(state.chart, element, now - state.calibration / 1000);
   if (!hit) {
@@ -517,6 +613,8 @@ function selectRudiment(id) {
   const rudiment = findRudiment(id);
   if (!rudiment) return;
   if (running()) stopLesson();
+  audio.stopBuffer();
+  state.backing = null;
   state.rudimentId = id;
   state.custom = null;
   state.noteValue = defaultNoteValue(rudiment);
@@ -655,7 +753,7 @@ function renderStick() {
   `).join("");
 }
 
-const SOURCE_LABEL = { fill: "Fill", groove: "Groove" };
+const SOURCE_LABEL = { fill: "Fill", groove: "Groove", song: "Song" };
 
 function practice(arrangement, source) {
   const steps = arrangement.recipe.type === "hands"
@@ -666,6 +764,7 @@ function practice(arrangement, source) {
     : state.pinnedId
       ? STICKINGS.find((item) => item.id === state.pinnedId)
       : matchEntry(parseSticking(els.stickInput.value).hands || []);
+  const song = Boolean(arrangement.song);
   state.custom = {
     name: source
       ? `${SOURCE_LABEL[source] || "Fill"} · ${arrangement.title}`
@@ -674,10 +773,14 @@ function practice(arrangement, source) {
     timing: arrangement.timing,
     stepsPerBeat: steps,
     recipe: arrangement.recipe,
+    source: source || null,
+    song,
+    recordedBpm: song ? arrangement.recordedBpm : null,
   };
-  state.bpm = defaultBpm(steps);
+  state.backing = arrangement.audioBuffer || null;
+  state.bpm = song ? arrangement.bpm : defaultBpm(steps);
   els.bpm.value = String(state.bpm);
-  state.bars = 4;
+  state.bars = song ? arrangement.bars : 4;
   if (running()) stopLesson();
   state.phase = "idle";
   state.summary = null;
@@ -821,6 +924,500 @@ function renderGrooves() {
   renderGrooveList();
 }
 
+function escapeHTML(value) {
+  return String(value).replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[ch]));
+}
+
+function currentSong() {
+  return state.songs.find((song) => song.id === state.songId) || null;
+}
+
+function nextSongName() {
+  const used = new Set(state.songs.map((song) => song.name));
+  let number = state.songs.length + 1;
+  let name = `Song ${number}`;
+  while (used.has(name)) {
+    number += 1;
+    name = `Song ${number}`;
+  }
+  return name;
+}
+
+function audioFields(existing) {
+  if (state.songAudio) {
+    return {
+      audio: state.songAudio.dataUrl,
+      audioName: state.songAudio.name,
+      audioType: state.songAudio.type,
+      audioSeconds: state.songAudio.seconds || 0,
+      audioExternal: false,
+    };
+  }
+  if (state.songAudioCleared || !existing) {
+    return { audio: null, audioName: null, audioType: null, audioSeconds: 0, audioExternal: false };
+  }
+  return {
+    audio: existing.audio,
+    audioName: existing.audioName,
+    audioType: existing.audioType,
+    audioSeconds: existing.audioSeconds,
+    audioExternal: Boolean(existing.audioExternal),
+  };
+}
+
+function buildSong(hits, takeBpm) {
+  const existing = currentSong();
+  const audioMeta = audioFields(existing);
+  const hasAudio = Boolean(audioMeta.audio || audioMeta.audioExternal);
+  const recordedHits = hits.length ? hits : (existing?.hits || []);
+  if (!recordedHits.length && !hasAudio) return null;
+  const tempo = clampBpm(takeBpm || state.songBpm);
+  const name = (state.songName || existing?.name || "Song").trim().slice(0, 80) || "Song";
+  return {
+    id: existing?.id || newSongId(),
+    name,
+    bpm: tempo,
+    recordedBpm: hits.length ? tempo : clampBpm(existing?.recordedBpm || tempo),
+    createdAt: existing?.createdAt || new Date().toISOString(),
+    ...audioMeta,
+    hits: recordedHits,
+  };
+}
+
+function upsertSong(song) {
+  const index = state.songs.findIndex((item) => item.id === song.id);
+  if (index >= 0) state.songs[index] = song;
+  else state.songs.unshift(song);
+  state.songId = song.id;
+  state.songName = song.name;
+  state.songBpm = song.bpm;
+}
+
+function songSeconds(song) {
+  if (!song) return 0;
+  const tempo = song.recordedBpm || song.bpm || 80;
+  const last = song.hits.reduce((max, hit) => Math.max(max, hit.beat), 0);
+  const audioBeats = song.audioSeconds ? (song.audioSeconds * tempo) / 60 : 0;
+  return (Math.max(last, audioBeats) * 60) / tempo;
+}
+
+function audioLabel() {
+  if (state.songAudio?.name) return state.songAudio.name;
+  const song = currentSong();
+  if (!state.songAudioCleared && song?.audioName) return song.audioName;
+  return "No backing track. The click still marks time.";
+}
+
+function renderSongs() {
+  const recording = Boolean(state.songRec || state.songArming);
+  const song = currentSong();
+  els.songList.innerHTML = state.songs.map((item) => {
+    const beats = phraseBeatsFor(item.hits, item.audioSeconds, item.recordedBpm || item.bpm);
+    const bars = beats / 4;
+    const barLabel = bars === 1 ? "bar" : "bars";
+    const hitLabel = item.hits.length === 1 ? "hit" : "hits";
+    return `
+      <button type="button" class="ritem song-item" role="option" data-song="${escapeHTML(item.id)}" aria-selected="${item.id === state.songId}">
+        <span><strong>${escapeHTML(item.name)}</strong><small>${item.recordedBpm || item.bpm} bpm · ${bars} ${barLabel} · ${item.hits.length} ${hitLabel}</small></span>
+      </button>`;
+  }).join("") || `<p class="status">No songs yet. Record one, and it stays in this browser.</p>`;
+  if (document.activeElement !== els.songName) els.songName.value = state.songName;
+  if (document.activeElement !== els.songBpm) {
+    els.songBpm.value = String(state.songBpm);
+    els.songBpmRead.textContent = String(state.songBpm);
+  }
+  els.songBpm.disabled = recording;
+  els.songAudioName.textContent = audioLabel();
+  els.songAudioClear.hidden = !(state.songAudio || (!state.songAudioCleared && (song?.audio || song?.audioName || song?.audioExternal)));
+  els.songRecord.hidden = recording;
+  els.songStop.hidden = !recording;
+  els.songNew.disabled = recording;
+  els.songImport.disabled = recording;
+  els.songAudioPick.disabled = recording;
+  const canUse = Boolean(song) && !recording;
+  els.songPlay.disabled = !canUse || !(song.hits.length || song.audio || song.audioExternal || state.songAudio);
+  els.songPractice.disabled = !canUse || !song.hits.length;
+  els.songExport.disabled = !canUse;
+  els.songDelete.disabled = !canUse;
+  els.songDelete.textContent = state.deleteArmed ? "Delete this song?" : "Delete";
+  els.songError.hidden = !state.songError;
+  els.songError.textContent = state.songError || "";
+  els.songNote.textContent = state.songNote || "";
+  if (!recording) {
+    els.songClock.textContent = formatClock(songSeconds(song));
+    els.songClock.classList.remove("rec");
+    els.songLive.textContent = song ? `${song.hits.length} hits` : "Ready to record.";
+  }
+}
+
+function paintSongLive(text) {
+  if (els.songLive.textContent !== text) els.songLive.textContent = text;
+}
+
+function captureRecording(element, velocity, now) {
+  if (!state.songRec) return;
+  const beat = hitBeat(now - state.calibration / 1000, state.songRec.downbeat, state.songRec.bpm);
+  recordHit(state.songRec.hits, { beat, element, velocity }, state.songRec.bpm);
+}
+
+async function persistSongs() {
+  const result = saveLibrary(state.songs, localStorage);
+  if (!result.ok) {
+    state.songNote = "The song could not be saved in this browser.";
+    return;
+  }
+  if (result.audioOmitted) {
+    const failed = [];
+    for (const item of result.omitted) {
+      try {
+        await audioPut(item.id, item.audio);
+        const song = state.songs.find((entry) => entry.id === item.id);
+        if (song) song.audioExternal = true;
+      } catch {
+        failed.push(item.id);
+      }
+    }
+    state.songNote = failed.length
+      ? "The notes are saved. A backing track did not fit in this browser."
+      : "Saved in this browser. The backing track is stored beside the notes.";
+    return;
+  }
+  for (const song of state.songs) {
+    if (song.audio) song.audioExternal = false;
+  }
+  state.songNote = state.songs.length ? "Saved in this browser." : "";
+}
+
+async function ensureBuffer() {
+  if (state.songAudio?.buffer) return state.songAudio.buffer;
+  const song = currentSong();
+  if (state.songAudioCleared || !song?.audio) return null;
+  const buffer = await audio.decodeDataUrl(song.audio);
+  state.songAudio = {
+    name: song.audioName,
+    type: song.audioType,
+    dataUrl: song.audio,
+    seconds: buffer.duration || song.audioSeconds,
+    buffer,
+  };
+  state.songAudioCleared = false;
+  return buffer;
+}
+
+async function startRecording() {
+  if (state.songRec || state.songArming) return;
+  if (running()) stopLesson();
+  audio.stopBuffer();
+  const resumePromise = audio.resume();
+  state.songArming = true;
+  state.deleteArmed = false;
+  state.songError = "";
+  state.songBpm = clampBpm(els.songBpm.value);
+  state.songName = els.songName.value;
+  state.songRecId += 1;
+  const id = state.songRecId;
+  renderSongs();
+  let buffer = null;
+  try {
+    buffer = await ensureBuffer();
+    await resumePromise;
+  } catch {
+    if (id === state.songRecId) {
+      state.songArming = false;
+      state.songError = "The backing track could not be read.";
+      renderSongs();
+    }
+    return;
+  }
+  if (id !== state.songRecId || state.mode !== "songs") {
+    state.songArming = false;
+    return;
+  }
+  const beatDur = 60 / state.songBpm;
+  const downbeat = audio.currentTime() + 0.12 + 4 * beatDur;
+  state.songRec = { bpm: state.songBpm, downbeat, hits: [] };
+  state.songArming = false;
+  if (buffer) audio.playBuffer(buffer, downbeat, 1);
+  renderSongs();
+  let beat = -4;
+  let nextBeat = downbeat - 4 * beatDur;
+  const tick = () => {
+    if (id !== state.songRecId || !state.songRec) return;
+    const horizon = audio.currentTime() + 0.18;
+    while (nextBeat < horizon && beat < 8000) {
+      audio.click(nextBeat, ((beat % 4) + 4) % 4 === 0);
+      nextBeat += beatDur;
+      beat += 1;
+    }
+    const elapsed = audio.currentTime() - downbeat;
+    if (elapsed < 0) {
+      const count = String(Math.max(1, Math.ceil(-elapsed / beatDur - 1e-6)));
+      if (els.songClock.textContent !== count) els.songClock.textContent = count;
+      els.songClock.classList.remove("rec");
+      paintSongLive("Count in");
+    } else {
+      const clock = formatClock(elapsed);
+      if (els.songClock.textContent !== clock) els.songClock.textContent = clock;
+      els.songClock.classList.add("rec");
+      const count = state.songRec.hits.length;
+      paintSongLive(`${count} ${count === 1 ? "hit" : "hits"}`);
+    }
+    songTimer = window.setTimeout(tick, 25);
+  };
+  tick();
+}
+
+async function stopRecording() {
+  if (state.songArming && !state.songRec) {
+    state.songArming = false;
+    state.songRecId += 1;
+    audio.stopBuffer();
+    renderSongs();
+    return;
+  }
+  if (!state.songRec) return;
+  const rec = state.songRec;
+  state.songRec = null;
+  state.songRecId += 1;
+  window.clearTimeout(songTimer);
+  audio.stopBuffer();
+  const hits = rec.hits.slice().sort((a, b) => a.beat - b.beat || a.element.localeCompare(b.element));
+  const song = buildSong(hits, rec.bpm);
+  if (!song) {
+    state.songError = "Nothing was recorded.";
+    renderSongs();
+    return;
+  }
+  state.songError = "";
+  upsertSong(song);
+  await persistSongs();
+  renderSongs();
+}
+
+async function startNewSong() {
+  if (state.songRec || state.songArming) await stopRecording();
+  state.songId = null;
+  state.songName = nextSongName();
+  state.songBpm = 80;
+  state.songAudio = null;
+  state.songAudioCleared = true;
+  state.songError = "";
+  state.deleteArmed = false;
+  renderSongs();
+}
+
+async function selectSong(id) {
+  if (state.songRec || state.songArming) await stopRecording();
+  const song = state.songs.find((item) => item.id === id);
+  if (!song) return;
+  state.songId = song.id;
+  state.songName = song.name;
+  state.songBpm = song.bpm;
+  state.songAudio = null;
+  state.songAudioCleared = false;
+  state.songError = "";
+  state.deleteArmed = false;
+  renderSongs();
+  if (!song.audio) return;
+  try {
+    const buffer = await audio.decodeDataUrl(song.audio);
+    if (state.songId !== song.id) return;
+    state.songAudio = {
+      name: song.audioName,
+      type: song.audioType,
+      dataUrl: song.audio,
+      seconds: buffer.duration || song.audioSeconds,
+      buffer,
+    };
+    renderSongs();
+  } catch {
+    if (state.songId !== song.id) return;
+    state.songError = "The backing track could not be read.";
+    renderSongs();
+  }
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function takeAudioFile(file) {
+  const [dataUrl, buffer] = await Promise.all([
+    readFileAsDataUrl(file),
+    file.arrayBuffer().then((bytes) => audio.decodeArrayBuffer(bytes)),
+  ]);
+  return {
+    name: file.name,
+    type: file.type || "audio/*",
+    dataUrl,
+    seconds: buffer.duration,
+    buffer,
+  };
+}
+
+async function rememberAudio(file) {
+  state.songAudio = await takeAudioFile(file);
+  state.songAudioCleared = false;
+  state.songError = "";
+  state.songName = els.songName.value || state.songName;
+  const existing = currentSong();
+  if (existing) {
+    Object.assign(existing, audioFields(existing));
+    existing.audioSeconds = state.songAudio.seconds || 0;
+  } else {
+    const song = buildSong([]);
+    if (song) upsertSong(song);
+  }
+  await persistSongs();
+  renderSongs();
+}
+
+async function clearSongAudio() {
+  const existing = currentSong();
+  state.songAudio = null;
+  state.songAudioCleared = true;
+  if (existing?.audioExternal) {
+    try { await audioDelete(existing.id); } catch { /* already gone */ }
+  }
+  if (existing) {
+    Object.assign(existing, audioFields(existing));
+    if (!existing.hits.length) {
+      state.songs = state.songs.filter((song) => song.id !== existing.id);
+      state.songId = null;
+    }
+    await persistSongs();
+  }
+  renderSongs();
+}
+
+async function deleteCurrentSong() {
+  const song = currentSong();
+  if (!song || state.songRec || state.songArming) return;
+  if (!state.deleteArmed) {
+    state.deleteArmed = true;
+    renderSongs();
+    return;
+  }
+  state.songs = state.songs.filter((item) => item.id !== song.id);
+  if (song.audioExternal) {
+    try { await audioDelete(song.id); } catch { /* already gone */ }
+  }
+  state.deleteArmed = false;
+  state.songId = null;
+  state.songName = nextSongName();
+  state.songBpm = 80;
+  state.songAudio = null;
+  state.songAudioCleared = true;
+  state.songError = "";
+  await persistSongs();
+  renderSongs();
+}
+
+async function exportCurrentSong() {
+  const song = currentSong();
+  if (!song || state.songRec) return;
+  let audioData = state.songAudio?.dataUrl || song.audio;
+  if (!audioData && song.audioExternal) {
+    try { audioData = await audioGet(song.id); } catch { audioData = null; }
+  }
+  const copy = {
+    ...song,
+    name: (els.songName.value || song.name).trim() || song.name,
+    audio: audioData || null,
+    audioExternal: false,
+  };
+  const blob = new Blob([exportSong(copy)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = songFileName(copy.name);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function importSongFile(file) {
+  if (state.songRec || state.songArming) await stopRecording();
+  let result;
+  try {
+    result = importSong(await file.text());
+  } catch {
+    result = { song: null, error: "That file could not be read." };
+  }
+  if (result.error) {
+    state.songError = result.error;
+    renderSongs();
+    return;
+  }
+  if (state.songs.some((song) => song.id === result.song.id)) result.song.id = newSongId();
+  state.songs.unshift(result.song);
+  state.songId = result.song.id;
+  state.songName = result.song.name;
+  state.songBpm = result.song.bpm;
+  state.songAudio = null;
+  state.songAudioCleared = !(result.song.audio || result.song.audioExternal);
+  state.songError = "";
+  state.deleteArmed = false;
+  await persistSongs();
+  await selectSong(result.song.id);
+}
+
+async function openSong(preview) {
+  const resumePromise = audio.resume();
+  if (state.songRec || state.songArming) await stopRecording();
+  const song = currentSong();
+  if (!song) return;
+  if (!preview && !song.hits.length) return;
+  if (preview && !song.hits.length && !song.audio && !song.audioExternal && !state.songAudio) return;
+  state.songName = els.songName.value || song.name;
+  song.name = state.songName.trim().slice(0, 80) || song.name;
+  state.songName = song.name;
+  state.songBpm = clampBpm(els.songBpm.value);
+  song.bpm = state.songBpm;
+  await persistSongs();
+  let buffer = state.songAudio?.buffer || null;
+  if (!buffer && song.audio && !state.songAudioCleared) {
+    try {
+      buffer = await audio.decodeDataUrl(song.audio);
+    } catch {
+      state.songError = "The backing track could not be read.";
+      renderSongs();
+      if (!song.hits.length) return;
+      buffer = null;
+    }
+  }
+  try { await resumePromise; } catch { /* Start will resume again. */ }
+  const arrangement = arrangementFromSong(song);
+  arrangement.audioBuffer = buffer;
+  practice(arrangement, "song");
+  if (preview) runLesson(true);
+}
+
+async function hydrateSongAudio() {
+  for (const song of state.songs) {
+    if (song.audio || !song.audioExternal) continue;
+    try {
+      const data = await audioGet(song.id);
+      if (typeof data === "string" && data.startsWith("data:")) song.audio = data;
+    } catch {
+      /* The notes still load. */
+    }
+  }
+  if (state.mode === "songs") renderSongs();
+}
+
 function loop() {
   highway.frame(view());
   updateProgress();
@@ -829,9 +1426,11 @@ function loop() {
 
 function bind() {
   document.querySelector("#fill-form").addEventListener("submit", (event) => event.preventDefault());
+  document.querySelector("#song-form").addEventListener("submit", (event) => event.preventDefault());
   els.tabTrain.addEventListener("click", () => setMode("train"));
   els.tabFills.addEventListener("click", () => setMode("fills"));
   els.tabGrooves.addEventListener("click", () => setMode("grooves"));
+  els.tabSongs.addEventListener("click", () => setMode("songs"));
   els.tabStick.addEventListener("click", () => setMode("stick"));
   els.kitOpen.addEventListener("click", () => {
     const open = els.kit.hidden;
@@ -869,7 +1468,7 @@ function bind() {
   });
   els.bars.addEventListener("click", (event) => {
     const button = event.target.closest("[data-bars]");
-    if (!button || running()) return;
+    if (!button || running() || state.custom?.song) return;
     state.bars = Number(button.dataset.bars);
     wakeSettings();
     renderTrain();
@@ -882,12 +1481,64 @@ function bind() {
     localStorage.setItem("handline-calibration", String(state.calibration));
     paintCalibration();
   });
-  els.pads.addEventListener("pointerdown", (event) => {
+  const onPad = (event) => {
     const pad = event.target.closest("[data-pad]");
     if (!pad) return;
     event.preventDefault();
     onStrike(pad.dataset.pad, 104);
+  };
+  els.pads.addEventListener("pointerdown", onPad);
+  els.songPads.addEventListener("pointerdown", onPad);
+  els.songNew.addEventListener("click", () => { startNewSong(); });
+  els.songImport.addEventListener("click", () => els.songImportFile.click());
+  els.songImportFile.addEventListener("change", () => {
+    const file = els.songImportFile.files?.[0];
+    els.songImportFile.value = "";
+    if (file) importSongFile(file);
   });
+  els.songList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-song]");
+    if (button) selectSong(button.dataset.song);
+  });
+  els.songName.addEventListener("input", () => {
+    state.songName = els.songName.value;
+    state.deleteArmed = false;
+  });
+  els.songName.addEventListener("blur", () => {
+    const song = currentSong();
+    state.songName = els.songName.value;
+    if (!song || state.songRec) return;
+    song.name = state.songName.trim().slice(0, 80) || song.name;
+    state.songName = song.name;
+    persistSongs().then(() => renderSongs());
+  });
+  els.songBpm.addEventListener("input", () => {
+    state.songBpm = clampBpm(els.songBpm.value);
+    els.songBpmRead.textContent = String(state.songBpm);
+  });
+  els.songBpm.addEventListener("change", () => {
+    const song = currentSong();
+    if (!song || state.songRec) return;
+    song.bpm = state.songBpm;
+    persistSongs().then(() => renderSongs());
+  });
+  els.songAudioPick.addEventListener("click", () => els.songAudio.click());
+  els.songAudio.addEventListener("change", () => {
+    const file = els.songAudio.files?.[0];
+    els.songAudio.value = "";
+    if (!file) return;
+    rememberAudio(file).catch(() => {
+      state.songError = "That audio file could not be read.";
+      renderSongs();
+    });
+  });
+  els.songAudioClear.addEventListener("click", () => { clearSongAudio(); });
+  els.songRecord.addEventListener("click", () => { startRecording(); });
+  els.songStop.addEventListener("click", () => { stopRecording(); });
+  els.songPlay.addEventListener("click", () => { openSong(true); });
+  els.songPractice.addEventListener("click", () => { openSong(false); });
+  els.songExport.addEventListener("click", () => { exportCurrentSong(); });
+  els.songDelete.addEventListener("click", () => { deleteCurrentSong(); });
   window.addEventListener("keydown", (event) => {
     if (event.repeat) return;
     const target = event.target;
@@ -1028,6 +1679,9 @@ els.calibration.value = String(state.calibration);
 els.bpm.value = "80";
 els.stickInput.value = state.stickText;
 els.fillInput.value = state.fillText;
+state.songs = loadLibrary(localStorage);
+state.songName = nextSongName();
+els.songName.value = state.songName;
 renderFamilies();
 renderPads();
 renderKit();
@@ -1039,3 +1693,4 @@ selectRudiment("paradiddle");
 renderStick();
 requestAnimationFrame(loop);
 midi.connect();
+hydrateSongAudio();

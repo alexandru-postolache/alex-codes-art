@@ -3,7 +3,7 @@ import test from "node:test";
 import { generateFills } from "../js/fills.js";
 import { notePaint } from "../js/highway.js";
 import { GROOVE_LEVELS, GROOVES, emptyGrid, remapGrid, sequencerGroove } from "../js/grooves.js";
-import { NITRO_MAX } from "../js/kit.js";
+import { NITRO_MAX, letterFor } from "../js/kit.js";
 import { buildChart, formatSticking, parsePattern } from "../js/pattern.js";
 import {
   RUDIMENTS,
@@ -20,6 +20,19 @@ import {
   summarize,
   timingSentence,
 } from "../js/score.js";
+import {
+  arrangementFromSong,
+  audioRate,
+  exportSong,
+  importSong,
+  loadLibrary,
+  memoryStorage,
+  notesForSong,
+  phraseBeatsFor,
+  recordHit,
+  saveLibrary,
+  SONG_KEY,
+} from "../js/songs.js";
 import {
   STICKINGS,
   arrangementsFor,
@@ -413,4 +426,73 @@ test("the step sequencer builds a looping bar from toggles", () => {
   const keys = new Set(looped.map((note) => `${note.baseStep}:${note.element}:${note.hand}`));
   assert.equal(keys.size, looped.length);
   assert.ok(looped.every((note) => note.baseStep < 32));
+});
+
+test("a recorded song keeps its timing, survives storage, and round-trips", () => {
+  let hits = [];
+  hits = recordHit(hits, { beat: -1, element: "snare", velocity: 100 }, 120);
+  hits = recordHit(hits, { beat: -0.09, element: "snare", velocity: 100 }, 120);
+  assert.equal(hits.length, 0);
+  hits = recordHit(hits, { beat: -0.04, element: "snare", velocity: 40 }, 120);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].beat, 0);
+  hits = recordHit(hits, { beat: 0.2, element: "snare", velocity: 70 }, 120);
+  hits = recordHit(hits, { beat: 1, element: "kick", velocity: 40 }, 120);
+  hits = recordHit(hits, { beat: 1.02, element: "kick", velocity: 110 }, 120);
+  hits = recordHit(hits, { beat: 1.02, element: "snare", velocity: 80 }, 120);
+  assert.equal(hits.filter((hit) => hit.element === "kick").length, 1);
+  assert.equal(hits.find((hit) => hit.element === "kick").velocity, 110);
+  assert.equal(hits.filter((hit) => hit.element === "snare").length, 3);
+  hits = recordHit(hits, { beat: 4, element: "hat", velocity: 80 }, 120);
+  assert.equal(phraseBeatsFor(hits, 0, 120), 8);
+  assert.equal(phraseBeatsFor([{ beat: 1, element: "snare", velocity: 80 }], 10, 80), 16);
+
+  const song = {
+    id: "take-1",
+    name: "Night",
+    bpm: 100,
+    recordedBpm: 120,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    audioName: null,
+    audioType: null,
+    audioSeconds: 0,
+    audio: null,
+    audioExternal: false,
+    hits,
+  };
+  const arrangement = arrangementFromSong(song);
+  assert.equal(arrangement.recipe.phraseBeats, 8);
+  assert.equal(arrangement.bpm, 100);
+  assert.equal(arrangement.recordedBpm, 120);
+  const chart = materialize(arrangement.recipe, arrangement.bars);
+  assert.ok(chart.some((note) => note.element === "hat" && note.beat === 4));
+  assert.equal(chart.filter((note) => note.element === "snare").length, 3);
+  const notes = notesForSong(song);
+  assert.equal(notes.find((note) => note.element === "snare").hand, "S");
+  assert.equal(letterFor(notes.find((note) => note.element === "snare")), "·");
+  assert.equal(letterFor(notes.find((note) => note.element === "kick")), "K");
+  assert.equal(audioRate(120, 60), 0.5);
+
+  const imported = importSong(exportSong(song));
+  assert.equal(imported.error, "");
+  assert.equal(imported.song.name, "Night");
+  assert.equal(imported.song.hits.length, song.hits.length);
+  assert.equal(imported.song.recordedBpm, 120);
+  assert.ok(importSong("{").error);
+  assert.ok(importSong(JSON.stringify({ format: "nope" })).error);
+
+  const heavy = { ...song, audio: `data:audio/wav;base64,${"a".repeat(800)}` };
+  const preview = memoryStorage();
+  assert.equal(saveLibrary([heavy], preview).audioOmitted, false);
+  const fullSize = preview.getItem(SONG_KEY).length;
+  const storage = memoryStorage({ maxBytes: fullSize - 1 });
+  const saved = saveLibrary([heavy], storage);
+  assert.equal(saved.audioOmitted, true);
+  assert.equal(saved.omitted.length, 1);
+  const loaded = loadLibrary(storage);
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0].audio, null);
+  assert.equal(loaded[0].audioExternal, true);
+  assert.equal(loaded[0].hits.length, song.hits.length);
+  assert.equal(loaded[0].name, "Night");
 });

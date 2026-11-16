@@ -67,6 +67,7 @@ export function elementLabel(id) {
 
 export function letterFor(note) {
   if (note.element === "kick" || note.hand === "F") return "K";
+  if (note.hand === "S") return "·";
   return note.hand;
 }
 

@@ -25,6 +25,7 @@ export function createHighway(canvas) {
       R: pick("--hand-r"),
       L: pick("--hand-l"),
       F: pick("--hand-f"),
+      S: pick("--ink"),
       ink: pick("--ink"),
       muted: pick("--muted"),
       stage: pick("--stage"),

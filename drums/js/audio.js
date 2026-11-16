@@ -65,6 +65,41 @@ export function createAudio() {
     });
   }
 
+  let backing = null;
+
+  function stopBuffer() {
+    if (!backing) return;
+    try { backing.stop(); } catch { /* already ended */ }
+    backing.disconnect();
+    backing = null;
+  }
+
+  function playBuffer(buffer, when, rate = 1) {
+    stopBuffer();
+    if (!buffer) return;
+    const audio = context();
+    const source = audio.createBufferSource();
+    source.buffer = buffer;
+    const playback = Math.max(0.25, Math.min(4, rate || 1));
+    source.playbackRate.setValueAtTime(playback, audio.currentTime);
+    source.connect(audio.destination);
+    source.start(Math.max(when, audio.currentTime));
+    backing = source;
+  }
+
+  function decodeArrayBuffer(arrayBuffer) {
+    return context().decodeAudioData(arrayBuffer.slice(0));
+  }
+
+  function decodeDataUrl(dataUrl) {
+    const comma = String(dataUrl || "").indexOf(",");
+    if (comma < 0) return Promise.reject(new Error("audio"));
+    const binary = atob(dataUrl.slice(comma + 1));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return decodeArrayBuffer(bytes.buffer);
+  }
+
   function drum(time, element, velocity = 100) {
     const level = Math.max(0.35, Math.min(1, velocity / 110));
     if (element === "kick") {
@@ -98,5 +133,5 @@ export function createAudio() {
     });
   }
 
-  return { context, resume, currentTime, click, drum };
+  return { context, resume, currentTime, click, drum, playBuffer, stopBuffer, decodeArrayBuffer, decodeDataUrl };
 }
