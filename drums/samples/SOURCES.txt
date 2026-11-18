@@ -1,0 +1,14 @@
+These drum hits are short mono excerpts from the Versilian Community Sample Library
+by Versilian Studios, dedicated to the public domain under CC0 1.0.
+Strudel loads this library by default.
+
+https://github.com/sgossner/VCSL
+
+kick        Bass Drum 1, hits v3 and v7
+snare       Snare Drum, Modern 1, snares-on hits v3 and v7
+hat         Hi-Hat Cymbal, closed stick hits
+tom1        Tom 1, stick hits
+tom2        Legacy tenor tom, higher
+floor       Tom 2, stick hits
+ride        Suspended Cymbal 1, stick hits
+crash       Suspended Cymbal 1, bow hits
