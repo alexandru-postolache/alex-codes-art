@@ -78,7 +78,10 @@ const els = {
   songs: $("#songs"),
   stick: $("#stick"),
   libraryRudiments: $("#library-rudiments"),
+  libraryFills: $("#library-fills"),
+  libraryGrooves: $("#library-grooves"),
   librarySongs: $("#library-songs"),
+  libraryStick: $("#library-stick"),
   tabTrain: $("#tab-train"),
   tabFills: $("#tab-fills"),
   tabGrooves: $("#tab-grooves"),
@@ -251,16 +254,58 @@ function readRoute() {
     mode: MODE_FOR_PAGE[params.get("page")] || "train",
     song: params.get("song") || "",
     practice: params.get("practice") === "1",
+    item: params.get("item") || "",
+    stick: params.get("stick") || "",
+    grids: params.get("grids") || "",
+    res: params.get("res") || "",
+    grid: params.get("grid") || "",
   };
+}
+
+function practiceSectionFor(custom) {
+  if (custom?.source === "fill") return "fills";
+  if (custom?.source === "groove") return "grooves";
+  if (custom?.source === "song") return "songs";
+  if (custom?.source === "stick") return "stick";
+  return null;
+}
+
+function encodeSeq(grid) {
+  return ["hat", "snare", "kick"].map((voice) => (grid[voice] || []).map((on) => (on ? "1" : "0")).join("")).join(".");
+}
+
+function decodeSeq(text, resolution) {
+  const spec = RESOLUTIONS[resolution];
+  if (!spec || !text) return null;
+  const parts = text.split(".");
+  if (parts.length !== 3) return null;
+  const grid = emptyGrid(resolution);
+  const voices = ["hat", "snare", "kick"];
+  for (let index = 0; index < voices.length; index += 1) {
+    const bits = parts[index];
+    if (!/^[01]+$/.test(bits) || bits.length !== spec.steps) return null;
+    for (let step = 0; step < spec.steps; step += 1) grid[voices[index]][step] = bits[step] === "1";
+  }
+  return grid;
 }
 
 function routeURL() {
   const params = new URLSearchParams();
   params.set("page", PAGE_FOR_MODE[state.mode] || "rudiments");
-  const practicing = state.custom?.source === "song" && state.custom.songId;
-  if (practicing) {
-    params.set("song", state.custom.songId);
+  const section = practiceSectionFor(state.custom);
+  if (section && section === state.mode) {
+    if (section === "songs" && state.custom.songId) params.set("song", state.custom.songId);
     params.set("practice", "1");
+    if (section !== "songs" && state.custom.practiceId) params.set("item", state.custom.practiceId);
+    if (section === "fills") params.set("stick", state.fillText);
+    if (section === "stick") {
+      params.set("stick", state.stickText);
+      params.set("grids", state.stickGrids.join(","));
+    }
+    if (section === "grooves" && state.custom.practiceId === "sequencer") {
+      params.set("res", state.seqResolution);
+      params.set("grid", encodeSeq(state.seqGrid));
+    }
   } else if (state.mode === "songs" && state.songId) {
     params.set("song", state.songId);
   }
@@ -276,48 +321,63 @@ function writeRoute(kind = "push") {
   else history.pushState(data, "", next);
 }
 
-function mountSongLibrary(practicing) {
-  if (practicing) {
-    els.libraryRudiments.hidden = true;
-    if (els.librarySongs.parentElement !== els.train) {
-      els.train.insertBefore(els.librarySongs, els.train.firstElementChild);
+function mountPracticeLibrary(section) {
+  const homes = {
+    fills: [els.libraryFills, els.fills],
+    grooves: [els.libraryGrooves, els.grooves],
+    songs: [els.librarySongs, els.songs],
+    stick: [els.libraryStick, els.stick],
+  };
+  for (const [name, [library, home]] of Object.entries(homes)) {
+    if (name === section) {
+      if (library.parentElement !== els.train) els.train.insertBefore(library, els.train.firstElementChild);
+    } else if (library.parentElement !== home) {
+      home.insertBefore(library, home.firstElementChild);
     }
-    return;
   }
-  els.libraryRudiments.hidden = false;
-  if (els.librarySongs.parentElement !== els.songs) {
-    els.songs.insertBefore(els.librarySongs, els.songs.firstElementChild);
-  }
+  els.libraryRudiments.hidden = Boolean(section);
 }
 
 function setMode(mode, kind = "push") {
   if (state.mode === "songs" && mode !== "songs" && state.songRec) stopRecording();
-  if (state.custom?.source === "song" && mode !== "songs") dropCustomLesson();
+  const currentSection = practiceSectionFor(state.custom);
+  if (currentSection && mode !== currentSection) dropCustomLesson();
   state.mode = mode;
-  const songPractice = mode === "songs" && state.custom?.source === "song";
-  mountSongLibrary(songPractice);
-  els.train.hidden = mode !== "train" && !songPractice;
-  els.fills.hidden = mode !== "fills";
-  els.grooves.hidden = mode !== "grooves";
-  els.songs.hidden = mode !== "songs" || songPractice;
-  els.stick.hidden = mode !== "stick";
-  els.tabTrain.setAttribute("aria-selected", String(mode === "train"));
-  els.tabFills.setAttribute("aria-selected", String(mode === "fills"));
-  els.tabGrooves.setAttribute("aria-selected", String(mode === "grooves"));
-  els.tabSongs.setAttribute("aria-selected", String(mode === "songs"));
-  els.tabSongs.setAttribute("aria-controls", songPractice ? "train" : "songs");
-  els.tabStick.setAttribute("aria-selected", String(mode === "stick"));
+  const practicing = practiceSectionFor(state.custom);
+  const onHighway = practicing === mode;
+  mountPracticeLibrary(onHighway ? practicing : null);
+  els.train.hidden = mode !== "train" && !onHighway;
+  els.fills.hidden = mode !== "fills" || onHighway;
+  els.grooves.hidden = mode !== "grooves" || onHighway;
+  els.songs.hidden = mode !== "songs" || onHighway;
+  els.stick.hidden = mode !== "stick" || onHighway;
+  const tabs = [
+    [els.tabTrain, "train", "train"],
+    [els.tabFills, "fills", "fills"],
+    [els.tabGrooves, "grooves", "grooves"],
+    [els.tabSongs, "songs", "songs"],
+    [els.tabStick, "stick", "stick"],
+  ];
+  for (const [tab, id, panel] of tabs) {
+    tab.setAttribute("aria-selected", String(mode === id));
+    tab.setAttribute("aria-controls", onHighway && mode === id ? "train" : panel);
+  }
   if (mode === "stick") renderStick();
   if (mode === "fills") renderFills();
   if (mode === "grooves") renderGrooves();
   if (mode === "songs") {
     const routedSong = kind === "skip" && new URLSearchParams(location.search).get("song");
-    if (!songPractice && !songsOpened && !state.songId && !routedSong && state.songs[0]) {
+    if (!onHighway && !songsOpened && !state.songId && !routedSong && state.songs[0]) {
       void selectSong(state.songs[0].id, "skip");
     } else renderSongs();
     songsOpened = true;
   }
   writeRoute(kind);
+}
+
+function openSection(mode) {
+  if (practiceSectionFor(state.custom) === mode) dropCustomLesson();
+  setMode(mode);
 }
 
 function stickingHTML(text) {
@@ -356,12 +416,18 @@ function renderBanner() {
     els.banner.innerHTML = "";
     return;
   }
-  const back = state.custom.source === "song" ? "Back to songs" : "Back to rudiments";
+  const back = {
+    fill: "Back to fills",
+    groove: "Back to grooves",
+    song: "Back to songs",
+    stick: "Back to stickings",
+  }[state.custom.source] || "Back to rudiments";
   els.banner.hidden = false;
   els.banner.innerHTML = `<span>Practicing ${escapeHTML(state.custom.name)}. ${escapeHTML(state.custom.timing)}.</span><button type="button" id="clear-custom">${back}</button>`;
   $("#clear-custom").addEventListener("click", () => {
-    const source = dropCustomLesson();
-    if (source === "song") setMode("songs");
+    const section = practiceSectionFor(state.custom);
+    dropCustomLesson();
+    if (section) setMode(section);
   });
 }
 
@@ -866,13 +932,14 @@ function practice(arrangement, source, kind = "push") {
   const song = Boolean(arrangement.song);
   state.custom = {
     name: source
-      ? `${SOURCE_LABEL[source] || "Fill"} · ${arrangement.title}`
+      ? `${SOURCE_LABEL[source] || "Sticking"} · ${arrangement.title}`
       : `${entry ? entry.name : "Custom"} · ${arrangement.title}`,
     detail: arrangement.summary,
     timing: arrangement.timing,
     stepsPerBeat: steps,
     recipe: arrangement.recipe,
-    source: source || null,
+    source: source || "stick",
+    practiceId: arrangement.id,
     song,
     songId: song ? arrangement.songId : null,
     section: song ? arrangement.section : null,
@@ -886,7 +953,7 @@ function practice(arrangement, source, kind = "push") {
   state.phase = "idle";
   state.summary = null;
   renderResults();
-  setMode(song ? "songs" : "train", kind);
+  setMode(practiceSectionFor(state.custom) || "train", kind);
   previewNotes();
   renderTrain();
 }
@@ -1530,7 +1597,7 @@ async function restoreRoute() {
   const route = readRoute();
   routeLock += 1;
   try {
-    if (route.practice && route.song) {
+    if (route.practice && route.mode === "songs" && route.song) {
       const song = state.songs.find((item) => item.id === route.song);
       if (song?.hits.length) {
         adoptSong(song);
@@ -1539,7 +1606,54 @@ async function restoreRoute() {
         if (state.custom?.source === "song") return;
       }
     }
-    if (state.custom?.source === "song") dropCustomLesson();
+    if (route.practice && route.mode === "fills" && route.item) {
+      if (route.stick) {
+        state.fillText = route.stick;
+        els.fillInput.value = route.stick;
+      }
+      const parsed = parseSticking(state.fillText);
+      const fill = parsed.error ? null : generateFills(parsed.hands).find((item) => item.id === route.item);
+      if (fill) {
+        const already = state.custom?.source === "fill" && state.custom.practiceId === fill.id && state.mode === "fills";
+        if (!already) practice(fill, "fill", "skip");
+        return;
+      }
+    }
+    if (route.practice && route.mode === "grooves" && route.item) {
+      let groove = null;
+      if (route.item === "sequencer") {
+        const resolution = RESOLUTIONS[route.res] ? route.res : "8";
+        const grid = decodeSeq(route.grid, resolution);
+        if (grid) {
+          state.seqResolution = resolution;
+          state.seqGrid = grid;
+          const written = sequencerGroove(grid, resolution);
+          if (written.notes.length) groove = written;
+        }
+      } else groove = GROOVES.find((item) => item.id === route.item) || null;
+      if (groove) {
+        const already = state.custom?.source === "groove" && state.custom.practiceId === groove.id && state.mode === "grooves";
+        if (!already) practice(groove, "groove", "skip");
+        return;
+      }
+    }
+    if (route.practice && route.mode === "stick" && route.item) {
+      if (route.stick) {
+        state.stickText = route.stick;
+        els.stickInput.value = route.stick;
+      }
+      const grids = route.grids.split(",").filter((id) => GRIDS[id]);
+      if (grids.length) state.stickGrids = grids;
+      const entry = STICKINGS.find((item) => item.display === state.stickText);
+      state.pinnedId = entry?.pattern ? entry.id : null;
+      const arrangement = currentArrangements().arrangements.find((item) => item.id === route.item);
+      if (arrangement) {
+        const already = state.custom?.source === "stick" && state.custom.practiceId === arrangement.id && state.mode === "stick";
+        if (!already) practice(arrangement, null, "skip");
+        return;
+      }
+    }
+    if (practiceSectionFor(state.custom)) dropCustomLesson();
     setMode(route.mode, "skip");
     if (route.mode === "songs" && route.song && state.songId !== route.song) {
       const song = state.songs.find((item) => item.id === route.song);
@@ -1668,14 +1782,11 @@ function loop() {
 function bind() {
   document.querySelector("#fill-form").addEventListener("submit", (event) => event.preventDefault());
   document.querySelector("#song-form").addEventListener("submit", (event) => event.preventDefault());
-  els.tabTrain.addEventListener("click", () => setMode("train"));
-  els.tabFills.addEventListener("click", () => setMode("fills"));
-  els.tabGrooves.addEventListener("click", () => setMode("grooves"));
-  els.tabSongs.addEventListener("click", () => {
-    if (state.custom?.source === "song") dropCustomLesson();
-    setMode("songs");
-  });
-  els.tabStick.addEventListener("click", () => setMode("stick"));
+  els.tabTrain.addEventListener("click", () => openSection("train"));
+  els.tabFills.addEventListener("click", () => openSection("fills"));
+  els.tabGrooves.addEventListener("click", () => openSection("grooves"));
+  els.tabSongs.addEventListener("click", () => openSection("songs"));
+  els.tabStick.addEventListener("click", () => openSection("stick"));
   window.addEventListener("popstate", () => { void restoreRoute(); });
   els.kitOpen.addEventListener("click", () => {
     const open = els.kit.hidden;
@@ -1854,6 +1965,10 @@ function bind() {
     state.stickText = entry.display;
     state.pinnedId = entry.pattern ? entry.id : null;
     renderStick();
+    if (state.custom?.source === "stick") {
+      const arrangement = [...shown.values()].find((item) => item.id === state.custom.practiceId) || [...shown.values()][0];
+      if (arrangement) practice(arrangement);
+    }
   });
   els.stickInput.addEventListener("input", () => {
     state.stickText = els.stickInput.value;
@@ -1883,6 +1998,11 @@ function bind() {
     els.fillInput.value = button.dataset.fillPreset;
     state.fillText = button.dataset.fillPreset;
     renderFills();
+    if (state.custom?.source === "fill") {
+      const parsed = parseSticking(state.fillText);
+      const fill = parsed.error ? null : generateFills(parsed.hands).find((item) => item.id === state.custom.practiceId);
+      if (fill) practice(fill, "fill");
+    }
   });
   els.fillLengths.addEventListener("click", (event) => {
     const button = event.target.closest("[data-fill-length]");
