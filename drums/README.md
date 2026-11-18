@@ -22,7 +22,7 @@ Plug the module in with USB and press **Connect MIDI**. The app uses the moduleâ
 
 If every hit is called late, open **Kit & keys** and move calibration to the right.
 
-Without the kit, use the on-screen pads or the keyboard: B or Space kick, D snare, F and G toms, H floor, J hat, L ride, C crash.
+Without the kit, use the on-screen pads or the keyboard: B or Space kick, D snare, F and G toms, H floor, J hat, L ride, C crash. The kit is acoustic: a bass drum with a beater, a snare with wires, two rack toms and a floor tom, a closed hat, a ride, and a crash.
 
 ## Timing
 
