@@ -40,7 +40,7 @@ The step sequencer is one bar of hi-hat, snare, and kick, in 8ths or 16ths. Clic
 
 **New song**, optionally **Add audio**, then **Record**. The click counts in four beats, and the backing track starts on the downbeat. MIDI, the keyboard, and the pads all write the take. **Stop** saves it in this browser.
 
-**Play** hears the take. **Practice** puts it on the highway and scores it with the same perfect, early, late, and miss colors as a lesson. Drag across the bar strip to loop one part, then pick once, 2×, 4×, or 8×. The backing track starts at that bar and loops with it. The tempo slider can slow the practice, and the track stays lined up. Recorded hits do not claim a hand. The kick is still marked K.
+**Play** hears the take. **Practice** puts it on the highway and scores it with the same perfect, early, late, and miss colors as a lesson. The Songs tab and the song list stay put. The address remembers the section (`?page=rudiments`, `fills`, `grooves`, `songs`, or `stickings`). A song adds `song`, and practice adds `practice=1`, so a reload opens the same place. Drag across the bar strip to loop one part, then pick once, 2×, 4×, or 8×. The backing track starts at that bar and loops with it. The tempo slider can slow the practice, and the track stays lined up. Recorded hits do not claim a hand. The kick is still marked K.
 
 **Export** downloads the song as JSON, audio included. **Import** brings that file back. A backing track that does not fit in local storage is kept beside the notes in this browser.
 

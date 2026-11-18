@@ -77,6 +77,8 @@ const els = {
   grooves: $("#grooves"),
   songs: $("#songs"),
   stick: $("#stick"),
+  libraryRudiments: $("#library-rudiments"),
+  librarySongs: $("#library-songs"),
   tabTrain: $("#tab-train"),
   tabFills: $("#tab-fills"),
   tabGrooves: $("#tab-grooves"),
@@ -225,27 +227,97 @@ function running() {
   return state.phase === "countin" || state.phase === "playing" || state.phase === "preview";
 }
 
-function setMode(mode) {
+const PAGE_FOR_MODE = {
+  train: "rudiments",
+  fills: "fills",
+  grooves: "grooves",
+  songs: "songs",
+  stick: "stickings",
+};
+const MODE_FOR_PAGE = {
+  rudiments: "train",
+  train: "train",
+  fills: "fills",
+  grooves: "grooves",
+  songs: "songs",
+  stickings: "stick",
+  stick: "stick",
+};
+let routeLock = 0;
+
+function readRoute() {
+  const params = new URLSearchParams(location.search);
+  return {
+    mode: MODE_FOR_PAGE[params.get("page")] || "train",
+    song: params.get("song") || "",
+    practice: params.get("practice") === "1",
+  };
+}
+
+function routeURL() {
+  const params = new URLSearchParams();
+  params.set("page", PAGE_FOR_MODE[state.mode] || "rudiments");
+  const practicing = state.custom?.source === "song" && state.custom.songId;
+  if (practicing) {
+    params.set("song", state.custom.songId);
+    params.set("practice", "1");
+  } else if (state.mode === "songs" && state.songId) {
+    params.set("song", state.songId);
+  }
+  return `${location.pathname}?${params.toString()}`;
+}
+
+function writeRoute(kind = "push") {
+  if (routeLock || kind === "skip") return;
+  const next = routeURL();
+  if (next === `${location.pathname}${location.search}`) return;
+  const data = { handline: true };
+  if (kind === "replace") history.replaceState(data, "", next);
+  else history.pushState(data, "", next);
+}
+
+function mountSongLibrary(practicing) {
+  if (practicing) {
+    els.libraryRudiments.hidden = true;
+    if (els.librarySongs.parentElement !== els.train) {
+      els.train.insertBefore(els.librarySongs, els.train.firstElementChild);
+    }
+    return;
+  }
+  els.libraryRudiments.hidden = false;
+  if (els.librarySongs.parentElement !== els.songs) {
+    els.songs.insertBefore(els.librarySongs, els.songs.firstElementChild);
+  }
+}
+
+function setMode(mode, kind = "push") {
   if (state.mode === "songs" && mode !== "songs" && state.songRec) stopRecording();
+  if (state.custom?.source === "song" && mode !== "songs") dropCustomLesson();
   state.mode = mode;
-  els.train.hidden = mode !== "train";
+  const songPractice = mode === "songs" && state.custom?.source === "song";
+  mountSongLibrary(songPractice);
+  els.train.hidden = mode !== "train" && !songPractice;
   els.fills.hidden = mode !== "fills";
   els.grooves.hidden = mode !== "grooves";
-  els.songs.hidden = mode !== "songs";
+  els.songs.hidden = mode !== "songs" || songPractice;
   els.stick.hidden = mode !== "stick";
   els.tabTrain.setAttribute("aria-selected", String(mode === "train"));
   els.tabFills.setAttribute("aria-selected", String(mode === "fills"));
   els.tabGrooves.setAttribute("aria-selected", String(mode === "grooves"));
   els.tabSongs.setAttribute("aria-selected", String(mode === "songs"));
+  els.tabSongs.setAttribute("aria-controls", songPractice ? "train" : "songs");
   els.tabStick.setAttribute("aria-selected", String(mode === "stick"));
   if (mode === "stick") renderStick();
   if (mode === "fills") renderFills();
   if (mode === "grooves") renderGrooves();
   if (mode === "songs") {
-    if (!songsOpened && !state.songId && state.songs[0]) selectSong(state.songs[0].id);
-    else renderSongs();
+    const routedSong = kind === "skip" && new URLSearchParams(location.search).get("song");
+    if (!songPractice && !songsOpened && !state.songId && !routedSong && state.songs[0]) {
+      void selectSong(state.songs[0].id, "skip");
+    } else renderSongs();
     songsOpened = true;
   }
+  writeRoute(kind);
 }
 
 function stickingHTML(text) {
@@ -288,20 +360,29 @@ function renderBanner() {
   els.banner.hidden = false;
   els.banner.innerHTML = `<span>Practicing ${escapeHTML(state.custom.name)}. ${escapeHTML(state.custom.timing)}.</span><button type="button" id="clear-custom">${back}</button>`;
   $("#clear-custom").addEventListener("click", () => {
-    const source = state.custom?.source || null;
-    audio.stopBuffer();
-    state.backing = null;
-    state.custom = null;
-    if (running()) stopLesson();
-    const rudiment = findRudiment(state.rudimentId);
-    state.bpm = rudiment.defaultBpm;
-    els.bpm.value = String(state.bpm);
-    state.bars = 4;
-    if (state.phase === "results") closeResults();
-    else previewNotes();
-    renderTrain();
+    const source = dropCustomLesson();
     if (source === "song") setMode("songs");
   });
+}
+
+function dropCustomLesson() {
+  const source = state.custom?.source || null;
+  audio.stopBuffer();
+  state.backing = null;
+  state.custom = null;
+  sessionId += 1;
+  window.clearTimeout(timer);
+  state.scoring = false;
+  state.phase = "idle";
+  state.summary = null;
+  const rudiment = findRudiment(state.rudimentId);
+  state.bpm = rudiment.defaultBpm;
+  els.bpm.value = String(state.bpm);
+  state.bars = 4;
+  previewNotes();
+  renderResults();
+  renderTrain();
+  return source;
 }
 
 function renderTrain() {
@@ -773,7 +854,7 @@ function renderStick() {
 
 const SOURCE_LABEL = { fill: "Fill", groove: "Groove", song: "Song" };
 
-function practice(arrangement, source) {
+function practice(arrangement, source, kind = "push") {
   const steps = arrangement.recipe.type === "hands"
     ? GRIDS[arrangement.recipe.grid].stepsPerBeat
     : arrangement.recipe.stepsPerBeat;
@@ -805,7 +886,7 @@ function practice(arrangement, source) {
   state.phase = "idle";
   state.summary = null;
   renderResults();
-  setMode("train");
+  setMode(song ? "songs" : "train", kind);
   previewNotes();
   renderTrain();
 }
@@ -1045,8 +1126,9 @@ function renderSongs() {
     const bars = beats / 4;
     const barLabel = bars === 1 ? "bar" : "bars";
     const hitLabel = item.hits.length === 1 ? "hit" : "hits";
+    const shownId = state.custom?.source === "song" ? state.custom.songId : state.songId;
     return `
-      <button type="button" class="ritem song-item" role="option" data-song="${escapeHTML(item.id)}" aria-selected="${item.id === state.songId}">
+      <button type="button" class="ritem song-item" role="option" data-song="${escapeHTML(item.id)}" aria-selected="${item.id === shownId}">
         <span><strong>${escapeHTML(item.name)}</strong><small>${item.recordedBpm || item.bpm} bpm · ${bars} ${barLabel} · ${item.hits.length} ${hitLabel}</small></span>
       </button>`;
   }).join("") || `<p class="status">No songs yet. Record one, and it stays in this browser.</p>`;
@@ -1221,6 +1303,7 @@ async function stopRecording() {
   upsertSong(song);
   await persistSongs();
   renderSongs();
+  if (state.mode === "songs") writeRoute("push");
 }
 
 async function startNewSong() {
@@ -1233,12 +1316,10 @@ async function startNewSong() {
   state.songError = "";
   state.deleteArmed = false;
   renderSongs();
+  if (state.mode === "songs") writeRoute("push");
 }
 
-async function selectSong(id) {
-  if (state.songRec || state.songArming) await stopRecording();
-  const song = state.songs.find((item) => item.id === id);
-  if (!song) return;
+function adoptSong(song) {
   state.songId = song.id;
   state.songName = song.name;
   state.songBpm = song.bpm;
@@ -1246,6 +1327,17 @@ async function selectSong(id) {
   state.songAudioCleared = false;
   state.songError = "";
   state.deleteArmed = false;
+  els.songName.value = song.name;
+  els.songBpm.value = String(song.bpm);
+  els.songBpmRead.textContent = String(song.bpm);
+}
+
+async function selectSong(id, kind = "push") {
+  if (state.songRec || state.songArming) await stopRecording();
+  const song = state.songs.find((item) => item.id === id);
+  if (!song) return;
+  adoptSong(song);
+  if (state.mode === "songs") writeRoute(kind);
   renderSongs();
   if (!song.audio) return;
   try {
@@ -1304,6 +1396,7 @@ async function rememberAudio(file) {
   }
   await persistSongs();
   renderSongs();
+  if (state.mode === "songs") writeRoute("push");
 }
 
 async function clearSongAudio() {
@@ -1322,6 +1415,7 @@ async function clearSongAudio() {
     await persistSongs();
   }
   renderSongs();
+  if (state.mode === "songs") writeRoute("push");
 }
 
 async function deleteCurrentSong() {
@@ -1345,6 +1439,7 @@ async function deleteCurrentSong() {
   state.songError = "";
   await persistSongs();
   renderSongs();
+  if (state.mode === "songs") writeRoute("push");
 }
 
 async function exportCurrentSong() {
@@ -1397,7 +1492,7 @@ async function importSongFile(file) {
   await selectSong(result.song.id);
 }
 
-async function openSong(preview) {
+async function openSong(preview, kind = "push") {
   const resumePromise = audio.resume();
   if (state.songRec || state.songArming) await stopRecording();
   const song = currentSong();
@@ -1421,11 +1516,48 @@ async function openSong(preview) {
       buffer = null;
     }
   }
-  try { await resumePromise; } catch { /* Start will resume again. */ }
+  await Promise.race([
+    resumePromise.catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, 400)),
+  ]);
   const arrangement = arrangementFromSong(song);
   arrangement.audioBuffer = buffer;
-  practice(arrangement, "song");
+  practice(arrangement, "song", kind);
   if (preview) runLesson(true);
+}
+
+async function restoreRoute() {
+  const route = readRoute();
+  routeLock += 1;
+  try {
+    if (route.practice && route.song) {
+      const song = state.songs.find((item) => item.id === route.song);
+      if (song?.hits.length) {
+        adoptSong(song);
+        const already = state.custom?.source === "song" && state.custom.songId === song.id && state.mode === "songs";
+        if (!already) await openSong(false, "skip");
+        if (state.custom?.source === "song") return;
+      }
+    }
+    if (state.custom?.source === "song") dropCustomLesson();
+    setMode(route.mode, "skip");
+    if (route.mode === "songs" && route.song && state.songId !== route.song) {
+      const song = state.songs.find((item) => item.id === route.song);
+      if (song) await selectSong(song.id, "skip");
+    }
+  } finally {
+    routeLock -= 1;
+  }
+}
+
+async function bootRoute() {
+  await hydrateSongAudio();
+  if (!location.search) {
+    writeRoute("replace");
+    return;
+  }
+  await restoreRoute();
+  writeRoute("replace");
 }
 
 async function hydrateSongAudio() {
@@ -1539,8 +1671,12 @@ function bind() {
   els.tabTrain.addEventListener("click", () => setMode("train"));
   els.tabFills.addEventListener("click", () => setMode("fills"));
   els.tabGrooves.addEventListener("click", () => setMode("grooves"));
-  els.tabSongs.addEventListener("click", () => setMode("songs"));
+  els.tabSongs.addEventListener("click", () => {
+    if (state.custom?.source === "song") dropCustomLesson();
+    setMode("songs");
+  });
   els.tabStick.addEventListener("click", () => setMode("stick"));
+  window.addEventListener("popstate", () => { void restoreRoute(); });
   els.kitOpen.addEventListener("click", () => {
     const open = els.kit.hidden;
     els.kit.hidden = !open;
@@ -1628,16 +1764,39 @@ function bind() {
   };
   els.pads.addEventListener("pointerdown", onPad);
   els.songPads.addEventListener("pointerdown", onPad);
-  els.songNew.addEventListener("click", () => { startNewSong(); });
+  els.songNew.addEventListener("click", async () => {
+    if (state.custom?.source === "song") dropCustomLesson();
+    await startNewSong();
+    setMode("songs");
+  });
   els.songImport.addEventListener("click", () => els.songImportFile.click());
-  els.songImportFile.addEventListener("change", () => {
+  els.songImportFile.addEventListener("change", async () => {
     const file = els.songImportFile.files?.[0];
     els.songImportFile.value = "";
-    if (file) importSongFile(file);
+    if (!file) return;
+    if (state.custom?.source === "song") dropCustomLesson();
+    await importSongFile(file);
+    setMode("songs");
   });
-  els.songList.addEventListener("click", (event) => {
+  els.songList.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-song]");
-    if (button) selectSong(button.dataset.song);
+    if (!button) return;
+    const id = button.dataset.song;
+    if (state.custom?.source === "song") {
+      const song = state.songs.find((item) => item.id === id);
+      if (!song) return;
+      if (!song.hits.length) {
+        dropCustomLesson();
+        setMode("songs", "skip");
+        await selectSong(id);
+        return;
+      }
+      if (song.id === state.custom.songId) return;
+      adoptSong(song);
+      await openSong(false);
+      return;
+    }
+    selectSong(id);
   });
   els.songName.addEventListener("input", () => {
     state.songName = els.songName.value;
@@ -1832,4 +1991,4 @@ selectRudiment("paradiddle");
 renderStick();
 requestAnimationFrame(loop);
 midi.connect();
-hydrateSongAudio();
+void bootRoute();
