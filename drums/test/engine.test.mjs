@@ -23,14 +23,17 @@ import {
 import {
   arrangementFromSong,
   audioRate,
+  clampLoop,
   exportSong,
   importSong,
   loadLibrary,
+  loopLabel,
   memoryStorage,
   notesForSong,
   phraseBeatsFor,
   recordHit,
   saveLibrary,
+  songBarCount,
   SONG_KEY,
 } from "../js/songs.js";
 import {
@@ -495,4 +498,46 @@ test("a recorded song keeps its timing, survives storage, and round-trips", () =
   assert.equal(loaded[0].audioExternal, true);
   assert.equal(loaded[0].hits.length, song.hits.length);
   assert.equal(loaded[0].name, "Night");
+});
+
+test("a song loop keeps one part and repeats it", () => {
+  const song = {
+    id: "take-loop",
+    name: "Parts",
+    bpm: 100,
+    recordedBpm: 100,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    hits: [
+      { beat: 0.5, element: "snare", velocity: 80 },
+      { beat: 4, element: "hat", velocity: 90 },
+      { beat: 7.5, element: "kick", velocity: 100 },
+      { beat: 8, element: "snare", velocity: 70 },
+    ],
+    loopStart: 2,
+    loopEnd: 2,
+    loopRepeats: 4,
+  };
+  assert.equal(songBarCount(song), 3);
+  const arrangement = arrangementFromSong(song);
+  assert.equal(arrangement.section.startBeat, 4);
+  assert.equal(arrangement.section.phraseBeats, 4);
+  assert.equal(arrangement.section.repeats, 4);
+  assert.equal(arrangement.bars, 4);
+  assert.deepEqual(arrangement.recipe.notes.map((note) => [note.element, note.beat]), [["hat", 0], ["kick", 3.5]]);
+  const chart = materialize(arrangement.recipe, arrangement.bars);
+  assert.equal(chart.filter((note) => note.element === "hat").length, 4);
+  assert.equal(chart.filter((note) => note.element === "kick").length, 4);
+  assert.ok(chart.every((note) => note.beat < 16));
+  assert.equal(loopLabel(clampLoop(songBarCount(song), { startBar: 2, endBar: 2, repeats: 4 })), "Bar 2, 4 times");
+
+  const imported = importSong(exportSong(song));
+  assert.equal(imported.song.loopStart, 2);
+  assert.equal(imported.song.loopEnd, 2);
+  assert.equal(imported.song.loopRepeats, 4);
+
+  const whole = arrangementFromSong({ ...song, loopStart: 1, loopEnd: 9, loopRepeats: 99 });
+  assert.equal(whole.section.startBeat, 0);
+  assert.equal(whole.section.repeats, 1);
+  assert.equal(whole.recipe.notes.length, 4);
+  assert.equal(loopLabel(clampLoop(3, {})), "The whole song, once");
 });

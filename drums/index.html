@@ -94,6 +94,17 @@
           </div>
         </div>
         <div id="custom-banner" class="banner" hidden></div>
+        <div id="song-loop" class="song-loop" hidden>
+          <div class="song-loop-head">
+            <span>Loop</span>
+            <div class="song-loop-choices">
+              <button type="button" id="song-loop-all">All</button>
+              <div id="song-loop-repeats" class="chips" role="group" aria-label="Repeats"></div>
+            </div>
+          </div>
+          <div id="song-loop-bars" class="song-loop-bars" role="listbox" aria-label="Bars to loop"></div>
+          <p id="song-loop-read" class="status">Drag across the bars you want to practice.</p>
+        </div>
         <div class="highway-wrap">
           <canvas id="highway" width="960" height="460" aria-label="Note highway"></canvas>
           <div id="progress" class="progress" aria-hidden="true"><span></span></div>

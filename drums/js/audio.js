@@ -74,7 +74,7 @@ export function createAudio() {
     backing = null;
   }
 
-  function playBuffer(buffer, when, rate = 1) {
+  function playBuffer(buffer, when, rate = 1, options = {}) {
     stopBuffer();
     if (!buffer) return;
     const audio = context();
@@ -83,7 +83,19 @@ export function createAudio() {
     const playback = Math.max(0.25, Math.min(4, rate || 1));
     source.playbackRate.setValueAtTime(playback, audio.currentTime);
     source.connect(audio.destination);
-    source.start(Math.max(when, audio.currentTime));
+    const offset = Math.max(0, Number(options.offset) || 0);
+    if (offset >= buffer.duration - 0.02) return;
+    const requested = Number(options.duration) || 0;
+    const end = requested > 0 ? Math.min(buffer.duration, offset + requested) : buffer.duration;
+    const loop = Boolean(options.loop) && end - offset > 0.05;
+    source.loop = loop;
+    if (loop) {
+      source.loopStart = offset;
+      source.loopEnd = end;
+    }
+    const startAt = Math.max(when, audio.currentTime);
+    if (loop) source.start(startAt, offset);
+    else source.start(startAt, offset, Math.max(0.05, end - offset));
     backing = source;
   }
 

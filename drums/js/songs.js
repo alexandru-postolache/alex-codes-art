@@ -85,6 +85,45 @@ export function recordHit(hits, hit, bpm) {
   return hits;
 }
 
+export const LOOP_REPEATS = [1, 2, 4, 8];
+
+export function songBarCount(song) {
+  return phraseBeatsFor(song?.hits, song?.audioSeconds, song?.recordedBpm || song?.bpm) / 4;
+}
+
+export function clampLoop(barCount, loop = {}) {
+  const bars = Math.max(1, Math.round(Number(barCount) || 1));
+  let start = Math.round(Number(loop.startBar));
+  let end = Math.round(Number(loop.endBar));
+  if (!Number.isFinite(start)) start = 1;
+  if (!Number.isFinite(end)) end = bars;
+  start = Math.min(bars, Math.max(1, start));
+  end = Math.min(bars, Math.max(start, end));
+  let repeats = Math.round(Number(loop.repeats));
+  if (!LOOP_REPEATS.includes(repeats)) repeats = 1;
+  return { startBar: start, endBar: end, repeats, bars };
+}
+
+export function loopLabel(region) {
+  const whole = region.startBar === 1 && region.endBar === region.bars;
+  const span = whole
+    ? "The whole song"
+    : region.startBar === region.endBar
+      ? `Bar ${region.startBar}`
+      : `Bars ${region.startBar}–${region.endBar}`;
+  const times = region.repeats === 1 ? "once" : `${region.repeats} times`;
+  return `${span}, ${times}`;
+}
+
+export function hitsPerBar(song) {
+  const counts = Array(songBarCount(song)).fill(0);
+  for (const hit of song?.hits || []) {
+    const index = Math.floor(Number(hit.beat) / 4);
+    if (index >= 0 && index < counts.length) counts[index] += 1;
+  }
+  return counts;
+}
+
 export function phraseBeatsFor(hits, audioSeconds = 0, bpm = 80) {
   const last = (hits || []).reduce((max, hit) => Math.max(max, Number(hit.beat) || 0), 0);
   const seconds = Math.max(0, Number(audioSeconds) || 0);
@@ -111,21 +150,33 @@ export function notesForSong(song) {
 }
 
 export function arrangementFromSong(song) {
-  const notes = notesForSong(song);
   const recordedBpm = clampBpm(song.recordedBpm || song.bpm);
-  const phraseBeats = phraseBeatsFor(song.hits, song.audioSeconds, recordedBpm);
-  const bars = phraseBeats / 4;
+  const region = clampLoop(songBarCount(song), {
+    startBar: song.loopStart,
+    endBar: song.loopEnd,
+    repeats: song.loopRepeats,
+  });
+  const startBeat = (region.startBar - 1) * 4;
+  const phraseBeats = (region.endBar - region.startBar + 1) * 4;
+  const notes = notesForSong(song).flatMap((note) => {
+    if (note.beat < startBeat - 1e-6 || note.beat >= startBeat + phraseBeats - 1e-6) return [];
+    const beat = Math.round((note.beat - startBeat) * 10000) / 10000;
+    return [{ ...note, beat, baseStep: Math.round(beat * 4) }];
+  });
+  const label = loopLabel(region);
   const audio = song.audioName ? ` Backing track ${song.audioName}.` : "";
   const hitLabel = notes.length === 1 ? "hit" : "hits";
-  const barLabel = bars === 1 ? "bar" : "bars";
+  const hitLine = notes.length ? `${notes.length} ${hitLabel}` : "No recorded hits";
   return {
     song: true,
+    songId: song.id,
     title: cleanName(song.name),
     bpm: clampBpm(song.bpm || recordedBpm),
     recordedBpm,
-    bars,
-    timing: `${bars} ${barLabel}`,
-    summary: `${notes.length} ${hitLabel} across ${bars} ${barLabel} at ${recordedBpm} bpm.${audio}`,
+    bars: (phraseBeats / 4) * region.repeats,
+    timing: label,
+    summary: `${hitLine}. ${label}, at ${recordedBpm} bpm.${audio}`,
+    section: { startBeat, phraseBeats, repeats: region.repeats },
     recipe: {
       type: "phrase",
       notes,
@@ -157,6 +208,11 @@ export function normalizeSong(input) {
   const audioName = typeof input.audioName === "string" && input.audioName.trim()
     ? input.audioName.trim().slice(0, 120)
     : null;
+  const region = clampLoop(phraseBeatsFor(hits, audioSeconds, clampBpm(input.recordedBpm || bpm)) / 4, {
+    startBar: input.loopStart,
+    endBar: input.loopEnd,
+    repeats: input.loopRepeats,
+  });
   return {
     format: SONG_FORMAT,
     version: 1,
@@ -171,6 +227,9 @@ export function normalizeSong(input) {
     audio: cleanAudio(input.audio),
     audioExternal: Boolean(input.audioExternal),
     hits,
+    loopStart: region.startBar,
+    loopEnd: region.endBar,
+    loopRepeats: region.repeats,
   };
 }
 

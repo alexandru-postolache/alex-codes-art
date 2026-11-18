@@ -38,15 +38,20 @@ import {
   audioPut,
   audioRate,
   clampBpm,
+  clampLoop,
   exportSong,
   formatClock,
   hitBeat,
+  hitsPerBar,
   importSong,
   loadLibrary,
+  LOOP_REPEATS,
+  loopLabel,
   newSongId,
   phraseBeatsFor,
   recordHit,
   saveLibrary,
+  songBarCount,
   songFileName,
 } from "./songs.js";
 import {
@@ -104,6 +109,11 @@ const els = {
   start: $("#start"),
   stop: $("#stop"),
   banner: $("#custom-banner"),
+  songLoop: $("#song-loop"),
+  songLoopAll: $("#song-loop-all"),
+  songLoopRepeats: $("#song-loop-repeats"),
+  songLoopBars: $("#song-loop-bars"),
+  songLoopRead: $("#song-loop-read"),
   progress: document.querySelector("#progress span"),
   results: $("#results"),
   live: $("#live-judge"),
@@ -192,6 +202,7 @@ let sessionId = 0;
 let timer = 0;
 let songTimer = 0;
 let songsOpened = false;
+let loopDrag = null;
 const shown = new Map();
 const fillShown = new Map();
 
@@ -305,9 +316,10 @@ function renderTrain() {
   els.bpmRead.textContent = String(state.bpm);
   const barLabel = `${state.bars} ${state.bars === 1 ? "bar" : "bars"}`;
   els.gridRead.textContent = custom?.song
-    ? `${barLabel} · recorded at ${custom.recordedBpm}`
+    ? `${custom.timing} · recorded at ${custom.recordedBpm}`
     : `${gridLabel(stepsPerBeat())} · ${barLabel}`;
   els.legendSong.hidden = !custom?.song;
+  renderSongLoop();
   renderSubdivision(rudiment, custom);
   els.bars.hidden = Boolean(custom?.song);
   els.bars.querySelectorAll("button").forEach((button) => {
@@ -512,7 +524,13 @@ function runLesson(preview) {
     state.phase = "countin";
     state.scoring = !preview;
     if (state.backing && state.custom?.recordedBpm) {
-      audio.playBuffer(state.backing, state.downbeat, audioRate(state.custom.recordedBpm, state.bpm));
+      const section = state.custom.section;
+      const beatSec = 60 / state.custom.recordedBpm;
+      audio.playBuffer(state.backing, state.downbeat, audioRate(state.custom.recordedBpm, state.bpm), section ? {
+        offset: section.startBeat * beatSec,
+        duration: section.phraseBeats * beatSec,
+        loop: section.repeats > 1,
+      } : undefined);
     }
     let beat = -4;
     let nextBeat = state.downbeat - 4 * beatDur;
@@ -775,6 +793,8 @@ function practice(arrangement, source) {
     recipe: arrangement.recipe,
     source: source || null,
     song,
+    songId: song ? arrangement.songId : null,
+    section: song ? arrangement.section : null,
     recordedBpm: song ? arrangement.recordedBpm : null,
   };
   state.backing = arrangement.audioBuffer || null;
@@ -985,6 +1005,9 @@ function buildSong(hits, takeBpm) {
     bpm: tempo,
     recordedBpm: hits.length ? tempo : clampBpm(existing?.recordedBpm || tempo),
     createdAt: existing?.createdAt || new Date().toISOString(),
+    loopStart: existing?.loopStart,
+    loopEnd: existing?.loopEnd,
+    loopRepeats: existing?.loopRepeats,
     ...audioMeta,
     hits: recordedHits,
   };
@@ -1418,6 +1441,92 @@ async function hydrateSongAudio() {
   if (state.mode === "songs") renderSongs();
 }
 
+function songForPractice() {
+  if (!state.custom?.songId) return null;
+  return state.songs.find((song) => song.id === state.custom.songId) || null;
+}
+
+function renderSongLoop() {
+  const song = state.custom?.song ? songForPractice() : null;
+  els.songLoop.hidden = !song;
+  if (!song) return;
+  const region = clampLoop(songBarCount(song), {
+    startBar: song.loopStart,
+    endBar: song.loopEnd,
+    repeats: song.loopRepeats,
+  });
+  const counts = hitsPerBar(song);
+  const locked = running();
+  els.songLoopAll.disabled = locked;
+  els.songLoopRepeats.innerHTML = LOOP_REPEATS.map((count) => `
+    <button type="button" data-loop-repeat="${count}" aria-pressed="${count === region.repeats}" ${locked ? "disabled" : ""}>${count === 1 ? "Once" : `${count}×`}</button>
+  `).join("");
+  els.songLoopBars.innerHTML = counts.map((hits, index) => {
+    const bar = index + 1;
+    const on = bar >= region.startBar && bar <= region.endBar;
+    return `<button type="button" class="loop-bar${on ? " on" : ""}${hits ? " has" : ""}" data-loop-bar="${bar}" aria-pressed="${on}" ${locked ? "disabled" : ""}><b>${bar}</b>${hits ? `<i>${hits}</i>` : ""}</button>`;
+  }).join("");
+  els.songLoopRead.textContent = `${loopLabel(region)}. Drag across the bars you want to practice.`;
+}
+
+function applySongLoop(loop) {
+  const song = songForPractice();
+  if (!song || running()) return;
+  const bars = songBarCount(song);
+  const previous = clampLoop(bars, {
+    startBar: song.loopStart,
+    endBar: song.loopEnd,
+    repeats: song.loopRepeats,
+  });
+  const region = clampLoop(bars, loop);
+  let repeats = region.repeats;
+  const whole = region.startBar === 1 && region.endBar === region.bars;
+  const wasWhole = previous.startBar === 1 && previous.endBar === previous.bars;
+  if (loop.repeats == null && !whole && wasWhole && previous.repeats === 1) repeats = 4;
+  song.loopStart = region.startBar;
+  song.loopEnd = region.endBar;
+  song.loopRepeats = repeats;
+  const arrangement = arrangementFromSong(song);
+  state.custom.recipe = arrangement.recipe;
+  state.custom.timing = arrangement.timing;
+  state.custom.detail = arrangement.summary;
+  state.custom.section = arrangement.section;
+  state.bars = arrangement.bars;
+  if (state.phase === "results") {
+    state.phase = "idle";
+    state.summary = null;
+    renderResults();
+  }
+  previewNotes();
+  renderTrain();
+  persistSongs();
+}
+
+function loopBarAt(event) {
+  const button = document.elementFromPoint(event.clientX, event.clientY)?.closest?.("[data-loop-bar]");
+  return button ? Number(button.dataset.loopBar) : null;
+}
+
+function paintLoopRange(start, end) {
+  const low = Math.min(start, end);
+  const high = Math.max(start, end);
+  els.songLoopBars.querySelectorAll("[data-loop-bar]").forEach((button) => {
+    const bar = Number(button.dataset.loopBar);
+    const on = bar >= low && bar <= high;
+    button.classList.toggle("on", on);
+    button.setAttribute("aria-pressed", String(on));
+  });
+}
+
+function finishLoopDrag(event) {
+  if (!loopDrag || event.pointerId !== loopDrag.pointer) return;
+  const end = loopBarAt(event) || loopDrag.end;
+  const startBar = Math.min(loopDrag.start, end);
+  const endBar = Math.max(loopDrag.start, end);
+  loopDrag = null;
+  applySongLoop({ startBar, endBar });
+}
+
 function loop() {
   highway.frame(view());
   updateProgress();
@@ -1473,6 +1582,36 @@ function bind() {
     wakeSettings();
     renderTrain();
   });
+  els.songLoopRepeats.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-loop-repeat]");
+    if (!button || running()) return;
+    const song = songForPractice();
+    if (!song) return;
+    applySongLoop({ startBar: song.loopStart, endBar: song.loopEnd, repeats: Number(button.dataset.loopRepeat) });
+  });
+  els.songLoopAll.addEventListener("click", () => {
+    const song = songForPractice();
+    if (!song || running()) return;
+    applySongLoop({ startBar: 1, endBar: songBarCount(song), repeats: 1 });
+  });
+  els.songLoopBars.addEventListener("pointerdown", (event) => {
+    const button = event.target.closest("[data-loop-bar]");
+    if (!button || button.disabled || running()) return;
+    event.preventDefault();
+    const bar = Number(button.dataset.loopBar);
+    loopDrag = { start: bar, end: bar, pointer: event.pointerId };
+    els.songLoopBars.setPointerCapture(event.pointerId);
+    paintLoopRange(bar, bar);
+  });
+  els.songLoopBars.addEventListener("pointermove", (event) => {
+    if (!loopDrag || event.pointerId !== loopDrag.pointer) return;
+    const bar = loopBarAt(event);
+    if (!bar) return;
+    loopDrag.end = bar;
+    paintLoopRange(loopDrag.start, bar);
+  });
+  els.songLoopBars.addEventListener("pointerup", finishLoopDrag);
+  els.songLoopBars.addEventListener("pointercancel", finishLoopDrag);
   els.hear.addEventListener("click", () => runLesson(true));
   els.start.addEventListener("click", () => runLesson(false));
   els.stop.addEventListener("click", stopLesson);
